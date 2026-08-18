@@ -165,12 +165,14 @@ docs/            written for a separate UI-building agent (see docs/README.md)
 tests/           mirrors the source tree
 ```
 
-## Dev-mode simulate-payment route
+## Development payments
 
-In `development` only, `POST /api/dev/streampay/simulate {payment_link_id}` fires a
-correctly-signed webhook at the **real** webhook handler, so the whole payment flow runs
-with zero StreamPay credentials. The route is not registered in test or production, and a
-test asserts it 404s there.
+With `ENVIRONMENT=development`, wallet top-ups and invoice gateway remainders settle
+immediately through the application's normal ledger and escrow flows. StreamPay is not
+called and the API returns `payment_url: null`. In production, the same endpoints create a
+StreamPay checkout and wait for its signed webhook. The development-only
+`POST /api/dev/streampay/simulate` route remains available for testing historical pending
+payment links and is not registered in test or production.
 
 ## Admin dashboard
 

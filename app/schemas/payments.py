@@ -36,18 +36,18 @@ class TopupRequest(BaseModel):
 
 
 class TopupResponse(BaseModel):
-    """A started top-up: redirect the client to ``payment_url``."""
+    """A wallet top-up; ``payment_url`` is null when development settles it directly."""
 
     payment_intent_id: str
     amount: str
-    payment_url: str
+    payment_url: str | None = None
 
 
 class PayInvoiceResponse(BaseModel):
     """The result of paying an invoice.
 
-    ``status`` is ``PAID`` when the wallet covered the total (settled immediately) or
-    ``PENDING`` when a gateway payment is required — then ``payment_url`` is set.
+    ``status`` is ``PAID`` when the wallet covered the total or development settles the
+    gateway portion directly. ``PENDING`` requires a gateway payment and has ``payment_url``.
     """
 
     invoice_id: str

@@ -853,7 +853,7 @@
         "type": "object"
       },
       "PayInvoiceResponse": {
-        "description": "The result of paying an invoice.\n\n``status`` is ``PAID`` when the wallet covered the total (settled immediately) or\n``PENDING`` when a gateway payment is required \u2014 then ``payment_url`` is set.",
+        "description": "The result of paying an invoice.\n\n``status`` is ``PAID`` when the wallet covered the total or development settles the\ngateway portion directly. ``PENDING`` requires a gateway payment and has ``payment_url``.",
         "properties": {
           "amount_from_gateway": {
             "title": "Amount From Gateway",
@@ -1371,7 +1371,7 @@
         "type": "object"
       },
       "TopupResponse": {
-        "description": "A started top-up: redirect the client to ``payment_url``.",
+        "description": "A wallet top-up; ``payment_url`` is null when development settles it directly.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -1382,14 +1382,20 @@
             "type": "string"
           },
           "payment_url": {
-            "title": "Payment Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Url"
           }
         },
         "required": [
           "payment_intent_id",
-          "amount",
-          "payment_url"
+          "amount"
         ],
         "title": "TopupResponse",
         "type": "object"

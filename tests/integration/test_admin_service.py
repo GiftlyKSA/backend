@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from app.core.config import Settings
+from app.core.config import Environment, Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.core.redis import build_redis
@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tests.conftest import make_test_settings
 
 
-def _settings() -> Settings:
+def _settings(**extra_overrides: object) -> Settings:
     import os
 
     overrides: dict[str, object] = {}
@@ -47,6 +47,7 @@ def _settings() -> Settings:
         overrides["DATABASE_URL"] = os.environ["DATABASE_URL"]
     if os.environ.get("REDIS_URL"):
         overrides["REDIS_URL"] = os.environ["REDIS_URL"]
+    overrides.update(extra_overrides)
     return make_test_settings(**overrides)
 
 
@@ -306,6 +307,17 @@ async def test_otp_service_request_verify_and_rate_limit(redis_client: Redis) ->
     with pytest.raises(RateLimitedError):
         for _ in range(settings.OTP_MAX_PER_WINDOW + 2):
             await otp.request_otp(fresh)
+
+
+async def test_development_otp_is_returned_and_verifies(redis_client: Redis) -> None:
+    settings = _settings(ENVIRONMENT=Environment.DEVELOPMENT.value)
+    otp = OtpService(redis_client, FakeSmsClient(settings.ENVIRONMENT), settings)
+    phone = f"+96650{uuid.uuid4().int % 10_000_000:07d}"
+
+    code = await otp.request_otp(phone)
+
+    assert code is not None and code.isdigit() and len(code) == 6
+    assert await otp.verify_otp(phone, code) is True
 
 
 async def test_admin_auth_session_and_logout(db_session: AsyncSession, redis_client: Redis) -> None:

@@ -12,13 +12,16 @@ Start a wallet top-up. **Auth:** Bearer JWT. **Role:** CUSTOMER or COURIER.
 | --- | --- | --- | --- |
 | amount | string | yes | 100.00-20000.00 |
 
-Success `201`: `{ payment_intent_id, amount, payment_url }`. Redirect the client to the
-returned hosted `payment_url`; the wallet is credited only after StreamPay confirms it.
+Success `201`: `{ payment_intent_id, amount, payment_url }`. In production, redirect the
+client to the returned hosted `payment_url`; the wallet is credited only after StreamPay
+confirms it. In development, StreamPay is not called, the top-up is settled immediately,
+and `payment_url` is `null`.
 
 ## POST /api/invoices/{invoice_id}/pay
 
 Pay an issued invoice from the wallet, StreamPay, or both. The wallet is applied first.
-When a remainder is due, it is held and the response is `PENDING` with `payment_url`.
+When a remainder is due, it is held and the response is `PENDING` with `payment_url` in
+production. In development, the remainder is settled immediately and `payment_url` is `null`.
 
 StreamPay receives the frozen invoice items where they can exactly represent the payable
 total, plus a visible adjustment for delivery, service fees, tax, and discounts. Split

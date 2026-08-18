@@ -330,8 +330,9 @@ drop the refresh token client-side.
 | `currency` | string | `"SAR"` |
 
 ### POST `/api/wallets/topup`
-**Auth:** Bearer. **Returns:** 201. Starts a gateway top-up; open `payment_url` in a
-web view / browser; the wallet is credited when the gateway confirms (asynchronously).
+**Auth:** Bearer. **Returns:** 201. In production, starts a gateway top-up; open
+`payment_url` in a web view / browser and the wallet is credited after the gateway confirms.
+In development, it is credited immediately and `payment_url` is `null`.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -344,9 +345,9 @@ web view / browser; the wallet is credited when the gateway confirms (asynchrono
 { "payment_intent_id": "7ac2...-uuid", "amount": "500.00", "payment_url": "https://pay.example/pay/abc123" }
 ```
 
-After the user returns from `payment_url`, re-fetch `/api/wallets/me` (the credit lands
-via webhook; poll or refresh on focus). Errors: `422 VALIDATION_ERROR` (amount out of
-range), `404 NOT_FOUND` (no wallet).
+In production, after the user returns from `payment_url`, re-fetch `/api/wallets/me` (the
+credit lands via webhook; poll or refresh on focus). Errors: `422 VALIDATION_ERROR` (amount
+out of range), `404 NOT_FOUND` (no wallet).
 
 ### POST `/api/wallets/withdrawals` (courier)
 **Auth:** Bearer **COURIER**. **Header:** `Idempotency-Key` (required). **Returns:** 201.
@@ -576,7 +577,8 @@ Each `items[]` entry: `position` (int), `title`, `description` (nullable),
 
 ### POST `/api/invoices/{id}/pay` — pay (customer)
 **Auth:** Bearer **CUSTOMER**. **Returns:** 200 `PayInvoiceResponse`. Pays from wallet,
-gateway, or a split automatically (wallet first, remainder to the gateway).
+gateway, or a split automatically (wallet first, remainder to the gateway in production).
+Development settles any gateway remainder immediately.
 
 No request body. (Safe to retry — server de-dups by invoice.)
 

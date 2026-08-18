@@ -276,7 +276,7 @@ async def test_webhook_rejects_bad_signature() -> None:
         await app.state.engine.dispose()
 
 
-async def test_dev_simulate_route_settles_topup() -> None:
+async def test_development_topup_settles_without_stream_pay() -> None:
     settings, engine, _factory = await _make_stack()
     # The dev simulate route is registered only in development.
     dev_settings = make_test_settings(
@@ -290,15 +290,11 @@ async def test_dev_simulate_route_settles_topup() -> None:
             cust = await _register(client, app, _phone(), "CUSTOMER")
             h = {"Authorization": f"Bearer {cust['access_token']}"}
             top = await client.post("/api/wallets/topup", headers=h, json={"amount": "300.00"})
-            payment_link_id = _payment_link_id_from_url(top.json()["payment_url"])
-
-            sim = await client.post(
-                "/api/dev/streampay/simulate", json={"payment_link_id": payment_link_id}
-            )
-            assert sim.status_code == 200 and sim.json()["outcome"] == "processed"
+            assert top.status_code == 201
+            assert top.json()["payment_url"] is None
             assert (await client.get("/api/wallets/me", headers=h)).json()["balance"] == "300.00"
 
-            # An unknown payment link is a 404.
+            # The route remains available only for historical pending links.
             missing = await client.post(
                 "/api/dev/streampay/simulate", json={"payment_link_id": "NOPE-404"}
             )

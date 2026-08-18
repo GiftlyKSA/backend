@@ -18,7 +18,7 @@ from decimal import Decimal
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings
+from app.core.config import Environment, Settings
 from app.core.exceptions import (
     ConflictError,
     InvalidStateTransitionError,
@@ -62,7 +62,7 @@ class TopupResult:
 
     intent_id: uuid.UUID
     amount: Decimal
-    payment_url: str
+    payment_url: str | None
 
 
 @dataclass(frozen=True)
@@ -155,6 +155,11 @@ class PaymentService:
         await self._payments.create_topup(
             user_id=user_id, wallet_id=wallet.id, payment_intent_id=intent.id, amount=amount
         )
+        if self._settings.ENVIRONMENT is Environment.DEVELOPMENT:
+            await self._settle_topup(intent)
+            await self._payments.mark_paid(intent, paid_at=self._now())
+            return TopupResult(intent_id=intent.id, amount=amount, payment_url=None)
+
         checkout = await self._create_checkout(
             intent=intent,
             user_id=user_id,
@@ -240,10 +245,28 @@ class PaymentService:
                 payment_url=existing.streampay_payment_url,
             )
 
+        return await self._start_invoice_gateway_payment(
+            invoice=invoice,
+            wallet_id=wallet.id,
+            customer_id=customer_id,
+            wallet_amount=wallet_amount,
+            gateway_amount=gateway_amount,
+        )
+
+    async def _start_invoice_gateway_payment(
+        self,
+        *,
+        invoice: Invoice,
+        wallet_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        wallet_amount: Decimal,
+        gateway_amount: Decimal,
+    ) -> PayResult:
+        """Create and settle-or-send the invoice remainder payment."""
         method = PaymentMethod.SPLIT if wallet_amount > ZERO else PaymentMethod.GATEWAY_ONLY
         if wallet_amount > ZERO:
             # Reserve the wallet portion so it cannot back a second pending payment.
-            await self._money.hold_funds(wallet_id=wallet.id, amount=wallet_amount)
+            await self._money.hold_funds(wallet_id=wallet_id, amount=wallet_amount)
         invoice.amount_from_wallet = wallet_amount
         invoice.amount_from_gateway = gateway_amount
         invoice.payment_method = method
@@ -255,6 +278,17 @@ class PaymentService:
             reference_invoice_id=invoice.id,
             expires_at=self._expiry(),
         )
+        if self._settings.ENVIRONMENT is Environment.DEVELOPMENT:
+            await self._settle_invoice(intent)
+            await self._payments.mark_paid(intent, paid_at=self._now())
+            return PayResult(
+                invoice_id=invoice.id,
+                status="PAID",
+                amount_from_wallet=wallet_amount,
+                amount_from_gateway=gateway_amount,
+                payment_url=None,
+            )
+
         checkout = await self._create_checkout(
             intent=intent,
             user_id=customer_id,

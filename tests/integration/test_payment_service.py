@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from app.core.config import Settings
+from app.core.config import Environment, Settings
 from app.core.exceptions import (
     ConflictError,
     InsufficientFundsError,
@@ -21,10 +21,11 @@ from app.core.exceptions import (
 )
 from app.core.redis import build_redis
 from app.integrations.streampay.fake import FakeStreamPayClient
-from app.models import Invoice, Order, User, Wallet
+from app.models import Invoice, Order, PaymentIntent, User, Wallet
 from app.models.enums import (
     InvoiceStatus,
     OrderStatus,
+    PaymentIntentStatus,
     PaymentPurpose,
     UserRole,
     WalletType,
@@ -34,17 +35,19 @@ from app.services.money_service import MoneyService
 from app.services.payment_service import build_payment_service
 from geoalchemy2 import WKTElement
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
 
 
-def _settings() -> Settings:
+def _settings(**extra_overrides: object) -> Settings:
     overrides: dict[str, object] = {}
     if os.environ.get("DATABASE_URL"):
         overrides["DATABASE_URL"] = os.environ["DATABASE_URL"]
     if os.environ.get("REDIS_URL"):
         overrides["REDIS_URL"] = os.environ["REDIS_URL"]
+    overrides.update(extra_overrides)
     return make_test_settings(**overrides)
 
 
@@ -60,12 +63,13 @@ async def redis_client() -> AsyncIterator[Redis]:
     await client.aclose()
 
 
-def _service(db: AsyncSession, redis: Redis) -> object:
+def _service(db: AsyncSession, redis: Redis, *, settings: Settings | None = None) -> object:
+    settings = settings or _settings()
     return build_payment_service(
         session=db,
-        gateway=FakeStreamPayClient(_settings().ENVIRONMENT),
+        gateway=FakeStreamPayClient(settings.ENVIRONMENT),
         redis=redis,
-        settings=_settings(),
+        settings=settings,
     )
 
 
@@ -248,6 +252,27 @@ async def test_create_topup_and_settle_via_webhook(
     assert wallet.balance == Decimal("500.00")
 
 
+async def test_development_topup_settles_without_a_payment_link(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    from app.repositories.payment_repository import PaymentRepository
+
+    user, wallet = await _customer_with_wallet(db_session)
+    settings = _settings(ENVIRONMENT=Environment.DEVELOPMENT.value)
+
+    result = await _service(db_session, redis_client, settings=settings).create_topup(
+        user_id=user.id, amount=Decimal("500.00")
+    )
+
+    assert result.payment_url is None
+    intent = await PaymentRepository(db_session).get_intent(result.intent_id)
+    assert intent is not None
+    assert intent.status is PaymentIntentStatus.PAID
+    assert intent.streampay_payment_link_id is None
+    await db_session.refresh(wallet)
+    assert wallet.balance == Decimal("500.00")
+
+
 async def test_pay_invoice_from_wallet_settles(
     db_session: AsyncSession, redis_client: Redis
 ) -> None:
@@ -284,6 +309,31 @@ async def test_pay_invoice_via_gateway_then_webhook_settles(
     body = _body(intent.streampay_payment_link_id, "724.50")
     out = await svc.handle_webhook(raw_body=body, signature=_signed(body))
     assert out.outcome == "processed"
+    assert invoice.status is InvoiceStatus.PAID
+    assert order.status is OrderStatus.IN_PROGRESS
+
+
+async def test_development_invoice_payment_settles_without_a_payment_link(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    user, order, invoice = await _issued_invoice(db_session)
+    settings = _settings(ENVIRONMENT=Environment.DEVELOPMENT.value)
+
+    result = await _service(db_session, redis_client, settings=settings).pay_invoice(
+        invoice_id=invoice.id, customer_id=user.id
+    )
+
+    assert result.status == "PAID"
+    assert result.payment_url is None
+    assert result.amount_from_gateway == Decimal("724.50")
+    intent = await db_session.scalar(
+        select(PaymentIntent).where(PaymentIntent.reference_invoice_id == invoice.id)
+    )
+    assert intent is not None
+    assert intent.status is PaymentIntentStatus.PAID
+    assert intent.streampay_payment_link_id is None
+    await db_session.refresh(invoice)
+    await db_session.refresh(order)
     assert invoice.status is InvoiceStatus.PAID
     assert order.status is OrderStatus.IN_PROGRESS
 
