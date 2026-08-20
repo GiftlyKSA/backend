@@ -6,7 +6,7 @@ OTP → JWT. See `../authentication.md` for the overall model. All bodies are JS
 Request a login OTP. **Auth**: none.
 ### Body
 | field | type | required | constraints |
-| phone | string | yes | Saudi E.164 mobile `^\+9665\d{8}$` |
+| phone | string | yes | Saudi mobile: accepts `0501234567`, `501234567`, or `+966501234567`; it is stored as E.164 |
 ### Success 202 — SendOtpResponse
 ```json
 { "expires_in": 180, "dev_otp": "849201" }
@@ -21,7 +21,7 @@ whether or not the phone is registered (no enumeration). Rate limited per phone.
 Verify an OTP. **Auth**: none.
 ### Body
 | field | type | required | constraints |
-| phone | string | yes | Saudi E.164 mobile |
+| phone | string | yes | Same accepted Saudi mobile forms; it is normalized to E.164 |
 | otp | string | yes | 6 digits |
 ### Success 200 — VerifyOtpResponse
 Existing user: `{ "is_new_user": false, "role": "CUSTOMER", "access_token": "...", "refresh_token": "..." }`

@@ -35,7 +35,7 @@ by CI and always current. This file is the human/agent-facing companion.
 | Timestamp | ISO-8601 **UTC** string | `"2026-09-12T14:30:00Z"` | Parse as UTC, render local |
 | Date | `YYYY-MM-DD` string | `"2026-09-20"` | — |
 | ID | UUID string | `"3f2b1c9e-...-uuid"` | Opaque; never construct |
-| Phone | Saudi E.164 | `"+966501234567"` | Pattern `^\+9665\d{8}$` |
+| Phone | Saudi mobile | `"0501234567"` | Accepts local, bare, or E.164 input; API canonicalizes to `+966501234567` |
 | Field names | `snake_case` | `delivery_city` | — |
 
 > **Money rule:** treat every `_amount`/`balance`/`available` field as a string. Render
@@ -185,11 +185,11 @@ Request body:
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `phone` | string | yes | Saudi E.164, pattern `^\+9665\d{8}$` |
+| `phone` | string | yes | Saudi mobile: `0501234567`, `501234567`, or `+966501234567` |
 
 ```json
 // request
-{ "phone": "+966501234567" }
+{ "phone": "0501234567" }
 // response 202
 { "expires_in": 180, "dev_otp": null }
 ```

@@ -1,25 +1,49 @@
 """Pydantic contracts for the auth endpoints (SPEC SECTION 19).
 
 Every inbound model forbids extra fields (mass assignment is an attack) and validates
-strict types and bounds at the boundary. Phone numbers are Saudi E.164 mobiles.
+strict types and bounds at the boundary. Saudi mobile input is canonicalized to E.164.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 _Phone = Annotated[str, StringConstraints(pattern=r"^\+9665\d{8}$")]
 _Otp = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
+_PHONE_SEPARATORS = re.compile(r"[\s()-]+")
+
+
+def _normalize_saudi_mobile(value: object) -> object:
+    """Convert common Saudi mobile entry forms to the stored E.164 representation."""
+    if not isinstance(value, str):
+        return value
+    phone = _PHONE_SEPARATORS.sub("", value)
+    if re.fullmatch(r"05\d{8}", phone):
+        return f"+966{phone[1:]}"
+    if re.fullmatch(r"5\d{8}", phone):
+        return f"+966{phone}"
+    return phone
 
 
 class SendOtpRequest(BaseModel):
     """Request an OTP for a phone number."""
 
     model_config = ConfigDict(extra="forbid")
-    phone: _Phone = Field(..., description="Saudi E.164 mobile.", examples=["+966501234567"])
+    phone: _Phone = Field(
+        ...,
+        description="Saudi mobile; accepts 0501234567, 501234567, or +966501234567.",
+        examples=["0501234567"],
+    )
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: object) -> object:
+        """Canonicalize local mobile entry before enforcing the Saudi E.164 format."""
+        return _normalize_saudi_mobile(value)
 
 
 class SendOtpResponse(BaseModel):
@@ -35,8 +59,17 @@ class VerifyOtpRequest(BaseModel):
     """Verify a submitted OTP."""
 
     model_config = ConfigDict(extra="forbid")
-    phone: _Phone = Field(..., description="Saudi E.164 mobile.")
+    phone: _Phone = Field(
+        ...,
+        description="Saudi mobile; accepts 0501234567, 501234567, or +966501234567.",
+    )
     otp: _Otp = Field(..., description="The 6-digit code.", examples=["849201"])
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: object) -> object:
+        """Canonicalize local mobile entry before enforcing the Saudi E.164 format."""
+        return _normalize_saudi_mobile(value)
 
 
 class VerifyOtpResponse(BaseModel):

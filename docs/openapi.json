@@ -1256,9 +1256,9 @@
         "description": "Request an OTP for a phone number.",
         "properties": {
           "phone": {
-            "description": "Saudi E.164 mobile.",
+            "description": "Saudi mobile; accepts 0501234567, 501234567, or +966501234567.",
             "examples": [
-              "+966501234567"
+              "0501234567"
             ],
             "pattern": "^\\+9665\\d{8}$",
             "title": "Phone",
@@ -1724,7 +1724,7 @@
             "type": "string"
           },
           "phone": {
-            "description": "Saudi E.164 mobile.",
+            "description": "Saudi mobile; accepts 0501234567, 501234567, or +966501234567.",
             "pattern": "^\\+9665\\d{8}$",
             "title": "Phone",
             "type": "string"
