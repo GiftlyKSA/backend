@@ -216,6 +216,9 @@ async def test_head_schema_has_expected_constraints_and_indexes(
                 item["name"]
                 for item in schema.get_unique_constraints("dhamen_notification_receipts")
             },
+            "receipt_columns": {
+                item["name"] for item in schema.get_columns("dhamen_notification_receipts")
+            },
             "receipt_indexes": {
                 item["name"] for item in schema.get_indexes("dhamen_notification_receipts")
             },
@@ -267,6 +270,21 @@ async def test_head_schema_has_expected_constraints_and_indexes(
         "chk_payout_transfers_timestamps",
     } <= reflected["payout_checks"]
     assert "uq_dhamen_receipts_notification" in reflected["receipt_uniques"]
+    assert reflected["receipt_columns"].isdisjoint(
+        {
+            "raw_body",
+            "raw_json",
+            "callback_body",
+            "payload",
+            "body",
+            "iban",
+            "identity_number",
+            "national_id",
+            "card_number",
+            "customer_identifier",
+            "personal_data",
+        }
+    )
     assert {
         "idx_dhamen_receipts_batch",
         "idx_dhamen_receipts_payment_reference",
