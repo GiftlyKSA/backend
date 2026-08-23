@@ -20,3 +20,7 @@ A single `payment_intents` table is the only gateway-facing record, discriminate
   on a mismatch.
 - Idempotency is enforced by a Redis lock on the payment-link ID plus a unique
   `transactions.idempotency_key`.
+- During the Dhamen migration, this remains the provider-neutral business record for both
+  wallet top-ups and invoice remainders. Legacy StreamPay identifiers remain available for
+  existing links until an approved cutover; new Dhamen gateway-reference fields and
+  reconciliation rules are governed by ADR 0006.

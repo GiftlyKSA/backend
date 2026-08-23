@@ -4,6 +4,43 @@ Wallet top-ups and invoice remainders each use one `payment_intents` record (ADR
 StreamPay creates a consumer, one-time products, and a hosted payment link. All money is
 sent and returned as decimal strings.
 
+## Dhamen migration status (not production-enabled)
+
+Dhamen Pay-InOut v1.5 is the planned successor to StreamPay; the StreamPay endpoints below
+remain active legacy contracts until a separately approved cutover. No Dhamen endpoint,
+callback URL, credential, or sandbox result is asserted by this document.
+
+The planned cash-in flow creates a Dhamen **Customer Payment** for a wallet top-up or an
+invoice remainder. It uses a durable SAFE-GIFT payment reference, a bounded expiry, and a
+registered HTTPS return URL. `supplierId` is intentionally omitted: SAFE-GIFT calculates
+dynamic fees, tax, promotions, courier payout, and split-wallet amounts per invoice, and
+the Dhamen manual directs authority-account collection with dynamic fees not to use it.
+The return URL is navigation only; a wallet credit or invoice settlement must wait for an
+authenticated Dhamen payment notification or authoritative Customer Payment Status
+reconciliation that matches the expected reference, customer identifier, amount, paid
+state, and settled state.
+
+The planned cash-out flow uses **Supplier Payment** only after SAFE-GIFT has approved an
+internal courier withdrawal. Supplier registration/update and payout require the vendor's
+contracted authority-account and verified supplier data. A local withdrawal is not marked
+paid merely because a payout was requested; it awaits the applicable supplier-payment
+status or authenticated notification reconciliation.
+
+Dhamen Refund and Refund-to-IBAN endpoints are outside the initial release. Customer
+dispute refunds continue as internal wallet credits until finance gives written approval
+for any return-to-original-method policy.
+
+### Production gate for Dhamen callbacks
+
+The supplied v1.5 manual does not specify a callback signature, mutual TLS contract,
+provider authentication header, source CIDRs, or retry contract. Therefore a Dhamen
+notification endpoint is **not approved for production** and must not accept an
+unauthenticated callback. Before enabling Dhamen, written vendor and platform-security
+approval must record one supported mechanism in ADR 0006: exact HMAC header and
+canonicalization, mTLS client-certificate lifecycle, or reverse-proxy source-CIDR
+restriction plus a vendor-supported application authentication header. See ADR 0006 for
+the complete launch checklist.
+
 ## POST /api/wallets/topup
 
 Start a wallet top-up. **Auth:** Bearer JWT. **Role:** CUSTOMER or COURIER.
