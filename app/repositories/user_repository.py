@@ -6,11 +6,11 @@ import hashlib
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User
+from app.models import Conversation, Order, User
 from app.models.enums import UserRole, UserStatus
 
 _DASHBOARD_ADMIN_NAMESPACE = uuid.UUID("48c72a54-78e4-4a0e-a20f-54378ed7f950")
@@ -36,6 +36,22 @@ class UserRepository:
         """Return a user by exact email, or None."""
         result: User | None = await self._session.scalar(select(User).where(User.email == email))
         return result
+
+    async def actor_shares_participant(
+        self, actor_id: uuid.UUID, participant_id: uuid.UUID
+    ) -> bool:
+        """Return whether two users share an order or conversation, entirely in SQL."""
+        if actor_id == participant_id:
+            return bool(await self._session.scalar(select(exists().where(User.id == actor_id))))
+        shared_order = exists().where(
+            ((Order.customer_id == actor_id) & (Order.courier_id == participant_id))
+            | ((Order.customer_id == participant_id) & (Order.courier_id == actor_id))
+        )
+        shared_conversation = exists().where(
+            ((Conversation.customer_id == actor_id) & (Conversation.courier_id == participant_id))
+            | ((Conversation.customer_id == participant_id) & (Conversation.courier_id == actor_id))
+        )
+        return bool(await self._session.scalar(select(shared_order | shared_conversation)))
 
     async def create_admin_user(
         self, *, phone: str, full_name: str | None, email: str | None, role: UserRole

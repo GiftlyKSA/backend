@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Rating
+from app.models import Order, Rating
 
 
 class RatingRepository:
@@ -47,6 +47,19 @@ class RatingRepository:
         """True if this rater has already rated this order."""
         found = await self._session.scalar(
             select(Rating.id).where(Rating.order_id == order_id, Rating.rater_id == rater_id)
+        )
+        return found is not None
+
+    async def actor_has_rated(self, order_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
+        """Return rating state only when the actor participates in the order."""
+        found = await self._session.scalar(
+            select(Rating.id)
+            .join(Order, Order.id == Rating.order_id)
+            .where(
+                Rating.order_id == order_id,
+                Rating.rater_id == actor_id,
+                (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+            )
         )
         return found is not None
 

@@ -12,9 +12,15 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import PaymentIntent, WalletTopup
+from app.models import (
+    DhamenNotificationReceipt,
+    PaymentIntent,
+    PayoutTransfer,
+    WalletTopup,
+)
 from app.models.enums import PaymentIntentStatus, PaymentPurpose
 
 
@@ -84,6 +90,110 @@ class PaymentRepository:
         result: PaymentIntent | None = await self._session.scalar(
             select(PaymentIntent)
             .where(PaymentIntent.streampay_payment_link_id == payment_link_id)
+            .with_for_update()
+        )
+        return result
+
+    async def lock_intent_by_gateway_reference(
+        self, *, checkout_provider: str, gateway_reference: str
+    ) -> PaymentIntent | None:
+        """Load one provider-neutral payment intent by reference FOR UPDATE."""
+        result: PaymentIntent | None = await self._session.scalar(
+            select(PaymentIntent)
+            .where(
+                PaymentIntent.checkout_provider == checkout_provider,
+                PaymentIntent.gateway_reference == gateway_reference,
+            )
+            .with_for_update()
+        )
+        return result
+
+    async def insert_notification_receipt_if_new(
+        self,
+        *,
+        notification_id: str,
+        batch_id: str,
+        notification_type: str,
+        payment_reference: str | None,
+        transaction_id: str | None,
+        raw_hash: str,
+        processing_outcome: str = "PENDING",
+    ) -> DhamenNotificationReceipt | None:
+        """Insert an idempotency receipt, returning None for a replay."""
+        statement = (
+            insert(DhamenNotificationReceipt)
+            .values(
+                notification_id=notification_id,
+                batch_id=batch_id,
+                notification_type=notification_type,
+                payment_reference=payment_reference,
+                transaction_id=transaction_id,
+                raw_hash=raw_hash,
+                processing_outcome=processing_outcome,
+            )
+            .on_conflict_do_nothing(index_elements=[DhamenNotificationReceipt.notification_id])
+            .returning(DhamenNotificationReceipt)
+        )
+        receipt = await self._session.scalar(statement)
+        await self._session.flush()
+        return receipt
+
+    async def list_due_gateway_reconciliation(self, *, limit: int) -> list[PaymentIntent]:
+        """Return unresolved generic gateway intents in deterministic oldest-first order."""
+        return list(
+            await self._session.scalars(
+                select(PaymentIntent)
+                .where(
+                    PaymentIntent.status == PaymentIntentStatus.NEW,
+                    PaymentIntent.gateway_reference.is_not(None),
+                )
+                .order_by(PaymentIntent.created_at, PaymentIntent.id)
+                .limit(limit)
+            )
+        )
+
+    async def create_payout_transfer(
+        self,
+        *,
+        withdrawal_id: uuid.UUID,
+        provider: str,
+        payment_reference: str,
+        supplier_id: uuid.UUID,
+        amount: Decimal,
+        status: str,
+    ) -> PayoutTransfer:
+        """Create the single provider transfer record for a withdrawal."""
+        transfer = PayoutTransfer(
+            withdrawal_id=withdrawal_id,
+            provider=provider,
+            payment_reference=payment_reference,
+            supplier_id=supplier_id,
+            amount=amount,
+            status=status,
+        )
+        self._session.add(transfer)
+        await self._session.flush()
+        return transfer
+
+    async def lock_payout_transfer(self, withdrawal_id: uuid.UUID) -> PayoutTransfer | None:
+        """Load a withdrawal's provider transfer FOR UPDATE."""
+        result: PayoutTransfer | None = await self._session.scalar(
+            select(PayoutTransfer)
+            .where(PayoutTransfer.withdrawal_id == withdrawal_id)
+            .with_for_update()
+        )
+        return result
+
+    async def lock_payout_transfer_by_reference(
+        self, *, provider: str, payment_reference: str
+    ) -> PayoutTransfer | None:
+        """Load a provider transfer by its provider-scoped reference FOR UPDATE."""
+        result: PayoutTransfer | None = await self._session.scalar(
+            select(PayoutTransfer)
+            .where(
+                PayoutTransfer.provider == provider,
+                PayoutTransfer.payment_reference == payment_reference,
+            )
             .with_for_update()
         )
         return result

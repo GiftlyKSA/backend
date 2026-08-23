@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, Message
+from app.models import Conversation, Message, MessageAttachment
 from app.models.enums import MessageType
 
 
@@ -85,6 +85,44 @@ class ChatRepository:
             conversation.customer_unread_count += 1
         await self._session.flush()
         return message
+
+    async def add_attachment(
+        self,
+        *,
+        message_id: uuid.UUID,
+        storage_key: str,
+        content_type: str,
+        byte_size: int,
+        display_order: int,
+    ) -> MessageAttachment:
+        """Attach one bounded private image to a durable message."""
+        attachment = MessageAttachment(
+            message_id=message_id,
+            storage_key=storage_key,
+            content_type=content_type,
+            byte_size=byte_size,
+            display_order=display_order,
+        )
+        self._session.add(attachment)
+        await self._session.flush()
+        return attachment
+
+    async def list_attachments_for_actor(
+        self, message_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> list[MessageAttachment]:
+        """Return message attachments only to a participant in its conversation."""
+        return list(
+            await self._session.scalars(
+                select(MessageAttachment)
+                .join(Message, Message.id == MessageAttachment.message_id)
+                .join(Conversation, Conversation.id == Message.conversation_id)
+                .where(
+                    MessageAttachment.message_id == message_id,
+                    (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
+                )
+                .order_by(MessageAttachment.display_order, MessageAttachment.id)
+            )
+        )
 
     async def list_messages(
         self,

@@ -7,10 +7,13 @@ in the query (customer or courier), never fetch-then-compare.
 
 from __future__ import annotations
 
+import json
 import uuid
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 
 from geoalchemy2 import Geography
+from redis.asyncio import Redis
 from sqlalchemy import Select, cast, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -175,6 +178,36 @@ class OrderRepository:
             query = query.where(Order.status == status)
         return await self._page(query, limit, before_id)
 
+    async def list_for_courier(
+        self,
+        courier_id: uuid.UUID,
+        *,
+        status: OrderStatus | None,
+        limit: int,
+        before_id: uuid.UUID | None,
+    ) -> list[Order]:
+        """Return only orders assigned to the courier, including terminal history."""
+        query = select(Order).where(Order.courier_id == courier_id)
+        if status is not None:
+            query = query.where(Order.status == status)
+        return await self._page(query, limit, before_id)
+
+    async def list_order_media_for_actor(
+        self, order_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> list[OrderMedia]:
+        """Return order media only when the actor is its customer or courier."""
+        return list(
+            await self._session.scalars(
+                select(OrderMedia)
+                .join(Order, Order.id == OrderMedia.order_id)
+                .where(
+                    OrderMedia.order_id == order_id,
+                    (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+                )
+                .order_by(OrderMedia.created_at, OrderMedia.id)
+            )
+        )
+
     async def list_available(
         self, city: str, *, limit: int, before_id: uuid.UUID | None
     ) -> list[Order]:
@@ -252,3 +285,65 @@ class OrderRepository:
     def now() -> datetime:
         """Return the current UTC time (single source for assigned/cancelled stamps)."""
         return datetime.now(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class CourierLocation:
+    """One sanitized, ephemeral courier location sample."""
+
+    order_id: uuid.UUID
+    courier_id: uuid.UUID
+    latitude: float
+    longitude: float
+    accuracy: float | None
+    received_at: datetime
+
+
+class CourierLocationRepository:
+    """Stores only the latest courier location in Redis with a short TTL."""
+
+    def __init__(self, redis: Redis) -> None:
+        """Bind the repository to the shared Redis client."""
+        self._redis = redis
+
+    async def save(self, location: CourierLocation, *, ttl_seconds: int = 60) -> None:
+        """Replace the latest sample and publish the same sanitized payload."""
+        payload = asdict(location)
+        payload["order_id"] = str(location.order_id)
+        payload["courier_id"] = str(location.courier_id)
+        payload["received_at"] = location.received_at.isoformat()
+        encoded = json.dumps(payload, separators=(",", ":"))
+        await self._redis.set(
+            self._key(location.order_id, location.courier_id), encoded, ex=ttl_seconds
+        )
+        await self._redis.publish(self.channel(location.order_id), encoded)
+
+    async def get(self, order_id: uuid.UUID, courier_id: uuid.UUID) -> CourierLocation | None:
+        """Return the unexpired latest sample for an order/courier pair."""
+        raw: bytes | str | None = await self._redis.get(self._key(order_id, courier_id))
+        if raw is None:
+            return None
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        payload = json.loads(raw)
+        return CourierLocation(
+            order_id=uuid.UUID(payload["order_id"]),
+            courier_id=uuid.UUID(payload["courier_id"]),
+            latitude=float(payload["latitude"]),
+            longitude=float(payload["longitude"]),
+            accuracy=float(payload["accuracy"]) if payload["accuracy"] is not None else None,
+            received_at=datetime.fromisoformat(payload["received_at"]),
+        )
+
+    async def delete(self, order_id: uuid.UUID, courier_id: uuid.UUID) -> None:
+        """Remove the ephemeral sample when tracking is no longer allowed."""
+        await self._redis.delete(self._key(order_id, courier_id))
+
+    @staticmethod
+    def channel(order_id: uuid.UUID) -> str:
+        """Return the private fan-out channel for one order."""
+        return f"orders:{order_id}:location"
+
+    @staticmethod
+    def _key(order_id: uuid.UUID, courier_id: uuid.UUID) -> str:
+        return f"orders:{order_id}:couriers:{courier_id}:location"

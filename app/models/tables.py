@@ -121,13 +121,29 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Numeric(2, 1), nullable=False, server_default=text("5.0")
     )
     rating_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    avatar_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    gateway_customer_identifier: Mapped[str | None] = mapped_column(
+        String(12),
+        nullable=True,
+        server_default=text("lpad(nextval('gateway_customer_identifier_seq')::text, 12, '0')"),
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("rating BETWEEN 0.0 AND 5.0", name="chk_rating_range"),
+        CheckConstraint(
+            "gateway_customer_identifier IS NULL OR gateway_customer_identifier ~ '^[0-9]{12}$'",
+            name="chk_users_gateway_customer_identifier",
+        ),
         UniqueConstraint("phone", name="uq_users_phone"),
         Index("uq_users_email", "email", unique=True, postgresql_where=text("email IS NOT NULL")),
         Index("idx_users_role_status", "role", "status"),
+        Index(
+            "uq_users_gateway_customer_identifier",
+            "gateway_customer_identifier",
+            unique=True,
+            postgresql_where=text("gateway_customer_identifier IS NOT NULL"),
+        ),
     )
 
 
@@ -154,6 +170,9 @@ class CourierProfile(TimestampMixin, Base):
     verified_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    gateway_supplier_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payout_iban_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    verification_rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -166,6 +185,12 @@ class CourierProfile(TimestampMixin, Base):
             "identity_fingerprint",
             unique=True,
             postgresql_where=text("identity_fingerprint IS NOT NULL"),
+        ),
+        Index(
+            "uq_courier_profiles_gateway_supplier",
+            "gateway_supplier_id",
+            unique=True,
+            postgresql_where=text("gateway_supplier_id IS NOT NULL"),
         ),
     )
 
@@ -186,6 +211,56 @@ class CourierPortfolio(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
     __table_args__ = (Index("idx_courier_portfolios_courier", "courier_id", "display_order"),)
+
+
+class FeaturedGift(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """An administrator-curated gift shown in public discovery surfaces."""
+
+    __tablename__ = "featured_gifts"
+
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    subtitle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    price_from_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    __table_args__ = (
+        CheckConstraint(
+            "price_from_amount IS NULL OR price_from_amount >= 0",
+            name="chk_featured_gifts_price_non_negative",
+        ),
+        CheckConstraint("display_order >= 0", name="chk_featured_gifts_display_order"),
+        Index("idx_featured_gifts_active_order", "is_active", "display_order"),
+        Index("idx_featured_gifts_category", "category"),
+    )
+
+
+class Occasion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A customer-owned reminder for an upcoming gifting occasion."""
+
+    __tablename__ = "occasions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    occasion_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reminder_days_before: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("7")
+    )
+    featured_gift_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("featured_gifts.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "reminder_days_before BETWEEN 0 AND 365",
+            name="chk_occasions_reminder_days",
+        ),
+        Index("idx_occasions_user_date", "user_id", "occasion_date"),
+    )
 
 
 class DeviceToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -567,6 +642,9 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     streampay_payment_link_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     streampay_payment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    gateway_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    gateway_payment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    gateway_customer_identifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reference_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True
     )
@@ -587,6 +665,13 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("streampay_payment_link_id IS NOT NULL"),
         ),
+        Index(
+            "uq_payment_intents_gateway_reference",
+            "checkout_provider",
+            "gateway_reference",
+            unique=True,
+            postgresql_where=text("gateway_reference IS NOT NULL"),
+        ),
         Index("idx_payment_intents_user_created", "user_id", text("created_at DESC")),
         Index(
             "idx_payment_intents_status_expires",
@@ -598,6 +683,43 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idx_payment_intents_invoice",
             "reference_invoice_id",
             postgresql_where=text("reference_invoice_id IS NOT NULL"),
+        ),
+    )
+
+
+class DhamenNotificationReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A privacy-bounded idempotency receipt for one provider notification."""
+
+    __tablename__ = "dhamen_notification_receipts"
+
+    notification_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    batch_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    notification_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payment_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    transaction_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    raw_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    processing_outcome: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'PENDING'")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("notification_id", name="uq_dhamen_receipts_notification"),
+        CheckConstraint("raw_hash ~ '^[0-9a-f]{64}$'", name="chk_dhamen_receipts_raw_hash"),
+        CheckConstraint(
+            "char_length(processing_outcome) BETWEEN 1 AND 32",
+            name="chk_dhamen_receipts_outcome",
+        ),
+        Index("idx_dhamen_receipts_batch", "batch_id"),
+        Index(
+            "idx_dhamen_receipts_payment_reference",
+            "payment_reference",
+            postgresql_where=text("payment_reference IS NOT NULL"),
+        ),
+        Index(
+            "idx_dhamen_receipts_pending",
+            "created_at",
+            postgresql_where=text("processed_at IS NULL"),
         ),
     )
 
@@ -691,6 +813,38 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             text("created_at DESC"),
             text("id DESC"),
         ),
+    )
+
+
+class MessageAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Private image metadata belonging to one durable chat message."""
+
+    __tablename__ = "message_attachments"
+
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    display_order: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("0")
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "content_type IN ('image/jpeg', 'image/png')",
+            name="chk_message_attachments_content_type",
+        ),
+        CheckConstraint(
+            "byte_size > 0 AND byte_size <= 10485760",
+            name="chk_message_attachments_byte_size",
+        ),
+        CheckConstraint(
+            "display_order BETWEEN 0 AND 4", name="chk_message_attachments_display_order"
+        ),
+        UniqueConstraint("message_id", "storage_key", name="uq_message_attachments_message_key"),
+        Index("idx_message_attachments_message_order", "message_id", "display_order"),
     )
 
 
@@ -814,6 +968,7 @@ class Withdrawal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     courier_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+
     wallet_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=False
     )
@@ -840,6 +995,42 @@ class Withdrawal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+    )
+
+
+class PayoutTransfer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A provider transfer attempt linked one-to-one to a courier withdrawal."""
+
+    __tablename__ = "payout_transfers"
+
+    withdrawal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("withdrawals.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    payment_reference: Mapped[str] = mapped_column(String(100), nullable=False)
+    supplier_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    uti: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("withdrawal_id", name="uq_payout_transfers_withdrawal"),
+        UniqueConstraint(
+            "provider", "payment_reference", name="uq_payout_transfers_provider_reference"
+        ),
+        CheckConstraint("amount > 0", name="chk_payout_transfers_amount_positive"),
+        CheckConstraint(
+            "char_length(provider) BETWEEN 1 AND 20", name="chk_payout_transfers_provider"
+        ),
+        CheckConstraint("char_length(status) BETWEEN 1 AND 32", name="chk_payout_transfers_status"),
+        CheckConstraint(
+            "completed_at IS NULL OR submitted_at IS NULL OR completed_at >= submitted_at",
+            name="chk_payout_transfers_timestamps",
+        ),
+        Index("idx_payout_transfers_status_submitted", "status", "submitted_at"),
     )
 
 

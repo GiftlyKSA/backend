@@ -23,6 +23,7 @@ class UserStatus(StrEnum):
     ACTIVE = "ACTIVE"
     BANNED = "BANNED"
     PENDING_VERIFICATION = "PENDING_VERIFICATION"
+    REJECTED = "REJECTED"
 
 
 class OrderStatus(StrEnum):
@@ -95,6 +96,8 @@ class MediaType(StrEnum):
 
     CUSTOMER_REQUEST = "CUSTOMER_REQUEST"
     DELIVERY_PROOF = "DELIVERY_PROOF"
+    PROFILE_AVATAR = "PROFILE_AVATAR"
+    CHAT_ATTACHMENT = "CHAT_ATTACHMENT"
 
 
 class MessageType(StrEnum):
@@ -104,6 +107,7 @@ class MessageType(StrEnum):
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
     SYSTEM = "SYSTEM"
+    MIXED = "MIXED"
 
 
 class WalletType(StrEnum):
@@ -152,6 +156,7 @@ class WithdrawalStatus(StrEnum):
 
     REQUESTED = "REQUESTED"
     APPROVED = "APPROVED"
+    SUBMITTED = "SUBMITTED"
     PAID = "PAID"
     REJECTED = "REJECTED"
 
