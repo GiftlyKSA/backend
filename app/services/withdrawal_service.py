@@ -20,6 +20,7 @@ from app.models.enums import WithdrawalStatus
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.repositories.withdrawal_repository import WithdrawalRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.money_service import MoneyService
 
 
@@ -33,6 +34,7 @@ class WithdrawalService:
         wallets: WalletRepository,
         money: MoneyService,
         audit: AuditRepository,
+        eligibility: CourierEligibilityService,
         settings: Settings,
     ) -> None:
         """Bind repositories, ledger service, and validated settings."""
@@ -40,6 +42,7 @@ class WithdrawalService:
         self._wallets = wallets
         self._money = money
         self._audit = audit
+        self._eligibility = eligibility
         self._settings = settings
 
     async def request_withdrawal(
@@ -51,6 +54,7 @@ class WithdrawalService:
         idempotency_key: str,
     ) -> Withdrawal:
         """Reserve courier funds and persist an encrypted payout request."""
+        await self._eligibility.require_courier(courier_id)
         existing = await self._withdrawals.get_by_idempotency(
             courier_id=courier_id, idempotency_key=idempotency_key
         )

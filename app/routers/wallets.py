@@ -18,6 +18,8 @@ from app.core.money import money_str, parse_money
 from app.models import Withdrawal
 from app.models.enums import UserRole
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.courier_repository import CourierRepository
+from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.repositories.withdrawal_repository import WithdrawalRepository
 from app.schemas.payments import TopupRequest, TopupResponse
@@ -28,6 +30,7 @@ from app.schemas.wallets import (
     WithdrawalRequest,
     WithdrawalResponse,
 )
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.money_service import MoneyService
 from app.services.payment_service import build_payment_service
 from app.services.withdrawal_service import WithdrawalService
@@ -46,8 +49,31 @@ def _withdrawals(request: Request, db: AsyncSession) -> WithdrawalService:
         wallets=wallets,
         money=MoneyService(wallets),
         audit=AuditRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
         settings=get_settings(request),
     )
+
+
+async def _eligible_customer_or_courier(
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_CustomerOrCourier)],
+) -> Actor:
+    await CourierEligibilityService(
+        users=UserRepository(db), couriers=CourierRepository(db)
+    ).require_eligible_actor(actor.id)
+    return actor
+
+
+async def _eligible_courier(
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_Courier)],
+) -> Actor:
+    await CourierEligibilityService(
+        users=UserRepository(db), couriers=CourierRepository(db)
+    ).require_courier(actor.id)
+    return actor
 
 
 def _withdrawal_response(row: Withdrawal) -> WithdrawalResponse:
@@ -62,7 +88,7 @@ def _withdrawal_response(row: Withdrawal) -> WithdrawalResponse:
 
 @router.get("/me", response_model=WalletResponse)
 async def get_my_wallet(
-    db: DbDep, actor: Annotated[Actor, Depends(_CustomerOrCourier)]
+    db: DbDep, actor: Annotated[Actor, Depends(_eligible_customer_or_courier)]
 ) -> WalletResponse:
     """Return the authenticated user's wallet snapshot."""
     wallet = await WalletRepository(db).get_by_user(actor.id)
@@ -81,7 +107,7 @@ async def start_topup(
     request: Request,
     db: DbDep,
     body: TopupRequest,
-    actor: Annotated[Actor, Depends(_CustomerOrCourier)],
+    actor: Annotated[Actor, Depends(_eligible_customer_or_courier)],
 ) -> TopupResponse:
     """Start a wallet top-up and return the gateway payment URL."""
     service = build_payment_service(
@@ -103,7 +129,7 @@ async def request_withdrawal(
     request: Request,
     db: DbDep,
     body: WithdrawalRequest,
-    actor: Annotated[Actor, Depends(_Courier)],
+    actor: Annotated[Actor, Depends(_eligible_courier)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)],
 ) -> WithdrawalResponse:
     """Reserve funds and create an encrypted courier withdrawal request."""
@@ -119,7 +145,7 @@ async def request_withdrawal(
 @router.get("/me/transactions", response_model=TransactionPage)
 async def list_my_transactions(
     db: DbDep,
-    actor: Annotated[Actor, Depends(_CustomerOrCourier)],
+    actor: Annotated[Actor, Depends(_eligible_customer_or_courier)],
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> TransactionPage:

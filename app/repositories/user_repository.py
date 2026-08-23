@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import exists, select, true
+from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,7 +80,7 @@ class UserRepository:
             ((Conversation.customer_id == actor_id) & (Conversation.courier_id == participant_id))
             | ((Conversation.customer_id == participant_id) & (Conversation.courier_id == actor_id))
         )
-        relationship = true() if actor_id == participant_id else shared_order | shared_conversation
+        relationship = shared_order | shared_conversation
         row = (
             await self._session.execute(
                 select(

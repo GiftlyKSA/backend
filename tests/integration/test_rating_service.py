@@ -86,8 +86,10 @@ async def test_rating_state_is_true_only_for_the_rater(db_session: AsyncSession)
     service = _service(db_session)
 
     assert await service.current_actor_has_rated(order.id, customer.id) is False
+    assert await service.current_actor_rating_states([order.id], customer.id) == {order.id: False}
     await service.rate(order_id=order.id, rater_id=customer.id, score=5, comment=None)
 
     assert await service.current_actor_has_rated(order.id, customer.id) is True
+    assert await service.current_actor_rating_states([order.id], customer.id) == {order.id: True}
     assert await service.current_actor_has_rated(order.id, courier.id) is False
     assert await service.current_actor_has_rated(order.id, stranger.id) is False

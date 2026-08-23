@@ -8,7 +8,8 @@ service-fee change never restates a historical invoice. All money is a decimal S
 
 ## POST /api/orders/{order_id}/invoices
 Author and issue an invoice for an order. **Auth**: Bearer JWT · **Role**: COURIER (the
-order's assigned courier). Moves the order `ASSIGNED -> WAITING_PAYMENT`.
+order's assigned, currently ACTIVE and verified courier). Moves the order
+`ASSIGNED -> WAITING_PAYMENT`. Rejected/pending/banned/unverified couriers receive 403.
 ### Body
 | field | type | required | notes |
 | items | array | yes | 1–20 lines |
@@ -41,6 +42,7 @@ Cancel an unpaid **ISSUED** invoice, release its promo reservation, and reopen t
 (`WAITING_PAYMENT -> ASSIGNED`) so a fresh invoice can be authored. **Role**: COURIER (the
 issuing courier). The cancelled invoice row is never mutated further — a correction is a
 new invoice, never an edit.
+The current courier eligibility check runs before invoice lookup or mutation.
 ### Errors
 | status | code | when |
 | 404 | NOT_FOUND | no such invoice issued by you |

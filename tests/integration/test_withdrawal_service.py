@@ -7,11 +7,14 @@ from decimal import Decimal
 
 import pytest
 from app.core.exceptions import InsufficientFundsError
-from app.models import User, Wallet
+from app.models import CourierProfile, User, Wallet
 from app.models.enums import TransactionType, UserRole, WalletType, WithdrawalStatus
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.courier_repository import CourierRepository
+from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.repositories.withdrawal_repository import WithdrawalRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.money_service import Leg, MoneyService
 from app.services.withdrawal_service import WithdrawalService
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +33,14 @@ async def _actor(db: AsyncSession, role: UserRole) -> User:
 
 async def _service(db: AsyncSession) -> tuple[WithdrawalService, User, User, Wallet]:
     courier = await _actor(db, UserRole.COURIER)
+    db.add(
+        CourierProfile(
+            user_id=courier.id,
+            city_of_residence="Jeddah",
+            national_id_encrypted="test-ciphertext",
+            is_verified=True,
+        )
+    )
     admin = await _actor(db, UserRole.ADMIN)
     wallet = Wallet(user_id=courier.id, type=WalletType.COURIER)
     db.add(wallet)
@@ -59,6 +70,9 @@ async def _service(db: AsyncSession) -> tuple[WithdrawalService, User, User, Wal
             wallets=wallets,
             money=money,
             audit=AuditRepository(db),
+            eligibility=CourierEligibilityService(
+                users=UserRepository(db), couriers=CourierRepository(db)
+            ),
             settings=make_test_settings(),
         ),
         courier,

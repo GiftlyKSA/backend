@@ -32,6 +32,8 @@ NO coordinates (the exact point is revealed only after you accept).
 Detail for an order you participate in. A non-participant gets 404 (existence is not
 confirmed). A courier sees `latitude`/`longitude` only once the order is assigned.
 Every summary and detail includes DB-derived `current_actor_has_rated`.
+Courier participants must still be ACTIVE and verified; `REJECTED`, pending, banned,
+or otherwise unverified couriers receive 403 before detail, coordinate, or mutation work.
 
 ## POST /api/orders/{order_id}/accept
 Claim a NEW order. **Role**: COURIER (verified + active). Serialized by a Redis lock and

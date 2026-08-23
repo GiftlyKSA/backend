@@ -16,10 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import Actor, get_db, get_settings, require_role
 from app.core.money import money_str
 from app.models.enums import UserRole
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.invoices import PromoPreviewResponse, PromoValidateRequest
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_service import InvoiceService
 from app.services.promo_service import PromoService
 
@@ -34,6 +37,9 @@ def _service(request: Request, db: AsyncSession) -> InvoiceService:
         invoices=InvoiceRepository(db),
         orders=OrderRepository(db),
         promos=PromoService(PromoRepository(db)),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
         settings=get_settings(request),
     )
 

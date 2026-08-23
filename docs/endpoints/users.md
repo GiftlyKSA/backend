@@ -39,3 +39,5 @@ avatar URL, and optional courier city/bio.
 ## POST /api/users/me/courier-verification/resubmit
 A `REJECTED` courier may request another review. The audited transition returns the
 owner profile with `PENDING_VERIFICATION` and clears the prior owner-visible reason.
+`REJECTED` couriers may authenticate only to inspect/update their owner profile and
+resubmit; courier operational and financial endpoints return 403 until approval.

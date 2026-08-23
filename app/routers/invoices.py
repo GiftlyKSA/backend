@@ -17,15 +17,18 @@ from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.money import money_str, parse_money, parse_rate
 from app.models import Invoice, InvoiceItem
 from app.models.enums import UserRole
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.invoices import (
     CreateInvoiceRequest,
     InvoiceItemResponse,
     InvoiceResponse,
 )
 from app.schemas.payments import PayInvoiceResponse
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_service import InvoiceLineInput, InvoiceService, NewInvoiceInput
 from app.services.payment_service import build_payment_service
 from app.services.promo_service import PromoService
@@ -43,6 +46,9 @@ def _service(request: Request, db: AsyncSession) -> InvoiceService:
         invoices=InvoiceRepository(db),
         orders=OrderRepository(db),
         promos=PromoService(PromoRepository(db)),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
         settings=get_settings(request),
     )
 

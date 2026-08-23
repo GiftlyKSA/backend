@@ -32,6 +32,7 @@ from app.models import Invoice, InvoiceItem
 from app.models.enums import InvoiceStatus, OrderStatus
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.order_state import assert_transition
 from app.services.promo_service import PromoService, to_pricing_promo
 
@@ -75,12 +76,14 @@ class InvoiceService:
         invoices: InvoiceRepository,
         orders: OrderRepository,
         promos: PromoService,
+        eligibility: CourierEligibilityService,
         settings: Settings,
     ) -> None:
         """Wire the collaborators the invoice flows need."""
         self._invoices = invoices
         self._orders = orders
         self._promos = promos
+        self._eligibility = eligibility
         self._settings = settings
 
     def _pricing_config(self) -> PricingConfig:
@@ -114,6 +117,7 @@ class InvoiceService:
             ConflictError: The order already has an active invoice.
             Promo* errors: The supplied promo failed validation (each a 422).
         """
+        await self._eligibility.require_courier(courier_id)
         # Ownership is in the query: get_for_actor returns the order only if this courier
         # is its assignee (a non-participant courier gets 404, no existence leak).
         order = await self._orders.get_for_actor(order_id, courier_id)
@@ -197,6 +201,7 @@ class InvoiceService:
             NotFoundError: No such invoice issued by this courier (no existence leak).
             InvalidStateTransitionError: The invoice is not ISSUED (already paid/cancelled).
         """
+        await self._eligibility.require_courier(courier_id)
         invoice = await self._invoices.lock_for_courier(invoice_id, courier_id)
         if invoice is None:
             raise NotFoundError("Invoice not found.")
@@ -221,6 +226,7 @@ class InvoiceService:
         self, *, invoice_id: uuid.UUID, actor_id: uuid.UUID
     ) -> tuple[Invoice, list[InvoiceItem]]:
         """Return an invoice (and its items) the actor participates in, else 404."""
+        await self._eligibility.require_eligible_actor(actor_id)
         invoice = await self._invoices.get_for_actor(invoice_id, actor_id)
         if invoice is None:
             raise NotFoundError("Invoice not found.")
@@ -231,6 +237,7 @@ class InvoiceService:
         self, *, order_id: uuid.UUID, actor_id: uuid.UUID
     ) -> tuple[Invoice, list[InvoiceItem]]:
         """Return an order's active invoice (and items) for a participant, else 404."""
+        await self._eligibility.require_eligible_actor(actor_id)
         invoice = await self._invoices.get_active_for_order_for_actor(order_id, actor_id)
         if invoice is None:
             raise NotFoundError("No active invoice for this order.")

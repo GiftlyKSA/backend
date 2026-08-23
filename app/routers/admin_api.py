@@ -19,13 +19,16 @@ from app.core.money import money_str, parse_money
 from app.models import Withdrawal
 from app.models.enums import DisputeStatus, UserRole
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.repositories.withdrawal_repository import WithdrawalRepository
 from app.schemas.fulfillment import DisputeResponse, ResolveDisputeRequest
 from app.schemas.wallets import RejectWithdrawalRequest, WithdrawalResponse
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.fulfillment_service import FulfillmentService
 from app.services.media_service import MediaService
 from app.services.money_service import MoneyService
@@ -56,6 +59,9 @@ def _withdrawals(request: Request, db: AsyncSession) -> WithdrawalService:
         wallets=wallets,
         money=MoneyService(wallets),
         audit=AuditRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
         settings=get_settings(request),
     )
 

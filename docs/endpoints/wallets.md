@@ -38,6 +38,8 @@ Start a wallet top-up (gateway-funded). See `docs/endpoints/payments.md`.
 
 ## POST /api/wallets/withdrawals
 Create a courier payout request. **Auth**: Bearer JWT. **Role**: COURIER.
+The courier must currently be ACTIVE and verified; rejected/pending/banned/unverified
+accounts receive 403 before wallet lookup, idempotency replay, or fund reservation.
 
 Send a stable `Idempotency-Key` header (1–128 characters) on every attempt. A retry with
 the same key returns the original request and does not reserve the funds twice.

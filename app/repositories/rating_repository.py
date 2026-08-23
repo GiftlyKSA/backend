@@ -63,6 +63,23 @@ class RatingRepository:
         )
         return found is not None
 
+    async def rated_order_ids_for_actor(
+        self, order_ids: list[uuid.UUID], actor_id: uuid.UUID
+    ) -> set[uuid.UUID]:
+        """Return rated order ids in one participant-scoped query."""
+        if not order_ids:
+            return set()
+        rows = await self._session.scalars(
+            select(Rating.order_id)
+            .join(Order, Order.id == Rating.order_id)
+            .where(
+                Rating.order_id.in_(order_ids),
+                Rating.rater_id == actor_id,
+                (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+            )
+        )
+        return set(rows)
+
     async def summary_for_user(self, user_id: uuid.UUID) -> tuple[Decimal, int]:
         """Return (average score to 2dp, count) of ratings a user has received."""
         row = (

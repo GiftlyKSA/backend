@@ -318,6 +318,8 @@ drop the refresh token client-side.
 `GET /api/users/{user_id}/participant` returns only a compact profile after the server
 proves a shared order/conversation. `POST /api/users/me/courier-verification/resubmit`
 moves the owning rejected courier back to `PENDING_VERIFICATION` through an audit row.
+Rejected couriers remain able to authenticate for that owner workflow, but all courier
+order, invoice, wallet/withdrawal, and exact-location operations return `403`.
 
 ---
 

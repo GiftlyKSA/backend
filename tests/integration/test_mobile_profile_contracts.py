@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import uuid
 from datetime import date, timedelta
 
 import pytest
@@ -14,6 +15,7 @@ from app.models import CourierProfile, Order, User
 from app.models.enums import OrderStatus, UserStatus
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from tests.conftest import make_test_settings
 
@@ -107,7 +109,7 @@ async def _stack() -> tuple[Settings, object, object]:
     try:
         async with factory() as session:
             await session.execute(select(User.id).limit(1))
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, OperationalError) as exc:
         await engine.dispose()
         pytest.skip(f"database unavailable: {exc}")
     return settings, engine, factory
@@ -218,6 +220,26 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
         await app.state.engine.dispose()
 
 
+async def test_self_participant_lookup_still_requires_shared_relationship() -> None:
+    """The participant path is not an alternate generic lookup for the actor's own row."""
+    settings, engine, _factory = await _stack()
+    app = create_app(settings)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+            _phone_value, customer = await _register(
+                client, app, role="CUSTOMER", full_name="Self Lookup"
+            )
+            me = await client.get("/api/users/me", headers=_headers(customer))
+            response = await client.get(
+                f"/api/users/{me.json()['id']}/participant", headers=_headers(customer)
+            )
+            assert response.status_code == 404
+    finally:
+        await app.state.redis.aclose()
+        await engine.dispose()
+        await app.state.engine.dispose()
+
+
 async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_actions() -> None:
     """A rejected courier can sign in and inspect the reason, but cannot use the radar."""
     settings, engine, factory = await _stack()
@@ -225,11 +247,17 @@ async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_a
     courier_phone = ""
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+            _customer_phone, customer = await _register(
+                client, app, role="CUSTOMER", full_name="Courier Order Customer"
+            )
             courier_phone, _pending = await _register(
                 client, app, role="COURIER", full_name="Rejected Courier", city="Jeddah"
             )
             user = await _activate_courier(factory, courier_phone)
             active = await _login(client, app, courier_phone)
+            order_id = await _create_order(client, _headers(customer))
+            accepted = await client.post(f"/api/orders/{order_id}/accept", headers=_headers(active))
+            assert accepted.status_code == 200, accepted.text
             patched = await client.patch(
                 "/api/users/me",
                 headers=_headers(active),
@@ -262,6 +290,36 @@ async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_a
             )
             radar = await client.get("/api/orders/available", headers=_headers(rejected))
             assert radar.status_code == 403
+            detail = await client.get(f"/api/orders/{order_id}", headers=_headers(rejected))
+            assert detail.status_code == 403
+            cancel = await client.post(
+                f"/api/orders/{order_id}/cancel",
+                headers=_headers(rejected),
+                json={"reason": "not permitted"},
+            )
+            assert cancel.status_code == 403
+            invoice = await client.post(
+                f"/api/orders/{order_id}/invoices",
+                headers=_headers(rejected),
+                json={
+                    "items": [
+                        {
+                            "title": "Gift",
+                            "unit_price_amount": "100.00",
+                            "quantity": 1,
+                            "tax_rate": "0.15",
+                        }
+                    ],
+                    "courier_fee_amount": "10.00",
+                },
+            )
+            assert invoice.status_code == 403
+            withdrawal = await client.post(
+                "/api/wallets/withdrawals",
+                headers={**_headers(rejected), "Idempotency-Key": str(uuid.uuid4())},
+                json={"amount": "100.00", "iban": "SA0380000000608010167519"},
+            )
+            assert withdrawal.status_code == 403
             resubmitted = await client.post(
                 "/api/users/me/courier-verification/resubmit", headers=_headers(rejected)
             )

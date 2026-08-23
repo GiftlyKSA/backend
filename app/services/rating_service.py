@@ -66,3 +66,10 @@ class RatingService:
     async def current_actor_has_rated(self, order_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
         """Return DB-authoritative rating state for an order participant."""
         return await self._ratings.actor_has_rated(order_id, actor_id)
+
+    async def current_actor_rating_states(
+        self, order_ids: list[uuid.UUID], actor_id: uuid.UUID
+    ) -> dict[uuid.UUID, bool]:
+        """Map per-order rating state from one repository query."""
+        rated_ids = await self._ratings.rated_order_ids_for_actor(order_ids, actor_id)
+        return {order_id: order_id in rated_ids for order_id in order_ids}

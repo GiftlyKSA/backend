@@ -182,6 +182,13 @@ class AdminService:
         profile = await self._couriers.get(courier_user_id)
         if profile is None:
             raise NotFoundError("Courier not found.")
+        user = await self._users.get(courier_user_id)
+        if user is None or user.role is not UserRole.COURIER:
+            raise NotFoundError("Courier not found.")
+        if user.status is UserStatus.BANNED:
+            raise ConflictError("A banned courier cannot receive a verification decision.")
+        if user.status is not UserStatus.PENDING_VERIFICATION:
+            raise ConflictError("Only a pending courier may receive a verification decision.")
         await self._couriers.set_verified(
             profile,
             is_verified=approve,
@@ -189,19 +196,14 @@ class AdminService:
             when=self._now(),
             rejection_reason=note,
         )
-        user = await self._users.get(courier_user_id)
-        if user is not None:
-            if approve and user.status is UserStatus.PENDING_VERIFICATION:
-                await self._users.set_status(user, UserStatus.ACTIVE)
-            elif not approve:
-                await self._users.set_status(user, UserStatus.REJECTED)
+        await self._users.set_status(user, UserStatus.ACTIVE if approve else UserStatus.REJECTED)
         await self._audit.record(
             actor_user_id=admin_id,
             action="COURIER_VERIFY" if approve else "COURIER_REJECT",
             entity_type="courier_profiles",
             entity_id=courier_user_id,
             ip_address=ip,
-            metadata={"note": note} if note else None,
+            metadata=None,
         )
         return profile
 

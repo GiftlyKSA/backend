@@ -15,11 +15,14 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationDomainError,
 )
-from app.models import Order, Promo, User
+from app.models import CourierProfile, Order, Promo, User
 from app.models.enums import InvoiceStatus, OrderStatus, PromoDiscountType, UserRole
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
+from app.repositories.user_repository import UserRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_service import (
     InvoiceLineInput,
     InvoiceService,
@@ -44,6 +47,9 @@ def _service(db: AsyncSession) -> InvoiceService:
         invoices=InvoiceRepository(db),
         orders=OrderRepository(db),
         promos=PromoService(PromoRepository(db)),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
         settings=_settings(),
     )
 
@@ -58,6 +64,15 @@ async def _user(db: AsyncSession, role: UserRole) -> User:
 async def _assigned_order(db: AsyncSession) -> Order:
     customer = await _user(db, UserRole.CUSTOMER)
     courier = await _user(db, UserRole.COURIER)
+    db.add(
+        CourierProfile(
+            user_id=courier.id,
+            city_of_residence="Jeddah",
+            national_id_encrypted="test-ciphertext",
+            is_verified=True,
+        )
+    )
+    await db.flush()
     order = Order(
         customer_id=customer.id,
         courier_id=courier.id,

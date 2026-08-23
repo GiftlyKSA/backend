@@ -25,6 +25,7 @@ from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.media_service import MediaService
 from app.services.order_service import NewOrderInput, OrderService
 from app.services.rating_service import RatingService
@@ -60,8 +61,10 @@ def _service(db: AsyncSession, redis: Redis) -> OrderService:
     return OrderService(
         session=db,
         orders=OrderRepository(db),
-        users=UserRepository(db),
         couriers=CourierRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
         media=MediaService(FakeStorageClient(Environment.TEST), settings),
         messages=MessageWriter(db),
         ratings=RatingService(orders=OrderRepository(db), ratings=RatingRepository(db)),

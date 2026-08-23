@@ -26,11 +26,11 @@ from app.core.exceptions import (
 )
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.models import Order
-from app.models.enums import MediaType, MessageType, OrderStatus, UserRole, UserStatus
+from app.models.enums import MediaType, MessageType, OrderStatus, UserRole
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
-from app.repositories.user_repository import UserRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.media_service import MediaService
 from app.services.order_state import assert_transition
 from app.services.rating_service import RatingService
@@ -56,6 +56,15 @@ class NewOrderInput:
     request_media_keys: list[str]
 
 
+@dataclass(frozen=True)
+class OrderView:
+    """An order plus actor-scoped response enrichment assembled by services."""
+
+    order: Order
+    current_actor_has_rated: bool
+    coordinates: tuple[float, float] | None = None
+
+
 class OrderService:
     """Creates, accepts, cancels, and lists orders."""
 
@@ -64,8 +73,8 @@ class OrderService:
         *,
         session: AsyncSession,
         orders: OrderRepository,
-        users: UserRepository,
         couriers: CourierRepository,
+        eligibility: CourierEligibilityService,
         media: MediaService,
         messages: MessageWriter,
         ratings: RatingService,
@@ -75,8 +84,8 @@ class OrderService:
         """Wire the collaborators the order flows need."""
         self._session = session
         self._orders = orders
-        self._users = users
         self._couriers = couriers
+        self._eligibility = eligibility
         self._media = media
         self._messages = messages
         self._ratings = ratings
@@ -177,6 +186,7 @@ class OrderService:
             NotFoundError: No such order for this actor.
             InvalidStateTransitionError: The order is past the cancellable window.
         """
+        await self._eligibility.require_eligible_actor(actor_id)
         order = await self._orders.get_for_actor(order_id, actor_id)
         if order is None:
             raise NotFoundError("Order not found.")
@@ -188,12 +198,13 @@ class OrderService:
 
     async def get_order_for_actor(self, *, order_id: uuid.UUID, actor_id: uuid.UUID) -> Order:
         """Return an order the actor participates in, else 404 (no existence leak)."""
+        await self._eligibility.require_eligible_actor(actor_id)
         order = await self._orders.get_for_actor(order_id, actor_id)
         if order is None:
             raise NotFoundError("Order not found.")
         return order
 
-    async def list_for_actor(
+    async def list_views_for_actor(
         self,
         *,
         actor_id: uuid.UUID,
@@ -201,53 +212,86 @@ class OrderService:
         status: OrderStatus | None,
         limit: int,
         before_id: uuid.UUID | None,
-    ) -> list[Order]:
-        """List only customer-owned or active-courier-assigned orders."""
+    ) -> list[OrderView]:
+        """List owned orders and batch-assemble actor-specific response state."""
         if role is UserRole.CUSTOMER:
-            return await self._orders.list_for_customer(
+            orders = await self._orders.list_for_customer(
                 actor_id, status=status, limit=limit, before_id=before_id
             )
-        if role is UserRole.COURIER:
+        elif role is UserRole.COURIER:
             await self.require_active_verified_courier(actor_id)
-            return await self._orders.list_for_courier(
+            orders = await self._orders.list_for_courier(
                 actor_id, status=status, limit=limit, before_id=before_id
             )
-        raise ForbiddenError("Your role may not list marketplace orders.")
+        else:
+            raise ForbiddenError("Your role may not list marketplace orders.")
+        return await self._enrich_orders(orders, actor_id=actor_id)
 
-    async def list_available_for_courier(
+    async def list_available_views_for_courier(
         self, *, courier_id: uuid.UUID, limit: int, before_id: uuid.UUID | None
-    ) -> list[Order]:
-        """Return radar rows only to an active, verified courier."""
+    ) -> list[OrderView]:
+        """Return enriched radar rows only to an active, verified courier."""
         await self.require_active_verified_courier(courier_id)
         profile = await self._couriers.get(courier_id)
         if profile is None:  # pragma: no cover - verified guard already proves this
             raise ForbiddenError("Complete your courier profile first.")
-        return await self._orders.list_available(
+        orders = await self._orders.list_available(
             profile.city_of_residence, limit=limit, before_id=before_id
         )
+        return await self._enrich_orders(orders, actor_id=courier_id)
 
-    async def coordinates_for_actor(
-        self, *, order_id: uuid.UUID, actor_id: uuid.UUID
-    ) -> tuple[float, float] | None:
-        """Return coordinates through an ownership-scoped repository query."""
-        return await self._orders.coords_for_actor(order_id, actor_id)
+    async def get_order_view_for_actor(
+        self, *, order_id: uuid.UUID, actor_id: uuid.UUID, role: UserRole
+    ) -> OrderView:
+        """Return a participant order with actor-scoped rating and coordinates."""
+        order = await self.get_order_for_actor(order_id=order_id, actor_id=actor_id)
+        return (
+            await self._enrich_orders(
+                [order], actor_id=actor_id, role=role, include_coordinates=True
+            )
+        )[0]
 
-    async def current_actor_has_rated(self, *, order_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
-        """Return authoritative per-actor rating state from the ratings table."""
-        return await self._ratings.current_actor_has_rated(order_id, actor_id)
+    async def view_existing_order_for_actor(
+        self, *, order: Order, actor_id: uuid.UUID, role: UserRole
+    ) -> OrderView:
+        """Enrich a just-mutated participant order behind the same eligibility boundary."""
+        await self._eligibility.require_eligible_actor(actor_id)
+        return (
+            await self._enrich_orders(
+                [order], actor_id=actor_id, role=role, include_coordinates=True
+            )
+        )[0]
+
+    async def _enrich_orders(
+        self,
+        orders: list[Order],
+        *,
+        actor_id: uuid.UUID,
+        role: UserRole | None = None,
+        include_coordinates: bool = False,
+    ) -> list[OrderView]:
+        states = await self._ratings.current_actor_rating_states(
+            [order.id for order in orders], actor_id
+        )
+        views: list[OrderView] = []
+        for order in orders:
+            coordinates = None
+            if include_coordinates and (
+                role is UserRole.CUSTOMER or order.status is not OrderStatus.NEW
+            ):
+                coordinates = await self._orders.coords_for_actor(order.id, actor_id)
+            views.append(
+                OrderView(
+                    order=order,
+                    current_actor_has_rated=states[order.id],
+                    coordinates=coordinates,
+                )
+            )
+        return views
 
     async def require_active_verified_courier(self, courier_id: uuid.UUID) -> None:
         """Reject courier-only actions unless the account remains active and verified."""
-        user = await self._users.get(courier_id)
-        if (
-            user is None
-            or user.role is not UserRole.COURIER
-            or user.status is not UserStatus.ACTIVE
-        ):
-            raise ForbiddenError("Only an active courier may accept orders.")
-        profile = await self._couriers.get(courier_id)
-        if profile is None or not profile.is_verified:
-            raise ForbiddenError("Your courier account is not verified yet.")
+        await self._eligibility.require_courier(courier_id)
 
     async def _write_system_message(
         self, conversation_id: uuid.UUID, sender_id: uuid.UUID, text: str
