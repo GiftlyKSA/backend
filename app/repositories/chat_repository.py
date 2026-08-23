@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select, tuple_, update
+from sqlalchemy import insert, literal, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Conversation, Message, MessageAttachment
@@ -90,20 +90,43 @@ class ChatRepository:
         self,
         *,
         message_id: uuid.UUID,
+        actor_id: uuid.UUID,
         storage_key: str,
         content_type: str,
         byte_size: int,
         display_order: int,
-    ) -> MessageAttachment:
-        """Attach one bounded private image to a durable message."""
-        attachment = MessageAttachment(
-            message_id=message_id,
-            storage_key=storage_key,
-            content_type=content_type,
-            byte_size=byte_size,
-            display_order=display_order,
+    ) -> MessageAttachment | None:
+        """Attach an image only when the actor participates in the message conversation."""
+        authorized_values = (
+            select(
+                literal(message_id),
+                literal(storage_key),
+                literal(content_type),
+                literal(byte_size),
+                literal(display_order),
+            )
+            .select_from(Message)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(
+                Message.id == message_id,
+                (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
+            )
         )
-        self._session.add(attachment)
+        statement = (
+            insert(MessageAttachment)
+            .from_select(
+                [
+                    "message_id",
+                    "storage_key",
+                    "content_type",
+                    "byte_size",
+                    "display_order",
+                ],
+                authorized_values,
+            )
+            .returning(MessageAttachment)
+        )
+        attachment = await self._session.scalar(statement)
         await self._session.flush()
         return attachment
 

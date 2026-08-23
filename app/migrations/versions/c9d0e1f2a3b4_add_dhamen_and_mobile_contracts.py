@@ -41,27 +41,25 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             """
+            UPDATE users
+            SET gateway_customer_identifier =
+                lpad(nextval('gateway_customer_identifier_seq')::text, 12, '0')
+            WHERE status = 'ACTIVE' AND gateway_customer_identifier IS NULL
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
             DO $$
-            DECLARE
-                affected_rows integer;
             BEGIN
-                LOOP
-                    WITH batch AS (
-                        SELECT id
-                        FROM users
-                        WHERE status = 'ACTIVE' AND gateway_customer_identifier IS NULL
-                        ORDER BY id
-                        LIMIT 1000
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    UPDATE users AS target
-                    SET gateway_customer_identifier =
-                        lpad(nextval('gateway_customer_identifier_seq')::text, 12, '0')
-                    FROM batch
-                    WHERE target.id = batch.id;
-                    GET DIAGNOSTICS affected_rows = ROW_COUNT;
-                    EXIT WHEN affected_rows = 0;
-                END LOOP;
+                IF EXISTS (
+                    SELECT 1 FROM users
+                    WHERE status = 'ACTIVE' AND gateway_customer_identifier IS NULL
+                ) THEN
+                    RAISE EXCEPTION
+                        'Active user gateway customer identifier backfill incomplete';
+                END IF;
             END
             $$
             """
@@ -384,6 +382,21 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove dormant records while retaining legacy StreamPay and ledger data."""
+    op.execute(
+        sa.text(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM payout_transfers)
+                   OR EXISTS (SELECT 1 FROM withdrawals WHERE status = 'SUBMITTED') THEN
+                    RAISE EXCEPTION
+                        'Refusing downgrade: payout transfer state exists';
+                END IF;
+            END
+            $$
+            """
+        )
+    )
     op.execute(
         sa.text("DROP TRIGGER IF EXISTS trg_message_attachments_updated_at ON message_attachments")
     )
