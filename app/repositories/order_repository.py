@@ -238,13 +238,18 @@ class OrderRepository:
         await self._session.flush()
         return conversation
 
-    async def coords(self, order_id: uuid.UUID) -> tuple[float, float] | None:
-        """Return an order's (longitude, latitude), extracted from the geometry."""
+    async def coords_for_actor(
+        self, order_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> tuple[float, float] | None:
+        """Return coordinates only when SQL proves the actor participates."""
         row = (
             await self._session.execute(
                 select(
                     func.ST_X(Order.delivery_location), func.ST_Y(Order.delivery_location)
-                ).where(Order.id == order_id)
+                ).where(
+                    Order.id == order_id,
+                    (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+                )
             )
         ).first()
         return (float(row[0]), float(row[1])) if row is not None else None

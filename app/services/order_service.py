@@ -33,6 +33,7 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.user_repository import UserRepository
 from app.services.media_service import MediaService
 from app.services.order_state import assert_transition
+from app.services.rating_service import RatingService
 
 # Saudi Arabia bounding box (approx) — reject coordinates outside it early.
 _SA_LAT = (16.0, 33.0)
@@ -67,6 +68,7 @@ class OrderService:
         couriers: CourierRepository,
         media: MediaService,
         messages: MessageWriter,
+        ratings: RatingService,
         redis: Redis,
         settings: Settings,
     ) -> None:
@@ -77,6 +79,7 @@ class OrderService:
         self._couriers = couriers
         self._media = media
         self._messages = messages
+        self._ratings = ratings
         self._redis = redis
         self._settings = settings
 
@@ -131,7 +134,7 @@ class OrderService:
             OrderAlreadyAssignedError: Another courier won the race, or the order is no
                 longer NEW.
         """
-        await self._require_active_verified_courier(courier_id)
+        await self.require_active_verified_courier(courier_id)
         if await self._orders.count_courier_active(courier_id) >= _MAX_COURIER_ACTIVE:
             raise ForbiddenError("You have reached the maximum number of active assignments.")
 
@@ -190,7 +193,51 @@ class OrderService:
             raise NotFoundError("Order not found.")
         return order
 
-    async def _require_active_verified_courier(self, courier_id: uuid.UUID) -> None:
+    async def list_for_actor(
+        self,
+        *,
+        actor_id: uuid.UUID,
+        role: UserRole,
+        status: OrderStatus | None,
+        limit: int,
+        before_id: uuid.UUID | None,
+    ) -> list[Order]:
+        """List only customer-owned or active-courier-assigned orders."""
+        if role is UserRole.CUSTOMER:
+            return await self._orders.list_for_customer(
+                actor_id, status=status, limit=limit, before_id=before_id
+            )
+        if role is UserRole.COURIER:
+            await self.require_active_verified_courier(actor_id)
+            return await self._orders.list_for_courier(
+                actor_id, status=status, limit=limit, before_id=before_id
+            )
+        raise ForbiddenError("Your role may not list marketplace orders.")
+
+    async def list_available_for_courier(
+        self, *, courier_id: uuid.UUID, limit: int, before_id: uuid.UUID | None
+    ) -> list[Order]:
+        """Return radar rows only to an active, verified courier."""
+        await self.require_active_verified_courier(courier_id)
+        profile = await self._couriers.get(courier_id)
+        if profile is None:  # pragma: no cover - verified guard already proves this
+            raise ForbiddenError("Complete your courier profile first.")
+        return await self._orders.list_available(
+            profile.city_of_residence, limit=limit, before_id=before_id
+        )
+
+    async def coordinates_for_actor(
+        self, *, order_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> tuple[float, float] | None:
+        """Return coordinates through an ownership-scoped repository query."""
+        return await self._orders.coords_for_actor(order_id, actor_id)
+
+    async def current_actor_has_rated(self, *, order_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
+        """Return authoritative per-actor rating state from the ratings table."""
+        return await self._ratings.current_actor_has_rated(order_id, actor_id)
+
+    async def require_active_verified_courier(self, courier_id: uuid.UUID) -> None:
+        """Reject courier-only actions unless the account remains active and verified."""
         user = await self._users.get(courier_id)
         if (
             user is None

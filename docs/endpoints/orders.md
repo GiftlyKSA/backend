@@ -20,7 +20,9 @@ Create a gift-request order. **Auth**: Bearer JWT · **Role**: CUSTOMER.
 | 422 | VALIDATION_ERROR | coordinates out of range / too many photos |
 
 ## GET /api/orders ?status=&cursor=&limit=
-List your own orders (CUSTOMER), newest first, keyset-paged.
+List customer-owned orders for a CUSTOMER or assigned/history orders for the verified
+COURIER actor, newest first and keyset-paged. This never returns open marketplace rows;
+those remain confined to the separate radar endpoint.
 
 ## GET /api/orders/available ?cursor=&limit=
 The courier radar: NEW orders in the courier's city. **Role**: COURIER. Summaries carry
@@ -29,6 +31,7 @@ NO coordinates (the exact point is revealed only after you accept).
 ## GET /api/orders/{order_id}
 Detail for an order you participate in. A non-participant gets 404 (existence is not
 confirmed). A courier sees `latitude`/`longitude` only once the order is assigned.
+Every summary and detail includes DB-derived `current_actor_has_rated`.
 
 ## POST /api/orders/{order_id}/accept
 Claim a NEW order. **Role**: COURIER (verified + active). Serialized by a Redis lock and

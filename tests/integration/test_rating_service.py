@@ -75,3 +75,19 @@ async def test_rate_requires_participation(db_session: AsyncSession) -> None:
 async def test_summary_empty_for_unrated_user(db_session: AsyncSession) -> None:
     average, count = await _service(db_session).summary_for_user(uuid.uuid4())
     assert count == 0 and average == Decimal("0.00")
+
+
+async def test_rating_state_is_true_only_for_the_rater(db_session: AsyncSession) -> None:
+    """A rating row must not make the counterparty or a stranger look rated."""
+    customer, courier, order = await _order(db_session, OrderStatus.COMPLETED)
+    stranger = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
+    db_session.add(stranger)
+    await db_session.flush()
+    service = _service(db_session)
+
+    assert await service.current_actor_has_rated(order.id, customer.id) is False
+    await service.rate(order_id=order.id, rater_id=customer.id, score=5, comment=None)
+
+    assert await service.current_actor_has_rated(order.id, customer.id) is True
+    assert await service.current_actor_has_rated(order.id, courier.id) is False
+    assert await service.current_actor_has_rated(order.id, stranger.id) is False

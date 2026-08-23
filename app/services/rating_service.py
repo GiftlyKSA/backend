@@ -62,3 +62,7 @@ class RatingService:
     async def summary_for_user(self, user_id: uuid.UUID) -> tuple[Decimal, int]:
         """Return a user's (average score, number of ratings received)."""
         return await self._ratings.summary_for_user(user_id)
+
+    async def current_actor_has_rated(self, order_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
+        """Return DB-authoritative rating state for an order participant."""
+        return await self._ratings.actor_has_rated(order_id, actor_id)

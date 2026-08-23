@@ -23,9 +23,11 @@ from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
+from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
 from app.services.media_service import MediaService
 from app.services.order_service import NewOrderInput, OrderService
+from app.services.rating_service import RatingService
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,6 +64,7 @@ def _service(db: AsyncSession, redis: Redis) -> OrderService:
         couriers=CourierRepository(db),
         media=MediaService(FakeStorageClient(Environment.TEST), settings),
         messages=MessageWriter(db),
+        ratings=RatingService(orders=OrderRepository(db), ratings=RatingRepository(db)),
         redis=redis,
         settings=settings,
     )

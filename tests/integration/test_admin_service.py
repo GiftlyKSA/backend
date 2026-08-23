@@ -154,6 +154,42 @@ async def test_verify_courier_and_reveal_identity(
     assert profile.bio == "Reliable gift courier."
 
 
+async def test_reject_courier_records_private_reason_and_rejected_status(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    """An admin rejection must persist its detail only on the courier profile."""
+    settings = _settings()
+    service = _admin_service(db_session, settings, redis_client)
+    admin = await _admin(db_session)
+    courier = User(
+        phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}",
+        role=UserRole.COURIER,
+        status=UserStatus.PENDING_VERIFICATION,
+    )
+    db_session.add(courier)
+    await db_session.flush()
+    db_session.add(
+        CourierProfile(
+            user_id=courier.id,
+            city_of_residence="Jeddah",
+            national_id_encrypted="test-ciphertext",
+        )
+    )
+    await db_session.flush()
+
+    profile = await service.verify_courier(
+        admin_id=admin.id,
+        courier_user_id=courier.id,
+        approve=False,
+        note="Identity image is unreadable.",
+        ip="1.2.3.4",
+    )
+
+    refreshed = await service.get_user(courier.id)
+    assert refreshed is not None and refreshed.status is UserStatus.REJECTED
+    assert profile.verification_rejection_reason == "Identity image is unreadable."
+
+
 async def test_reveal_iban(db_session: AsyncSession, redis_client: Redis) -> None:
     settings = _settings()
     service = _admin_service(db_session, settings, redis_client)

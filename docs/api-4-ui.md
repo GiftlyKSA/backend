@@ -283,7 +283,8 @@ drop the refresh token client-side.
 
 ```json
 { "id": "3f2b...-uuid", "phone": "+966501234567", "role": "CUSTOMER", "status": "ACTIVE",
-  "full_name": "Sara", "email": "sara@example.com", "rating": "4.80", "rating_count": 12 }
+  "full_name": "Sara", "email": "sara@example.com", "rating": "4.80", "rating_count": 12,
+  "courier_profile": null }
 ```
 
 | Field | Type | Notes |
@@ -291,11 +292,12 @@ drop the refresh token client-side.
 | `id` | string(uuid) | — |
 | `phone` | string | E.164 |
 | `role` | string | `CUSTOMER` / `COURIER` |
-| `status` | string | `ACTIVE` / `PENDING_VERIFICATION` / `BANNED` |
+| `status` | string | `ACTIVE` / `PENDING_VERIFICATION` / `REJECTED` / `BANNED` |
 | `full_name` | string \| null | — |
 | `email` | string \| null | — |
 | `rating` | string | Average rating, decimal string (e.g. `"4.80"`) |
 | `rating_count` | int | Number of ratings received |
+| `courier_profile` | object \| null | Owner-only city, bio, verification status, rejection detail, avatar URL |
 
 ### PATCH `/api/users/me`
 **Auth:** Bearer. **Returns:** 200 (same shape as GET). Send only the fields you change.
@@ -305,11 +307,17 @@ drop the refresh token client-side.
 | `full_name` | string \| null | no | ≤120 |
 | `email` | string \| null | no | Valid email, ≤255 |
 | `dob` | date \| null | no | `YYYY-MM-DD` |
+| `courier_city` | string | no | Courier only, 1–100 |
+| `courier_bio` | string \| null | no | Courier only, ≤1000 |
 
 ```json
 // request
 { "full_name": "Sara A." }
 ```
+
+`GET /api/users/{user_id}/participant` returns only a compact profile after the server
+proves a shared order/conversation. `POST /api/users/me/courier-verification/resubmit`
+moves the owning rejected courier back to `PENDING_VERIFICATION` through an audit row.
 
 ---
 
@@ -440,18 +448,21 @@ Order `status` values you'll render:
   "created_at": "2026-09-12T14:30:00Z" }
 ```
 
-### GET `/api/orders` — my orders (customer)
-**Auth:** Bearer **CUSTOMER**. Paged. Optional `?status=<STATUS>`. Returns
+### GET `/api/orders` — my orders
+**Auth:** Bearer **CUSTOMER** or verified **COURIER**. Customers receive owned orders;
+couriers receive only assigned/history orders. Paged. Optional `?status=<STATUS>`. Returns
 `OrderListResponse`:
 
 ```json
 { "items": [ { "id": "…", "status": "NEW", "delivery_city": "Jeddah",
-    "delivery_date": "2026-09-20", "description": "…", "created_at": "…" } ],
+    "delivery_date": "2026-09-20", "description": "…", "created_at": "…",
+    "current_actor_has_rated": false } ],
   "next_cursor": null }
 ```
 
 `OrderSummary` item fields: `id`, `status`, `delivery_city`, `delivery_date`,
-`description` (nullable), `created_at`. (No exact coordinates in list views.)
+`description` (nullable), `created_at`, `current_actor_has_rated`. (No exact coordinates
+in list views.) Order detail carries the same actor-specific rating flag.
 
 ### GET `/api/orders/available` — the courier radar
 **Auth:** Bearer **COURIER**. Paged. Unassigned (`NEW`) orders in the courier's city.

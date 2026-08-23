@@ -39,11 +39,13 @@ class CourierRepository:
         is_verified: bool,
         admin_id: uuid.UUID,
         when: datetime,
+        rejection_reason: str | None = None,
     ) -> None:
         """Record a verification decision on a courier profile."""
         profile.is_verified = is_verified
         profile.verified_at = when if is_verified else None
         profile.verified_by_admin_id = admin_id
+        profile.verification_rejection_reason = None if is_verified else rejection_reason
         await self._session.flush()
 
     async def update_admin_profile(

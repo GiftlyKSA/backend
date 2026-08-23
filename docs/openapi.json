@@ -58,6 +58,58 @@
         "title": "ConfirmResponse",
         "type": "object"
       },
+      "CourierProfileResponse": {
+        "description": "Safe courier details visible only through an authorized profile response.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "bio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bio"
+          },
+          "city_of_residence": {
+            "title": "City Of Residence",
+            "type": "string"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "verification_status": {
+            "title": "Verification Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "city_of_residence",
+          "verification_status"
+        ],
+        "title": "CourierProfileResponse",
+        "type": "object"
+      },
       "CreateInvoiceRequest": {
         "additionalProperties": false,
         "description": "Author and issue an invoice for an order.",
@@ -704,6 +756,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "current_actor_has_rated": {
+            "description": "Whether the authenticated actor has rated this order.",
+            "title": "Current Actor Has Rated",
+            "type": "boolean"
+          },
           "customer_id": {
             "title": "Customer Id",
             "type": "string"
@@ -773,7 +830,8 @@
           "description",
           "total_amount",
           "assigned_at",
-          "created_at"
+          "created_at",
+          "current_actor_has_rated"
         ],
         "title": "OrderDetail",
         "type": "object"
@@ -813,6 +871,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "current_actor_has_rated": {
+            "description": "Whether the authenticated actor has rated this order.",
+            "title": "Current Actor Has Rated",
+            "type": "boolean"
+          },
           "delivery_city": {
             "title": "Delivery City",
             "type": "string"
@@ -847,9 +910,82 @@
           "delivery_city",
           "delivery_date",
           "description",
-          "created_at"
+          "created_at",
+          "current_actor_has_rated"
         ],
         "title": "OrderSummary",
+        "type": "object"
+      },
+      "ParticipantProfile": {
+        "description": "Minimal profile visible only to an order or conversation co-participant.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "courier_bio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier Bio"
+          },
+          "courier_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier City"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "initials": {
+            "title": "Initials",
+            "type": "string"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "string"
+          },
+          "rating_count": {
+            "title": "Rating Count",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "role",
+          "rating",
+          "rating_count",
+          "initials"
+        ],
+        "title": "ParticipantProfile",
         "type": "object"
       },
       "PayInvoiceResponse": {
@@ -1301,30 +1437,6 @@
         "title": "SendOtpResponse",
         "type": "object"
       },
-      "SimulatePaymentRequest": {
-        "additionalProperties": false,
-        "description": "Development-only: simulate a StreamPay callback for a payment-link ID.",
-        "properties": {
-          "payment_link_id": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Payment Link Id",
-            "type": "string"
-          },
-          "status": {
-            "default": "PAID",
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "payment_link_id"
-        ],
-        "title": "SimulatePaymentRequest",
-        "type": "object"
-      },
       "TokenResponse": {
         "description": "An issued access + refresh token pair.",
         "properties": {
@@ -1559,6 +1671,17 @@
       "UserMeResponse": {
         "description": "The authenticated user's own profile.",
         "properties": {
+          "courier_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourierProfileResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owner-only courier details; null for non-courier accounts."
+          },
           "email": {
             "anyOf": [
               {
@@ -1629,6 +1752,31 @@
         "additionalProperties": false,
         "description": "Editable profile fields.",
         "properties": {
+          "courier_bio": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier Bio"
+          },
+          "courier_city": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier City"
+          },
           "dob": {
             "anyOf": [
               {
@@ -2529,74 +2677,6 @@
         ]
       }
     },
-    "/api/dev/ping": {
-      "get": {
-        "description": "Confirm dev routes are registered (development only).",
-        "operationId": "dev_ping_api_dev_ping_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Dev Ping Api Dev Ping Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Development liveness marker",
-        "tags": [
-          "dev"
-        ]
-      }
-    },
-    "/api/dev/streampay/simulate": {
-      "post": {
-        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds the exact webhook body the gateway would send,\nsigns it with the fake gateway's test secret, and calls the production webhook\nhandler \u2014 it never bypasses webhook processing.",
-        "operationId": "simulate_payment_api_dev_streampay_simulate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SimulatePaymentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebhookAck"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Simulate Payment",
-        "tags": [
-          "dev"
-        ]
-      }
-    },
     "/api/devices": {
       "delete": {
         "description": "Remove a push token (only if it belongs to the caller).",
@@ -2936,7 +3016,7 @@
     },
     "/api/orders": {
       "get": {
-        "description": "List the customer's own orders, newest first (keyset paged).",
+        "description": "List customer-owned or courier-assigned orders, newest first.",
         "operationId": "list_orders_api_orders_get",
         "parameters": [
           {
@@ -3659,6 +3739,72 @@
           }
         },
         "summary": "Update Me",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/users/me/courier-verification/resubmit": {
+      "post": {
+        "description": "Resubmit a rejected courier profile for another audited review.",
+        "operationId": "resubmit_courier_verification_api_users_me_courier_verification_resubmit_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserMeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Resubmit Courier Verification",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/users/{user_id}/participant": {
+      "get": {
+        "description": "Return a minimal profile only after shared-order/conversation proof.",
+        "operationId": "get_participant_profile_api_users__user_id__participant_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Participant Profile",
         "tags": [
           "users"
         ]

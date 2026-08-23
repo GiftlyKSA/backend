@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
-from app.core.exceptions import ForbiddenError, NotFoundError
 from app.core.money import money_str
 from app.models import Dispute, Order
 from app.models.enums import OrderStatus, UserRole
@@ -23,6 +22,7 @@ from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
+from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.schemas.fulfillment import (
@@ -42,12 +42,13 @@ from app.services.media_service import MediaService
 from app.services.money_service import MoneyService
 from app.services.notification_service import NotificationService
 from app.services.order_service import NewOrderInput, OrderService
+from app.services.rating_service import RatingService
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _Customer = require_role(UserRole.CUSTOMER)
-_Courier = require_role(UserRole.COURIER)
+_CourierRole = require_role(UserRole.COURIER)
 _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
 
 
@@ -59,6 +60,7 @@ def _service(request: Request, db: AsyncSession) -> OrderService:
         couriers=CourierRepository(db),
         media=MediaService(request.app.state.clients.storage, get_settings(request)),
         messages=MessageWriter(db),
+        ratings=RatingService(orders=OrderRepository(db), ratings=RatingRepository(db)),
         redis=get_redis(request),
         settings=get_settings(request),
     )
@@ -92,7 +94,7 @@ def _dispute(dispute: Dispute) -> DisputeResponse:
     )
 
 
-def _summary(order: Order) -> OrderSummary:
+async def _summary(service: OrderService, order: Order, actor: Actor) -> OrderSummary:
     return OrderSummary(
         id=str(order.id),
         status=str(order.status),
@@ -100,7 +102,19 @@ def _summary(order: Order) -> OrderSummary:
         delivery_date=order.delivery_date.isoformat(),
         description=order.description,
         created_at=order.created_at.isoformat(),
+        current_actor_has_rated=await service.current_actor_has_rated(
+            order_id=order.id, actor_id=actor.id
+        ),
     )
+
+
+async def _active_courier(
+    request: Request,
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_CourierRole)],
+) -> Actor:
+    await _service(request, db).require_active_verified_courier(actor.id)
+    return actor
 
 
 @router.post("", response_model=OrderDetail, status_code=201)
@@ -111,7 +125,8 @@ async def create_order(
     actor: Annotated[Actor, Depends(_Customer)],
 ) -> OrderDetail:
     """Create a NEW gift-request order."""
-    order = await _service(request, db).create_order(
+    service = _service(request, db)
+    order = await service.create_order(
         customer_id=actor.id,
         data=NewOrderInput(
             description=body.description,
@@ -128,65 +143,73 @@ async def create_order(
         title="New gift request nearby",
         body="A customer just posted a new order in your city.",
     )
-    return await _detail(db, order, actor)
+    return await _detail(service, order, actor)
 
 
 @router.get("", response_model=OrderListResponse)
 async def list_orders(
+    request: Request,
     db: DbDep,
-    actor: Annotated[Actor, Depends(_Customer)],
+    actor: Annotated[Actor, Depends(_Participant)],
     status: Annotated[str | None, Query()] = None,
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
-    """List the customer's own orders, newest first (keyset paged)."""
+    """List customer-owned or courier-assigned orders, newest first."""
     status_enum = OrderStatus(status) if status else None
-    rows = await OrderRepository(db).list_for_customer(
-        actor.id,
+    service = _service(request, db)
+    rows = await service.list_for_actor(
+        actor_id=actor.id,
+        role=actor.role,
         status=status_enum,
         limit=limit,
         before_id=uuid.UUID(cursor) if cursor else None,
     )
-    return _page(rows, limit)
+    return await _page(service, rows, limit, actor)
 
 
 @router.get("/available", response_model=OrderListResponse)
 async def available_orders(
+    request: Request,
     db: DbDep,
-    actor: Annotated[Actor, Depends(_Courier)],
+    actor: Annotated[Actor, Depends(_active_courier)],
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
     """List NEW orders in the courier's city (the radar). No exact coordinates."""
-    profile = await CourierRepository(db).get(actor.id)
-    if profile is None:
-        raise ForbiddenError("Complete your courier profile first.")
-    rows = await OrderRepository(db).list_available(
-        profile.city_of_residence, limit=limit, before_id=uuid.UUID(cursor) if cursor else None
+    service = _service(request, db)
+    rows = await service.list_available_for_courier(
+        courier_id=actor.id,
+        limit=limit,
+        before_id=uuid.UUID(cursor) if cursor else None,
     )
-    return _page(rows, limit)
+    return await _page(service, rows, limit, actor)
 
 
 @router.get("/{order_id}", response_model=OrderDetail)
 async def get_order(
+    request: Request,
     db: DbDep,
     order_id: uuid.UUID,
     actor: Annotated[Actor, Depends(require_role(UserRole.CUSTOMER, UserRole.COURIER))],
 ) -> OrderDetail:
     """Return an order the caller participates in."""
-    order = await OrderRepository(db).get_for_actor(order_id, actor.id)
-    if order is None:
-        raise NotFoundError("Order not found.")
-    return await _detail(db, order, actor)
+    service = _service(request, db)
+    order = await service.get_order_for_actor(order_id=order_id, actor_id=actor.id)
+    return await _detail(service, order, actor)
 
 
 @router.post("/{order_id}/accept", response_model=OrderDetail)
 async def accept_order(
-    request: Request, db: DbDep, order_id: uuid.UUID, actor: Annotated[Actor, Depends(_Courier)]
+    request: Request,
+    db: DbDep,
+    order_id: uuid.UUID,
+    actor: Annotated[Actor, Depends(_active_courier)],
 ) -> OrderDetail:
     """Accept a NEW order (Redis lock + FOR UPDATE race)."""
-    order = await _service(request, db).accept_order(order_id=order_id, courier_id=actor.id)
-    return await _detail(db, order, actor)
+    service = _service(request, db)
+    order = await service.accept_order(order_id=order_id, courier_id=actor.id)
+    return await _detail(service, order, actor)
 
 
 @router.post("/{order_id}/cancel", response_model=OrderDetail)
@@ -198,10 +221,9 @@ async def cancel_order(
     actor: Annotated[Actor, Depends(require_role(UserRole.CUSTOMER, UserRole.COURIER))],
 ) -> OrderDetail:
     """Cancel an order before it is in progress."""
-    order = await _service(request, db).cancel_order(
-        order_id=order_id, actor_id=actor.id, reason=body.reason
-    )
-    return await _detail(db, order, actor)
+    service = _service(request, db)
+    order = await service.cancel_order(order_id=order_id, actor_id=actor.id, reason=body.reason)
+    return await _detail(service, order, actor)
 
 
 @router.post("/{order_id}/deliver", response_model=OrderDetail)
@@ -210,7 +232,7 @@ async def deliver_order(
     db: DbDep,
     order_id: uuid.UUID,
     body: DeliverRequest,
-    actor: Annotated[Actor, Depends(_Courier)],
+    actor: Annotated[Actor, Depends(_active_courier)],
 ) -> OrderDetail:
     """Mark an in-progress order delivered with geofenced proof (assigned courier)."""
     order = await _fulfillment(request, db).submit_delivery(
@@ -223,7 +245,7 @@ async def deliver_order(
             note=body.note,
         ),
     )
-    return await _detail(db, order, actor)
+    return await _detail(_service(request, db), order, actor)
 
 
 @router.post("/{order_id}/approve", response_model=OrderDetail)
@@ -235,7 +257,7 @@ async def approve_order(
 ) -> OrderDetail:
     """Approve a delivered order: complete it and release escrow (customer)."""
     order = await _fulfillment(request, db).approve_order(order_id=order_id, customer_id=actor.id)
-    return await _detail(db, order, actor)
+    return await _detail(_service(request, db), order, actor)
 
 
 @router.post("/{order_id}/dispute", response_model=DisputeResponse, status_code=201)
@@ -253,18 +275,20 @@ async def dispute_order(
     return _dispute(dispute)
 
 
-def _page(rows: list[Order], limit: int) -> OrderListResponse:
-    items = [_summary(o) for o in rows]
+async def _page(
+    service: OrderService, rows: list[Order], limit: int, actor: Actor
+) -> OrderListResponse:
+    items = [await _summary(service, order, actor) for order in rows]
     next_cursor = str(rows[-1].id) if len(rows) == limit else None
     return OrderListResponse(items=items, next_cursor=next_cursor)
 
 
-async def _detail(db: AsyncSession, order: Order, actor: Actor) -> OrderDetail:
+async def _detail(service: OrderService, order: Order, actor: Actor) -> OrderDetail:
     # A courier sees the exact point only after assignment (SPEC SECTION 17.3).
     show_coords = actor.role is UserRole.CUSTOMER or order.status is not OrderStatus.NEW
     lat = lng = None
     if show_coords:
-        coords = await OrderRepository(db).coords(order.id)
+        coords = await service.coordinates_for_actor(order_id=order.id, actor_id=actor.id)
         if coords is not None:
             lng, lat = coords
     return OrderDetail(
@@ -280,4 +304,7 @@ async def _detail(db: AsyncSession, order: Order, actor: Actor) -> OrderDetail:
         total_amount=money_str(order.total_amount),
         assigned_at=order.assigned_at.isoformat() if order.assigned_at else None,
         created_at=order.created_at.isoformat(),
+        current_actor_has_rated=await service.current_actor_has_rated(
+            order_id=order.id, actor_id=actor.id
+        ),
     )

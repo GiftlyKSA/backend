@@ -38,6 +38,9 @@ class OrderSummary(BaseModel):
     delivery_date: str
     description: str | None
     created_at: str
+    current_actor_has_rated: bool = Field(
+        ..., description="Whether the authenticated actor has rated this order."
+    )
 
 
 class OrderDetail(BaseModel):
@@ -55,6 +58,9 @@ class OrderDetail(BaseModel):
     total_amount: str
     assigned_at: str | None
     created_at: str
+    current_actor_has_rated: bool = Field(
+        ..., description="Whether the authenticated actor has rated this order."
+    )
 
 
 class OrderListResponse(BaseModel):

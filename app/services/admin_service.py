@@ -183,11 +183,18 @@ class AdminService:
         if profile is None:
             raise NotFoundError("Courier not found.")
         await self._couriers.set_verified(
-            profile, is_verified=approve, admin_id=admin_id, when=self._now()
+            profile,
+            is_verified=approve,
+            admin_id=admin_id,
+            when=self._now(),
+            rejection_reason=note,
         )
         user = await self._users.get(courier_user_id)
-        if user is not None and approve and user.status is UserStatus.PENDING_VERIFICATION:
-            await self._users.set_status(user, UserStatus.ACTIVE)
+        if user is not None:
+            if approve and user.status is UserStatus.PENDING_VERIFICATION:
+                await self._users.set_status(user, UserStatus.ACTIVE)
+            elif not approve:
+                await self._users.set_status(user, UserStatus.REJECTED)
         await self._audit.record(
             actor_user_id=admin_id,
             action="COURIER_VERIFY" if approve else "COURIER_REJECT",

@@ -4,16 +4,31 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, true
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, Order, User
+from app.models import Conversation, CourierProfile, Order, User
 from app.models.enums import UserRole, UserStatus
 
 _DASHBOARD_ADMIN_NAMESPACE = uuid.UUID("48c72a54-78e4-4a0e-a20f-54378ed7f950")
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantProjection:
+    """The complete privacy-scoped participant projection selected by SQL."""
+
+    id: uuid.UUID
+    full_name: str | None
+    role: UserRole
+    rating: Decimal
+    rating_count: int
+    courier_city: str | None
+    courier_bio: str | None
 
 
 class UserRepository:
@@ -52,6 +67,63 @@ class UserRepository:
             | ((Conversation.customer_id == participant_id) & (Conversation.courier_id == actor_id))
         )
         return bool(await self._session.scalar(select(shared_order | shared_conversation)))
+
+    async def get_participant_for_actor(
+        self, actor_id: uuid.UUID, participant_id: uuid.UUID
+    ) -> ParticipantProjection | None:
+        """Select a compact profile only when SQL proves a shared relationship."""
+        shared_order = exists().where(
+            ((Order.customer_id == actor_id) & (Order.courier_id == participant_id))
+            | ((Order.customer_id == participant_id) & (Order.courier_id == actor_id))
+        )
+        shared_conversation = exists().where(
+            ((Conversation.customer_id == actor_id) & (Conversation.courier_id == participant_id))
+            | ((Conversation.customer_id == participant_id) & (Conversation.courier_id == actor_id))
+        )
+        relationship = true() if actor_id == participant_id else shared_order | shared_conversation
+        row = (
+            await self._session.execute(
+                select(
+                    User.id,
+                    User.full_name,
+                    User.role,
+                    User.rating,
+                    User.rating_count,
+                    CourierProfile.city_of_residence,
+                    CourierProfile.bio,
+                )
+                .outerjoin(CourierProfile, CourierProfile.user_id == User.id)
+                .where(User.id == participant_id, relationship)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return ParticipantProjection(
+            id=row.id,
+            full_name=row.full_name,
+            role=row.role,
+            rating=row.rating,
+            rating_count=row.rating_count,
+            courier_city=row.city_of_residence,
+            courier_bio=row.bio,
+        )
+
+    async def get_owned_with_courier(
+        self, actor_id: uuid.UUID
+    ) -> tuple[User, CourierProfile | None] | None:
+        """Return the actor's own user row and optional courier profile in one query."""
+        row = (
+            await self._session.execute(
+                select(User, CourierProfile)
+                .outerjoin(CourierProfile, CourierProfile.user_id == User.id)
+                .where(User.id == actor_id)
+            )
+        ).one_or_none()
+        return (row[0], row[1]) if row is not None else None
+
+    async def flush(self) -> None:
+        """Flush owned-profile mutations performed by the user service."""
+        await self._session.flush()
 
     async def create_admin_user(
         self, *, phone: str, full_name: str | None, email: str | None, role: UserRole
