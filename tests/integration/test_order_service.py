@@ -33,6 +33,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.integration.availability import raise_or_skip_redis_unavailable
 
 
 def _settings() -> Settings:
@@ -51,7 +52,7 @@ async def redis_client() -> AsyncIterator[Redis]:
         await client.ping()
     except Exception as exc:  # noqa: BLE001
         await client.aclose()
-        pytest.skip(f"redis unavailable: {exc}")
+        raise_or_skip_redis_unavailable(exc)
     yield client
     await client.aclose()
 
