@@ -44,7 +44,9 @@ admin dashboard.
 
 ## POST /api/orders/{order_id}/ratings
 Rate the other party on a completed order. **Role**: participant. One rating per rater per
-order; the rated user is derived from the order, never the body.
+order; the rated user is derived from the order, never the body. A courier rater must
+still be ACTIVE and verified; rejected, pending, banned, and unverified couriers receive
+403.
 ### Body
 | field | notes |
 | score | integer 1–5 |

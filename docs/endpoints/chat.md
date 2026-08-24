@@ -4,6 +4,9 @@ Per-order messaging between the customer and the assigned courier. The conversat
 opened automatically when the order is assigned (Phase 6). Message content and the inbox
 preview are **AES-256-GCM encrypted at rest** (ADR 0004); plaintext never lands in an
 unencrypted column. Every route is participant-only — a non-member gets 404.
+Courier participants must also remain ACTIVE and verified. Rejected, pending, and
+unverified couriers receive 403 on REST and cannot open the WebSocket; banned sessions
+retain the existing authentication revocation behavior. Customer behavior is unchanged.
 
 ## GET /api/conversations ?cursor=&limit=
 The caller's inbox, most-recent activity first (keyset paged). **Role**: CUSTOMER or
@@ -29,6 +32,7 @@ it). → 204.
 The live chat socket. Authenticated by the access token in the `token` query parameter
 (same verification and denylist as the REST API); only the conversation's two members may
 connect — anyone else is closed (4401 unauthenticated, 4403 not a participant).
+An ineligible courier is closed with 4403 before the conversation is disclosed.
 
 - **Server → client**: each new message on the conversation is pushed as JSON
   (`id`, `conversation_id`, `sender_id`, `message_type`, `content`, `is_read`, `created_at`).

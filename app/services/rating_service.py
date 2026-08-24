@@ -15,15 +15,23 @@ from app.models import Rating
 from app.models.enums import OrderStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 
 
 class RatingService:
     """Creates ratings and reports a user's average score."""
 
-    def __init__(self, *, orders: OrderRepository, ratings: RatingRepository) -> None:
+    def __init__(
+        self,
+        *,
+        orders: OrderRepository,
+        ratings: RatingRepository,
+        eligibility: CourierEligibilityService,
+    ) -> None:
         """Wire the order and rating repositories."""
         self._orders = orders
         self._ratings = ratings
+        self._eligibility = eligibility
 
     async def rate(
         self,
@@ -39,6 +47,7 @@ class RatingService:
             NotFoundError: Not a participant's order.
             ConflictError: The order is not completed, or the rater already rated it.
         """
+        await self._eligibility.require_eligible_actor(rater_id)
         order = await self._orders.get_for_actor(order_id, rater_id)
         if order is None:
             raise NotFoundError("Order not found.")

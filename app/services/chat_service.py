@@ -20,6 +20,7 @@ from app.core.crypto import FieldCipher, build_aad, build_cipher
 from app.core.exceptions import NotFoundError
 from app.models import Conversation, Message
 from app.repositories.chat_repository import ChatRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 
 _PREVIEW_CHARS = 100
 
@@ -57,11 +58,19 @@ class InboxItem:
 class ChatService:
     """Sends, lists, and marks-read encrypted chat messages."""
 
-    def __init__(self, *, chat: ChatRepository, redis: Redis, settings: Settings) -> None:
+    def __init__(
+        self,
+        *,
+        chat: ChatRepository,
+        redis: Redis,
+        settings: Settings,
+        eligibility: CourierEligibilityService,
+    ) -> None:
         """Wire the chat repository, Redis (for WS fanout), and settings."""
         self._chat = chat
         self._redis = redis
         self._settings = settings
+        self._eligibility = eligibility
 
     def _cipher(self) -> FieldCipher:
         return build_cipher(
@@ -87,6 +96,15 @@ class ChatService:
     async def _require_conversation(
         self, conversation_id: uuid.UUID, actor_id: uuid.UUID
     ) -> Conversation:
+        return await self.get_conversation_for_actor(
+            conversation_id=conversation_id, actor_id=actor_id
+        )
+
+    async def get_conversation_for_actor(
+        self, *, conversation_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> Conversation:
+        """Return an eligible actor's conversation or hide it as not found."""
+        await self._eligibility.require_eligible_actor(actor_id)
         conversation = await self._chat.get_for_actor(conversation_id, actor_id)
         if conversation is None:
             raise NotFoundError("Conversation not found.")
@@ -147,6 +165,7 @@ class ChatService:
         before: tuple[datetime, uuid.UUID] | None,
     ) -> list[InboxItem]:
         """Return a user's conversations with decrypted previews and unread counts."""
+        await self._eligibility.require_eligible_actor(user_id)
         conversations = await self._chat.list_for_user(user_id, limit=limit, before=before)
         items: list[InboxItem] = []
         for conv in conversations:

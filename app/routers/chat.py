@@ -19,12 +19,16 @@ from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
 from app.models.enums import UserRole
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.device_token_repository import DeviceTokenRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.chat import (
     InboxItemResponse,
     InboxResponse,
@@ -33,6 +37,7 @@ from app.schemas.chat import (
     SendMessageRequest,
 )
 from app.services.chat_service import ChatMessage, ChatService, conversation_channel
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -42,8 +47,18 @@ _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
 
 
 def _service(request: Request, db: AsyncSession) -> ChatService:
+    return _session_service(db, get_redis(request), get_settings(request))
+
+
+def _session_service(db: AsyncSession, redis: Redis, settings: Settings) -> ChatService:
+    """Build chat operations with the shared current-state eligibility boundary."""
     return ChatService(
-        chat=ChatRepository(db), redis=get_redis(request), settings=get_settings(request)
+        chat=ChatRepository(db),
+        redis=redis,
+        settings=settings,
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
     )
 
 
@@ -173,7 +188,12 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
 
     factory = websocket.app.state.session_factory
     async with factory() as session:
-        conversation = await ChatRepository(session).get_for_actor(conversation_id, actor.id)
+        try:
+            conversation = await _session_service(
+                session, websocket.app.state.redis, websocket.app.state.settings
+            ).get_conversation_for_actor(conversation_id=conversation_id, actor_id=actor.id)
+        except (ForbiddenError, NotFoundError):
+            conversation = None
     if conversation is None:
         await websocket.close(code=4403)  # not a participant
         return
@@ -245,7 +265,7 @@ async def _pump_socket_to_chat(
         if not text:
             continue
         async with factory() as session:  # type: ignore[operator]
-            service = ChatService(chat=ChatRepository(session), redis=redis, settings=settings)
+            service = _session_service(session, redis, settings)
             dto = await service.send_message(
                 conversation_id=conversation_id, sender_id=actor.id, text=text
             )

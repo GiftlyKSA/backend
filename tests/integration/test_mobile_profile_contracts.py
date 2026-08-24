@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import secrets
+import socket
 import uuid
 from datetime import date, timedelta
 
@@ -18,6 +20,20 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
 from tests.conftest import make_test_settings
+
+_CONNECTION_ERRNOS = frozenset(
+    value
+    for name in (
+        "ECONNREFUSED",
+        "ECONNRESET",
+        "ECONNABORTED",
+        "ETIMEDOUT",
+        "ENETUNREACH",
+        "EHOSTUNREACH",
+    )
+    if (value := getattr(errno, name, None)) is not None
+)
+_CONNECTION_WINERRORS = frozenset({10051, 10060, 10061, 10065, 11001, 1225})
 
 
 def _settings() -> Settings:
@@ -102,6 +118,28 @@ async def _create_order(client: AsyncClient, headers: dict[str, str]) -> str:
     return str(response.json()["id"])
 
 
+def _raise_or_skip_database_unavailable(exc: Exception) -> None:
+    """Skip the DB-backed contract when its connection is unavailable."""
+    candidate: BaseException = exc
+    if isinstance(exc, OperationalError):
+        original = exc.orig
+        sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+        if isinstance(sqlstate, str):
+            if sqlstate.startswith("08"):
+                pytest.skip(f"database unavailable: {exc}")
+            raise exc
+        candidate = original
+
+    if isinstance(candidate, OSError) and (
+        isinstance(candidate, (ConnectionRefusedError, TimeoutError, socket.gaierror))
+        or candidate.errno in _CONNECTION_ERRNOS
+        or getattr(candidate, "winerror", None) in _CONNECTION_WINERRORS
+        or candidate.errno in _CONNECTION_WINERRORS
+    ):
+        pytest.skip(f"database unavailable: {exc}")
+    raise exc
+
+
 async def _stack() -> tuple[Settings, object, object]:
     settings = _settings()
     engine = build_engine(settings)
@@ -111,7 +149,7 @@ async def _stack() -> tuple[Settings, object, object]:
             await session.execute(select(User.id).limit(1))
     except (OSError, OperationalError) as exc:
         await engine.dispose()
-        pytest.skip(f"database unavailable: {exc}")
+        _raise_or_skip_database_unavailable(exc)
     return settings, engine, factory
 
 

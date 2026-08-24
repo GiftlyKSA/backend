@@ -42,6 +42,16 @@ class UserRepository:
         """Return a user by id, or None."""
         return await self._session.get(User, user_id)
 
+    async def get_for_update(self, user_id: uuid.UUID) -> User | None:
+        """Lock and return a user so competing status transitions serialize."""
+        result: User | None = await self._session.scalar(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result
+
     async def get_by_phone(self, phone: str) -> User | None:
         """Return a user by exact phone, or None."""
         result: User | None = await self._session.scalar(select(User).where(User.phone == phone))

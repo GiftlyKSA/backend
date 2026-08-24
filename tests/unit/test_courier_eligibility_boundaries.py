@@ -11,10 +11,12 @@ import pytest
 from app.core.exceptions import ConflictError, ForbiddenError
 from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.services.admin_service import AdminService
+from app.services.chat_service import ChatService
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_service import InvoiceService, NewInvoiceInput
 from app.services.order_service import OrderService
 from app.services.rating_service import RatingService
+from app.services.user_service import UserService
 from app.services.withdrawal_service import WithdrawalService
 
 
@@ -106,6 +108,9 @@ class _DecisionUsers:
     async def get(self, _user_id: uuid.UUID) -> object:
         return self.user
 
+    async def get_for_update(self, _user_id: uuid.UUID) -> object:
+        return self.user
+
     async def set_status(self, _user: object, status: UserStatus) -> None:
         self.user.status = status
 
@@ -184,6 +189,104 @@ async def test_admin_audit_omits_private_rejection_detail() -> None:
 
     assert len(audit.rows) == 1
     assert audit.rows[0]["metadata"] is None
+
+
+class _ConcurrentVerificationUsers:
+    def __init__(self) -> None:
+        self.stale = SimpleNamespace(
+            id=uuid.uuid4(), role=UserRole.COURIER, status=UserStatus.PENDING_VERIFICATION
+        )
+        self.locked = SimpleNamespace(
+            id=self.stale.id, role=UserRole.COURIER, status=UserStatus.BANNED
+        )
+
+    async def get(self, _user_id: uuid.UUID) -> object:
+        return self.stale
+
+    async def get_for_update(self, _user_id: uuid.UUID) -> object:
+        return self.locked
+
+    async def set_status(self, user: object, status: UserStatus) -> None:
+        user.status = status  # type: ignore[attr-defined]
+
+
+async def test_admin_verification_checks_status_on_locked_user_row() -> None:
+    """A concurrent ban observed under lock must not be overwritten by rejection."""
+    users = _ConcurrentVerificationUsers()
+    service = AdminService(
+        reads=Any,
+        users=users,  # type: ignore[arg-type]
+        couriers=_CourierDecision(),  # type: ignore[arg-type]
+        orders=Any,
+        promos=Any,
+        audit=_AuditCapture(),  # type: ignore[arg-type]
+        auth_repo=Any,
+        redis=Any,
+        settings=Any,
+    )
+
+    with pytest.raises(ConflictError):
+        await service.verify_courier(
+            admin_id=uuid.uuid4(),
+            courier_user_id=users.locked.id,
+            approve=False,
+            note="private rejection detail",
+            ip=None,
+        )
+
+    assert users.locked.status is UserStatus.BANNED
+
+
+class _LockRequiredUsers:
+    def __init__(self) -> None:
+        self.stale = SimpleNamespace(id=uuid.uuid4(), status=UserStatus.ACTIVE)
+        self.locked = SimpleNamespace(id=self.stale.id, status=UserStatus.ACTIVE)
+
+    async def get(self, _user_id: uuid.UUID) -> object:
+        return self.stale
+
+    async def get_for_update(self, _user_id: uuid.UUID) -> object:
+        return self.locked
+
+    async def set_status(self, user: object, status: UserStatus) -> None:
+        if user is not self.locked:
+            raise AssertionError("status transition did not use the locked row")
+        user.status = status  # type: ignore[attr-defined]
+
+
+class _NoopAuth:
+    async def revoke_all_for_user(self, *_args: object) -> None:
+        return None
+
+
+class _NoopRedis:
+    async def set(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+    async def delete(self, *_args: object) -> None:
+        return None
+
+
+async def test_admin_ban_transition_uses_locked_user_row() -> None:
+    """Ban and verification must serialize through the same user-row lock."""
+    users = _LockRequiredUsers()
+    service = AdminService(
+        reads=Any,
+        users=users,  # type: ignore[arg-type]
+        couriers=Any,
+        orders=Any,
+        promos=Any,
+        audit=_AuditCapture(),  # type: ignore[arg-type]
+        auth_repo=_NoopAuth(),  # type: ignore[arg-type]
+        redis=_NoopRedis(),  # type: ignore[arg-type]
+        settings=SimpleNamespace(JWT_ACCESS_TTL_MINUTES=30),
+    )
+
+    await service.set_user_banned(
+        admin_id=uuid.uuid4(), user_id=users.locked.id, banned=True, ip=None
+    )
+
+    assert users.locked.status is UserStatus.BANNED
 
 
 class _AssignedOrder:
@@ -294,7 +397,14 @@ class _ListedOrders:
 async def test_rating_states_are_assembled_from_one_batch_contract() -> None:
     """List enrichment maps one batch result without sequential per-order checks."""
     unrated_id, rated_id = uuid.uuid4(), uuid.uuid4()
-    service = RatingService(orders=Any, ratings=_BatchRatings(rated_id))  # type: ignore[arg-type]
+    service = RatingService(
+        orders=Any,
+        ratings=_BatchRatings(rated_id),  # type: ignore[arg-type]
+        eligibility=CourierEligibilityService(
+            users=_CustomerUsers(),  # type: ignore[arg-type]
+            couriers=_VerifiedCourier(),  # type: ignore[arg-type]
+        ),
+    )
     assert hasattr(service, "current_actor_rating_states")
 
     states = await service.current_actor_rating_states([unrated_id, rated_id], uuid.uuid4())
@@ -309,6 +419,10 @@ async def test_order_list_enrichment_uses_batch_rating_states() -> None:
     rating_service = RatingService(
         orders=Any,
         ratings=_BatchRatings(rated_id),  # type: ignore[arg-type]
+        eligibility=CourierEligibilityService(
+            users=_CustomerUsers(),  # type: ignore[arg-type]
+            couriers=_VerifiedCourier(),  # type: ignore[arg-type]
+        ),
     )
     service = OrderService(
         session=Any,
@@ -337,3 +451,119 @@ async def test_order_list_enrichment_uses_batch_rating_states() -> None:
         (unrated_id, False),
         (rated_id, True),
     ]
+
+
+class _ParticipantProjection:
+    async def get_participant_for_actor(
+        self, _actor_id: uuid.UUID, _participant_id: uuid.UUID
+    ) -> object:
+        return SimpleNamespace(
+            id=uuid.uuid4(),
+            full_name="Sensitive Participant",
+            role=UserRole.CUSTOMER,
+            rating=Decimal("5.00"),
+            rating_count=0,
+            courier_city=None,
+            courier_bio=None,
+        )
+
+
+async def test_rejected_courier_cannot_read_participant_profile() -> None:
+    """Participant projection must remain hidden after courier rejection."""
+    service = UserService(
+        users=_ParticipantProjection(),  # type: ignore[arg-type]
+        audit=Any,
+        eligibility=_rejected_eligibility(),
+    )
+
+    with pytest.raises(ForbiddenError):
+        await service.get_participant(actor_id=uuid.uuid4(), participant_id=uuid.uuid4())
+
+
+class _CompletedOrder:
+    async def get_for_actor(self, _order_id: uuid.UUID, _actor_id: uuid.UUID) -> object:
+        return SimpleNamespace(
+            status=OrderStatus.COMPLETED,
+            customer_id=uuid.uuid4(),
+            courier_id=uuid.uuid4(),
+        )
+
+
+async def test_rejected_courier_cannot_create_rating() -> None:
+    """Rating creation must stop before loading a completed participant order."""
+    service = RatingService(
+        orders=_CompletedOrder(),  # type: ignore[arg-type]
+        ratings=Any,
+        eligibility=_rejected_eligibility(),
+    )
+
+    with pytest.raises(ForbiddenError):
+        await service.rate(
+            order_id=uuid.uuid4(),
+            rater_id=uuid.uuid4(),
+            score=5,
+            comment=None,
+        )
+
+
+class _VisibleChat:
+    async def get_for_actor(self, conversation_id: uuid.UUID, actor_id: uuid.UUID) -> object:
+        return SimpleNamespace(
+            id=conversation_id,
+            customer_id=actor_id,
+            courier_id=uuid.uuid4(),
+        )
+
+    async def list_for_user(self, *_args: object, **_kwargs: object) -> list[object]:
+        return []
+
+    async def list_messages(self, *_args: object, **_kwargs: object) -> list[object]:
+        return []
+
+
+def _rejected_chat() -> ChatService:
+    return ChatService(
+        chat=_VisibleChat(),  # type: ignore[arg-type]
+        redis=Any,
+        settings=Any,
+        eligibility=_rejected_eligibility(),
+    )
+
+
+async def test_rejected_courier_cannot_list_chat_inbox() -> None:
+    """Inbox listing must not disclose participant activity after rejection."""
+    with pytest.raises(ForbiddenError):
+        await _rejected_chat().list_inbox(user_id=uuid.uuid4(), limit=20, before=None)
+
+
+async def test_rejected_courier_cannot_read_chat_messages() -> None:
+    """Message reads must stop before conversation or ciphertext access."""
+    with pytest.raises(ForbiddenError):
+        await _rejected_chat().list_messages(
+            conversation_id=uuid.uuid4(),
+            actor_id=uuid.uuid4(),
+            limit=20,
+            before_id=None,
+        )
+
+
+async def test_rejected_courier_cannot_send_chat_message() -> None:
+    """Message sends must stop before conversation mutation or encryption."""
+    with pytest.raises(ForbiddenError):
+        await _rejected_chat().send_message(
+            conversation_id=uuid.uuid4(), sender_id=uuid.uuid4(), text="still here"
+        )
+
+
+async def test_rejected_courier_cannot_mark_chat_read() -> None:
+    """Read-state mutation must stop before loading the conversation."""
+    with pytest.raises(ForbiddenError):
+        await _rejected_chat().mark_read(conversation_id=uuid.uuid4(), actor_id=uuid.uuid4())
+
+
+async def test_rejected_courier_cannot_open_websocket_conversation() -> None:
+    """WebSocket admission must use the same eligibility-aware conversation read."""
+    with pytest.raises(ForbiddenError):
+        await _rejected_chat().get_conversation_for_actor(
+            conversation_id=uuid.uuid4(), actor_id=uuid.uuid4()
+        )

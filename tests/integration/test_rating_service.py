@@ -10,15 +10,24 @@ import pytest
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models import Order, User
 from app.models.enums import OrderStatus, UserRole
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
+from app.repositories.user_repository import UserRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.rating_service import RatingService
 from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _service(db: AsyncSession) -> RatingService:
-    return RatingService(orders=OrderRepository(db), ratings=RatingRepository(db))
+    return RatingService(
+        orders=OrderRepository(db),
+        ratings=RatingRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
+    )
 
 
 async def _order(db: AsyncSession, status: OrderStatus) -> tuple[User, User, Order]:

@@ -14,9 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, require_auth, require_role
 from app.models.enums import UserRole
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.fulfillment import RatingRequest, RatingResponse, RatingSummaryResponse
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.rating_service import RatingService
 
 router = APIRouter(prefix="/api", tags=["ratings"])
@@ -26,7 +29,13 @@ _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
 
 
 def _service(db: AsyncSession) -> RatingService:
-    return RatingService(orders=OrderRepository(db), ratings=RatingRepository(db))
+    return RatingService(
+        orders=OrderRepository(db),
+        ratings=RatingRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
+    )
 
 
 @router.post("/orders/{order_id}/ratings", response_model=RatingResponse, status_code=201)

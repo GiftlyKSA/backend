@@ -179,16 +179,16 @@ class AdminService:
         ip: str | None,
     ) -> CourierProfile:
         """Approve or reject a courier's verification and audit the decision."""
-        profile = await self._couriers.get(courier_user_id)
-        if profile is None:
-            raise NotFoundError("Courier not found.")
-        user = await self._users.get(courier_user_id)
+        user = await self._users.get_for_update(courier_user_id)
         if user is None or user.role is not UserRole.COURIER:
             raise NotFoundError("Courier not found.")
         if user.status is UserStatus.BANNED:
             raise ConflictError("A banned courier cannot receive a verification decision.")
         if user.status is not UserStatus.PENDING_VERIFICATION:
             raise ConflictError("Only a pending courier may receive a verification decision.")
+        profile = await self._couriers.get(courier_user_id)
+        if profile is None:
+            raise NotFoundError("Courier not found.")
         await self._couriers.set_verified(
             profile,
             is_verified=approve,
@@ -267,7 +267,7 @@ class AdminService:
         revoked, and a Redis flag outliving the access-token TTL kills the tokens
         already in the wild — ``require_auth`` checks it on every request.
         """
-        user = await self._users.get(user_id)
+        user = await self._users.get_for_update(user_id)
         if user is None:
             raise NotFoundError("User not found.")
         await self._users.set_status(user, UserStatus.BANNED if banned else UserStatus.ACTIVE)

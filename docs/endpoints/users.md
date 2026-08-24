@@ -34,7 +34,8 @@ The actor is always the token subject; there is no path/body user id to tamper w
 Return a compact participant profile only when the authenticated actor shares an order
 or conversation with that user. Unauthorized and unknown users both return 404. The
 response contains only display name, role, rating/count, initials, optional signed
-avatar URL, and optional courier city/bio.
+avatar URL, and optional courier city/bio. A courier actor must still be ACTIVE and
+verified; rejected, pending, banned, and unverified couriers receive 403.
 
 ## POST /api/users/me/courier-verification/resubmit
 A `REJECTED` courier may request another review. The audited transition returns the

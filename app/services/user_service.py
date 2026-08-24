@@ -12,6 +12,7 @@ from app.models import CourierProfile, User
 from app.models.enums import UserRole, UserStatus
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.user_repository import ParticipantProjection, UserRepository
+from app.services.courier_eligibility_service import CourierEligibilityService
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,10 +32,17 @@ class ParticipantView:
 class UserService:
     """Owns self-profile updates and relationship-scoped participant reads."""
 
-    def __init__(self, *, users: UserRepository, audit: AuditRepository) -> None:
+    def __init__(
+        self,
+        *,
+        users: UserRepository,
+        audit: AuditRepository,
+        eligibility: CourierEligibilityService,
+    ) -> None:
         """Wire persistence collaborators."""
         self._users = users
         self._audit = audit
+        self._eligibility = eligibility
 
     async def get_me(self, actor_id: uuid.UUID) -> tuple[User, CourierProfile | None]:
         """Return only the authenticated actor's own profile."""
@@ -77,6 +85,7 @@ class UserService:
         self, *, actor_id: uuid.UUID, participant_id: uuid.UUID
     ) -> ParticipantView:
         """Return a compact profile after repository-level relationship proof."""
+        await self._eligibility.require_eligible_actor(actor_id)
         projection = await self._users.get_participant_for_actor(actor_id, participant_id)
         if projection is None:
             raise NotFoundError("Participant not found.")

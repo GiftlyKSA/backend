@@ -67,7 +67,13 @@ def _service(db: AsyncSession, redis: Redis) -> OrderService:
         ),
         media=MediaService(FakeStorageClient(Environment.TEST), settings),
         messages=MessageWriter(db),
-        ratings=RatingService(orders=OrderRepository(db), ratings=RatingRepository(db)),
+        ratings=RatingService(
+            orders=OrderRepository(db),
+            ratings=RatingRepository(db),
+            eligibility=CourierEligibilityService(
+                users=UserRepository(db), couriers=CourierRepository(db)
+            ),
+        ),
         redis=redis,
         settings=settings,
     )

@@ -17,6 +17,7 @@ from app.core.deps import Actor, get_db, require_auth
 from app.models import CourierProfile, User
 from app.models.enums import UserStatus
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.users import (
     CourierProfileResponse,
@@ -24,6 +25,7 @@ from app.schemas.users import (
     UserMeResponse,
     UserUpdateRequest,
 )
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.user_service import ParticipantView, UserService
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -32,7 +34,13 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 def _service(db: AsyncSession) -> UserService:
-    return UserService(users=UserRepository(db), audit=AuditRepository(db))
+    return UserService(
+        users=UserRepository(db),
+        audit=AuditRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
+    )
 
 
 @router.get("/me", response_model=UserMeResponse)

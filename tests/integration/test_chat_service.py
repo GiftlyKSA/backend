@@ -13,10 +13,13 @@ from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import NotFoundError
 from app.core.redis import build_redis
-from app.models import Conversation, Message, Order, User
-from app.models.enums import OrderStatus, UserRole
+from app.models import Conversation, CourierProfile, Message, Order, User
+from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.courier_repository import CourierRepository
+from app.repositories.user_repository import UserRepository
 from app.services.chat_service import ChatService
+from app.services.courier_eligibility_service import CourierEligibilityService
 from geoalchemy2 import WKTElement
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -47,14 +50,33 @@ async def redis_client() -> AsyncIterator[Redis]:
 
 
 def _service(db: AsyncSession, redis: Redis) -> ChatService:
-    return ChatService(chat=ChatRepository(db), redis=redis, settings=_settings())
+    return ChatService(
+        chat=ChatRepository(db),
+        redis=redis,
+        settings=_settings(),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
+    )
 
 
 async def _conversation(db: AsyncSession) -> tuple[User, User, Conversation]:
     customer = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
-    courier = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.COURIER)
+    courier = User(
+        phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}",
+        role=UserRole.COURIER,
+        status=UserStatus.ACTIVE,
+    )
     db.add_all([customer, courier])
     await db.flush()
+    db.add(
+        CourierProfile(
+            user_id=courier.id,
+            city_of_residence="Jeddah",
+            national_id_encrypted="test-ciphertext",
+            is_verified=True,
+        )
+    )
     order = Order(
         customer_id=customer.id,
         courier_id=courier.id,

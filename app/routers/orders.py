@@ -63,7 +63,13 @@ def _service(request: Request, db: AsyncSession) -> OrderService:
         ),
         media=MediaService(request.app.state.clients.storage, get_settings(request)),
         messages=MessageWriter(db),
-        ratings=RatingService(orders=OrderRepository(db), ratings=RatingRepository(db)),
+        ratings=RatingService(
+            orders=OrderRepository(db),
+            ratings=RatingRepository(db),
+            eligibility=CourierEligibilityService(
+                users=UserRepository(db), couriers=CourierRepository(db)
+            ),
+        ),
         redis=get_redis(request),
         settings=get_settings(request),
     )
