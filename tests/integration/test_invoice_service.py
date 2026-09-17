@@ -160,6 +160,15 @@ async def test_create_rejects_promo_with_zero_discount(db_session: AsyncSession)
 
 async def test_cancel_rejects_unknown_invoice(db_session: AsyncSession) -> None:
     courier = await _user(db_session, UserRole.COURIER)
+    db_session.add(
+        CourierProfile(
+            user_id=courier.id,
+            city_of_residence="Jeddah",
+            national_id_encrypted="test-ciphertext",
+            is_verified=True,
+        )
+    )
+    await db_session.flush()
     with pytest.raises(NotFoundError):
         await _service(db_session).cancel_invoice(invoice_id=uuid.uuid4(), courier_id=courier.id)
 

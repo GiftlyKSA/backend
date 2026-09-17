@@ -1179,8 +1179,8 @@ def upgrade() -> None:
             server_default="NEW",
             nullable=False,
         ),
-        sa.Column("paylink_transaction_no", sa.String(length=100), nullable=True),
-        sa.Column("paylink_url", sa.String(length=512), nullable=True),
+        sa.Column("gateway_reference", sa.String(length=100), nullable=True),
+        sa.Column("gateway_payment_url", sa.String(length=512), nullable=True),
         sa.Column("reference_invoice_id", sa.UUID(), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("paid_at", sa.DateTime(timezone=True), nullable=True),
@@ -1233,13 +1233,7 @@ def upgrade() -> None:
         ["user_id", sa.literal_column("created_at DESC")],
         unique=False,
     )
-    op.create_index(
-        "uq_payment_intents_paylink_txn",
-        "payment_intents",
-        ["paylink_transaction_no"],
-        unique=True,
-        postgresql_where=sa.text("paylink_transaction_no IS NOT NULL"),
-    )
+
     op.create_table(
         "promo_redemptions",
         sa.Column("promo_id", sa.UUID(), nullable=False),
@@ -1525,11 +1519,7 @@ def downgrade() -> None:
     op.drop_index("idx_promo_redemptions_promo_user", table_name="promo_redemptions")
     op.drop_index("idx_promo_redemptions_invoice", table_name="promo_redemptions")
     op.drop_table("promo_redemptions")
-    op.drop_index(
-        "uq_payment_intents_paylink_txn",
-        table_name="payment_intents",
-        postgresql_where=sa.text("paylink_transaction_no IS NOT NULL"),
-    )
+
     op.drop_index("idx_payment_intents_user_created", table_name="payment_intents")
     op.drop_index(
         "idx_payment_intents_status_expires",

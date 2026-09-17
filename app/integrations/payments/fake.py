@@ -1,4 +1,4 @@
-"""Deterministic StreamPay double for development and test environments."""
+"""Deterministic simulated payment double for development and test environments."""
 
 from __future__ import annotations
 
@@ -9,18 +9,18 @@ import secrets
 
 from app.core.config import Environment
 from app.integrations._guard import forbid_in_production
-from app.integrations.streampay.base import (
-    StreamPayCheckout,
-    StreamPayClient,
-    StreamPayCustomer,
-    StreamPayItem,
+from app.integrations.payments.base import (
+    PaymentCheckout,
+    PaymentClient,
+    PaymentCustomer,
+    PaymentItem,
 )
 
-_DEFAULT_WEBHOOK_KEY = hashlib.sha256(b"safe-gift-fake-streampay-key").hexdigest()
+_DEFAULT_WEBHOOK_KEY = hashlib.sha256(b"safe-gift-local-payment-key").hexdigest()
 
 
-class FakeStreamPayClient(StreamPayClient):
-    """Return local hosted-checkout URLs and timestamped Stream-shaped signatures."""
+class FakePaymentClient(PaymentClient):
+    """Return local hosted-checkout URLs and timestamped local test signatures."""
 
     def __init__(self, environment: Environment, webhook_secret: str | None = None) -> None:
         """Refuse construction in production and initialize a unique link sequence."""
@@ -33,24 +33,24 @@ class FakeStreamPayClient(StreamPayClient):
         self,
         *,
         reference: str,
-        customer: StreamPayCustomer,
-        items: tuple[StreamPayItem, ...],
+        customer: PaymentCustomer,
+        items: tuple[PaymentItem, ...],
         success_redirect_url: str | None,
         failure_redirect_url: str | None,
-    ) -> StreamPayCheckout:
-        """Return a unique local URL; parameters mirror the real client contract."""
+    ) -> PaymentCheckout:
+        """Return a unique local URL; no live provider is contacted."""
         del reference, customer, items, success_redirect_url, failure_redirect_url
-        payment_link_id = f"FAKE-STREAM-LINK-{self._prefix}-{next(self._counter):08d}"
-        return StreamPayCheckout(
+        payment_link_id = f"FAKE-PAYMENT-LINK-{self._prefix}-{next(self._counter):08d}"
+        return PaymentCheckout(
             payment_link_id=payment_link_id,
             payment_url=(
-                "http://localhost:8000/api/dev/streampay/simulate?"
+                "http://localhost:8000/api/dev/simulation/simulate?"
                 f"payment_link_id={payment_link_id}"
             ),
         )
 
     def sign(self, raw_body: bytes, *, timestamp: str = "1720000000") -> str:
-        """Return the production-format `t=...,v1=...` HMAC header."""
+        """Return the local test `t=...,v1=...` HMAC header."""
         message = timestamp.encode("utf-8") + b"." + raw_body
         signature = hmac.new(self._webhook_secret, message, hashlib.sha256).hexdigest()
         return f"t={timestamp},v1={signature}"

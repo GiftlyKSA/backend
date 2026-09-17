@@ -1,0 +1,66 @@
+minimum_pre_commit_version: '4.3.0'
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+# Use the same uv.lock versions as CI; no separate hook environments.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint (staged Python)
+        entry: uv run --locked ruff check
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: Ruff format check (staged Python)
+        entry: uv run --locked ruff format --check
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: check-yaml
+        name: Check YAML
+        entry: uv run --locked check-yaml
+        language: system
+        types: [yaml]
+      - id: check-toml
+        name: Check TOML
+        entry: uv run --locked check-toml
+        language: system
+        types: [toml]
+      - id: check-json
+        name: Check JSON
+        entry: uv run --locked check-json
+        language: system
+        types: [json]
+      - id: check-merge-conflict
+        name: Check merge conflicts
+        entry: uv run --locked check-merge-conflict
+        language: system
+        types: [text]
+      - id: detect-private-key
+        name: Detect private keys
+        entry: uv run --locked detect-private-key
+        language: system
+        types: [text]
+      - id: ruff-check-all
+        name: Ruff lint (full project)
+        entry: uv run --locked ruff check .
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+      - id: ruff-format-all
+        name: Ruff format check (full project)
+        entry: uv run --locked ruff format --check .
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+      - id: mypy
+        name: mypy strict type checks
+        entry: uv run --locked mypy app
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

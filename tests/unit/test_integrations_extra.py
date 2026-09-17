@@ -128,7 +128,7 @@ async def test_real_storage_only_treats_missing_object_as_absent(code: str, miss
 
 def test_build_clients_returns_fakes_in_test() -> None:
     clients = build_clients(make_test_settings())
-    assert type(clients.gateway).__name__ == "FakeStreamPayClient"
+    assert type(clients.gateway).__name__ == "FakePaymentClient"
     assert type(clients.email).__name__ == "FakeEmailClient"
 
 
@@ -137,9 +137,6 @@ def test_build_clients_returns_real_in_production() -> None:
         ENVIRONMENT=Environment.PRODUCTION.value,
         DEBUG=False,
         CORS_ALLOWED_ORIGINS="https://app.example.com",
-        STREAMPAY_API_KEY="key",
-        STREAMPAY_API_SECRET="secret",
-        STREAMPAY_WEBHOOK_SECRET="wh",
         SNDR_API_KEY="k",
         SNDR_BASE_URL="https://sndr",
         SNDR_FROM_EMAIL="f@x",
@@ -157,5 +154,5 @@ def test_build_clients_returns_real_in_production() -> None:
         CLOUDFRONT_PRIVATE_KEY=_private_key_pem(),
     )
     clients = build_clients(settings)
-    assert type(clients.gateway).__name__ == "RealStreamPayClient"
+    assert type(clients.gateway).__name__ == "DisabledPaymentClient"
     assert type(clients.email).__name__ == "SndrEmailClient"

@@ -15,9 +15,7 @@ from pydantic import ValidationError
         ("+966 50 123 4567", "+966501234567"),
     ],
 )
-def test_otp_requests_normalize_common_saudi_mobile_entry(
-    entered: str, canonical: str
-) -> None:
+def test_otp_requests_normalize_common_saudi_mobile_entry(entered: str, canonical: str) -> None:
     assert SendOtpRequest(phone=entered).phone == canonical
     assert VerifyOtpRequest(phone=entered, otp="123456").phone == canonical
 

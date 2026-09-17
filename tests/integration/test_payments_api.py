@@ -1,7 +1,7 @@
 """End-to-end payment tests: top-up, wallet/gateway invoice payment, webhook idempotency.
 
 The dev simulate route fires a correctly-signed webhook at the REAL handler, so these
-exercise the whole gateway path with no StreamPay credentials. Runs on one event loop via
+exercise the whole gateway path with no simulated payment credentials. Runs on one event loop via
 httpx's ASGI transport; skips if DB/Redis are unavailable.
 """
 
@@ -62,7 +62,7 @@ async def _settle(
     ).encode("utf-8")
     signature = app.state.clients.gateway.sign(body)  # type: ignore[attr-defined]
     resp = await client.post(
-        "/api/webhooks/streampay",
+        "/api/webhooks/simulation",
         headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
         content=body,
     )
@@ -262,7 +262,7 @@ async def test_webhook_rejects_bad_signature() -> None:
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
             resp = await client.post(
-                "/api/webhooks/streampay",
+                "/api/webhooks/simulation",
                 headers={"X-Webhook-Signature": "deadbeef"},
                 json={
                     "event_type": "PAYMENT_SUCCEEDED",
@@ -276,7 +276,7 @@ async def test_webhook_rejects_bad_signature() -> None:
         await app.state.engine.dispose()
 
 
-async def test_development_topup_settles_without_stream_pay() -> None:
+async def test_development_topup_settles_without_external_gateway() -> None:
     settings, engine, _factory = await _make_stack()
     # The dev simulate route is registered only in development.
     dev_settings = make_test_settings(
@@ -296,7 +296,7 @@ async def test_development_topup_settles_without_stream_pay() -> None:
 
             # The route remains available only for historical pending links.
             missing = await client.post(
-                "/api/dev/streampay/simulate", json={"payment_link_id": "NOPE-404"}
+                "/api/dev/simulation/simulate", json={"payment_link_id": "NOPE-404"}
             )
             assert missing.status_code == 404
     finally:

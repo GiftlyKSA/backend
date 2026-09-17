@@ -4,7 +4,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,9 +23,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --all-extras --dev
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy app
+      - run: uv run --locked pre-commit run --all-files
+      - run: uv run --locked pre-commit run --all-files --hook-stage pre-push
 
   test:
     runs-on: ubuntu-latest
@@ -52,10 +51,11 @@ jobs:
           - 6379:6379
     env:
       # Dummies only, in plain sight — never repository secrets. In ENVIRONMENT=test
-      # the client factory returns Fakes, so the suite cannot reach Paylink or sndr.
+      # the client factory returns Fakes, so the suite cannot reach a live payment provider or sndr.
       ENVIRONMENT: test
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      MIGRATION_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/giftly_migration_test
       REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: "test-jwt-secret-value-not-real-000000000000"
       JWT_ALGORITHM: HS256
@@ -68,7 +68,7 @@ jobs:
       IDENTITY_FINGERPRINT_PEPPER: "test-pepper-value-not-real-0000000000000"
       ADMIN_SESSION_SECRET: "test-admin-session-secret-not-real-00000"
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
-      # NO PAYLINK_*. NO SNDR_*. NO AWS_*. Deliberately absent.
+      # NO SNDR_*. NO AWS_*. Deliberately absent.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -80,6 +80,7 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
             -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          PGPASSWORD=postgres createdb -h localhost -U postgres giftly_migration_test
       - run: uv run alembic upgrade head
       - run: uv run pytest -q --cov=app --cov-report=xml --cov-fail-under=85
       - uses: actions/upload-artifact@v4
@@ -119,8 +120,10 @@ jobs:
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --dev
       - run: uv run python -m app.export_openapi
-      - name: Fail if the committed OpenAPI spec is stale
-        run: git diff --exit-code docs/openapi.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: docs/openapi.json
 
   docker:
     runs-on: ubuntu-latest

@@ -99,24 +99,9 @@ def upgrade() -> None:
         postgresql_where=sa.text("gateway_supplier_id IS NOT NULL"),
     )
 
-    op.add_column("payment_intents", sa.Column("gateway_reference", sa.String(100), nullable=True))
-    op.add_column(
-        "payment_intents", sa.Column("gateway_payment_url", sa.String(512), nullable=True)
-    )
     op.add_column(
         "payment_intents",
         sa.Column("gateway_customer_identifier", sa.String(100), nullable=True),
-    )
-    op.execute(
-        sa.text(
-            """
-            UPDATE payment_intents
-            SET gateway_reference = streampay_payment_link_id,
-                gateway_payment_url = streampay_payment_url
-            WHERE checkout_provider = 'STREAMPAY'
-              AND gateway_reference IS NULL
-            """
-        )
     )
     op.create_index(
         "uq_payment_intents_gateway_reference",
@@ -381,7 +366,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove dormant records while retaining legacy StreamPay and ledger data."""
+    """Remove dormant records while retaining existing checkout and ledger data."""
     op.execute(
         sa.text(
             """
@@ -430,8 +415,6 @@ def downgrade() -> None:
 
     op.drop_index("uq_payment_intents_gateway_reference", table_name="payment_intents")
     op.drop_column("payment_intents", "gateway_customer_identifier")
-    op.drop_column("payment_intents", "gateway_payment_url")
-    op.drop_column("payment_intents", "gateway_reference")
 
     op.drop_index("uq_courier_profiles_gateway_supplier", table_name="courier_profiles")
     op.drop_column("courier_profiles", "verification_rejection_reason")
@@ -496,6 +479,7 @@ def _restore_previous_enums() -> None:
             "WHERE media_type IN ('PROFILE_AVATAR','CHAT_ATTACHMENT')"
         )
     )
+    op.drop_constraint("chk_proof_has_location", "order_media", type_="check")
     op.execute(
         sa.text("CREATE TYPE media_type_previous AS ENUM ('CUSTOMER_REQUEST','DELIVERY_PROOF')")
     )
@@ -507,6 +491,11 @@ def _restore_previous_enums() -> None:
     )
     op.execute(sa.text("DROP TYPE media_type"))
     op.execute(sa.text("ALTER TYPE media_type_previous RENAME TO media_type"))
+    op.create_check_constraint(
+        "chk_proof_has_location",
+        "order_media",
+        "media_type <> 'DELIVERY_PROOF' OR capture_location IS NOT NULL",
+    )
 
     op.execute(sa.text("UPDATE messages SET message_type = 'TEXT' WHERE message_type = 'MIXED'"))
     op.execute(

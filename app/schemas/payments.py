@@ -64,7 +64,7 @@ class WebhookAck(BaseModel):
 
 
 class SimulatePaymentRequest(BaseModel):
-    """Development-only: simulate a StreamPay callback for a payment-link ID."""
+    """Development-only: simulate a simulated payment callback for a payment-link ID."""
 
     model_config = ConfigDict(extra="forbid")
     payment_link_id: _Txn

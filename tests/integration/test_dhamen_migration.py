@@ -56,8 +56,6 @@ def test_models_expose_generic_gateway_and_privacy_scoped_columns() -> None:
         "gateway_reference",
         "gateway_payment_url",
         "gateway_customer_identifier",
-        "streampay_payment_link_id",
-        "streampay_payment_url",
     } <= set(models.PaymentIntent.__table__.columns.keys())
     assert {"avatar_storage_key", "gateway_customer_identifier"} <= set(
         models.User.__table__.columns.keys()
@@ -323,10 +321,11 @@ async def test_database_rejects_duplicate_provider_and_customer_records(
         role=UserRole.COURIER,
         gateway_customer_identifier="100000000001",
     )
-    wallet = models.Wallet(user_id=None, type=WalletType.COURIER)
-    db_session.add_all([courier, wallet])
+    db_session.add(courier)
     await db_session.flush()
-    wallet.user_id = courier.id
+    wallet = models.Wallet(user_id=courier.id, type=WalletType.COURIER)
+    db_session.add(wallet)
+    await db_session.flush()
     withdrawal = models.Withdrawal(
         courier_id=courier.id,
         wallet_id=wallet.id,
@@ -542,22 +541,7 @@ async def test_notification_receipt_repository_is_idempotent(db_session: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_streampay_generic_fields_are_backfilled(db_session: AsyncSession) -> None:
-    """The migration keeps legacy fields and copies their values to generic columns."""
-    intent = await db_session.scalar(
-        select(models.PaymentIntent).where(
-            models.PaymentIntent.checkout_provider == "STREAMPAY",
-            models.PaymentIntent.streampay_payment_link_id.is_not(None),
-        )
-    )
-    if intent is None:
-        pytest.skip("clean head has no pre-existing StreamPay intent to inspect")
-    assert intent.gateway_reference == intent.streampay_payment_link_id
-    assert intent.gateway_payment_url == intent.streampay_payment_url
-
-
-@pytest.mark.asyncio
-async def test_real_migration_backfills_legacy_stream_pay_and_all_active_users() -> None:
+async def test_real_migration_preserves_checkouts_and_backfills_active_users() -> None:
     """Prior-head rows are seeded before upgrade so the actual migration does the backfill."""
     database_url = _dedicated_migration_database_url()
     _run_alembic(database_url, "downgrade", "base")
@@ -587,9 +571,9 @@ async def test_real_migration_backfills_legacy_stream_pay_and_all_active_users()
                     """
                     INSERT INTO payment_intents (
                         user_id, purpose, amount, status, checkout_provider,
-                        streampay_payment_link_id, streampay_payment_url, expires_at
+                        gateway_reference, gateway_payment_url, expires_at
                     ) VALUES (
-                        :user_id, 'WALLET_TOPUP', 100.00, 'NEW', 'STREAMPAY',
+                        :user_id, 'WALLET_TOPUP', 100.00, 'NEW', 'SIMULATED',
                         'legacy-link-1', 'https://legacy.example/pay/1', :expires_at
                     )
                     """
@@ -606,7 +590,7 @@ async def test_real_migration_backfills_legacy_stream_pay_and_all_active_users()
                         """
                         SELECT gateway_reference, gateway_payment_url
                         FROM payment_intents
-                        WHERE streampay_payment_link_id = 'legacy-link-1'
+                        WHERE gateway_reference = 'legacy-link-1'
                         """
                     )
                 )

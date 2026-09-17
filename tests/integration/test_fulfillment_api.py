@@ -60,7 +60,7 @@ async def _settle(client: AsyncClient, app: object, payment_link_id: str, amount
     ).encode()
     sig = app.state.clients.gateway.sign(body)  # type: ignore[attr-defined]
     await client.post(
-        "/api/webhooks/streampay",
+        "/api/webhooks/simulation",
         headers={"X-Webhook-Signature": sig, "Content-Type": "application/json"},
         content=body,
     )

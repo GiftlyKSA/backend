@@ -5,7 +5,7 @@ description = "SAFE-GIFT — peer-to-peer custom gifting marketplace backend."
 readme = "README.md"
 # SPEC SECTION 2 mandates Python 3.13+. This build environment cannot download a
 # 3.13 interpreter (egress policy blocks python-build-standalone), so the floor is
-# relaxed to 3.11 here. See DECISIONS.md. Production images should pin 3.13.
+# relaxed to 3.11 here. Production images pin 3.13.
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -42,6 +42,8 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "testcontainers>=4.8",
+    "pre-commit>=4.3,<5",
+    "pre-commit-hooks>=6,<7",
 ]
 
 [tool.uv]

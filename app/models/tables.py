@@ -638,10 +638,8 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=enums.PaymentIntentStatus.NEW.value,
     )
     checkout_provider: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'STREAMPAY'")
+        String(20), nullable=False, server_default=text("'SIMULATED'")
     )
-    streampay_payment_link_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    streampay_payment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     gateway_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gateway_payment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     gateway_customer_identifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -658,12 +656,6 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "(purpose='ORDER_INVOICE' AND reference_invoice_id IS NOT NULL) "
             "OR (purpose='WALLET_TOPUP' AND reference_invoice_id IS NULL)",
             name="chk_intent_purpose_reference",
-        ),
-        Index(
-            "uq_payment_intents_streampay_link",
-            "streampay_payment_link_id",
-            unique=True,
-            postgresql_where=text("streampay_payment_link_id IS NOT NULL"),
         ),
         Index(
             "uq_payment_intents_gateway_reference",

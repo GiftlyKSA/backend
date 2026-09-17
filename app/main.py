@@ -103,7 +103,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(orders.router)
     app.include_router(invoices.router)
     app.include_router(promos.router)
-    app.include_router(webhooks.router)
+    if not settings.is_production:
+        app.include_router(webhooks.router)
     app.include_router(ratings.router)
     app.include_router(admin_api.router)
     app.include_router(chat.router)

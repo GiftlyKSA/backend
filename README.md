@@ -6,19 +6,10 @@ builds an itemised invoice, the customer pays into platform escrow, and funds re
 to the courier only after geofenced, photo-proven delivery is approved. This repository
 is the backend, admin dashboard, and documentation — there is no mobile/web client here.
 
-> Build status: **all 14 phases implemented and green.** Configuration and the
-> production safety interlock; the money/pricing/crypto engines; the full data layer
-> (23 application tables, constraints, indexes, ledger/immutability triggers, system-wallet seed);
-> the OTP→JWT auth API with refresh rotation; the double-entry ledger and wallet
-> endpoints; the promo engine with atomic reservation; orders with the courier radar
-> and geofenced delivery; itemised invoices and pricing; split wallet/gateway payments
-> into escrow with the signed webhook; the receipt email sweeper; delivery, approval,
-> payout, disputes, and ratings; encrypted chat with a live WebSocket; push
-> notifications, the expiry sweeper, and encryption-key rotation; hardening (global
-> rate limiting, body-size guard, real readiness probe); and the **server-rendered
-> admin dashboard**. CI enforces lint, strict types, ≥85 % test coverage, a fresh
-> OpenAPI spec, a non-root image, and secret-free image history. A full self-audit
-> lives in `docs/audit/`; see `DECISIONS.md` for the decision log.
+> Payment status: **Dhamen is the selected provider; production payments are disabled**
+> until its integration and callback authentication are implemented and verified.
+> Development/test simulations remain available. CI checks lint, types, tests,
+> coverage, security, generated OpenAPI, and Docker packaging.
 
 ## Architecture
 
@@ -30,8 +21,8 @@ is the backend, admin dashboard, and documentation — there is no mobile/web cl
                  |             services/ (all business logic)     |
                  |        |                          |            |
                  |        v                          v            |
-                 |   repositories/ (all DB access)   integrations/|--> StreamPay / sndr /
-                 |        |                                        |    SMS / Push / S3
+                 |   repositories/ (all DB access)   integrations/|--> email / SMS /
+                 |        |                                        |    Push / S3
                  |        v                                        |
                  |   models/ (SQLAlchemy)  <--  core/ (config,     |
                  |                              money, pricing,    |
@@ -45,7 +36,7 @@ the reverse. A module may import another module's **service interface** only.
 
 ## Tech stack
 
-Python 3.13 (see the note in `DECISIONS.md`), FastAPI + Uvicorn/Gunicorn, Pydantic v2,
+Python 3.13 in Docker (project minimum: 3.11), FastAPI + Uvicorn/Gunicorn, Pydantic v2,
 SQLAlchemy 2 async + asyncpg, Alembic, Redis, TaskIQ, PostgreSQL 16 + PostGIS,
 `cryptography`, PyJWT, Jinja2 (admin), ruff, mypy, pytest. Package management is **`uv`
 only** — `pip`, `poetry`, `pipenv`, `virtualenv`, and `conda` are forbidden everywhere.
@@ -60,7 +51,7 @@ only** — `pip`, `poetry`, `pipenv`, `virtualenv`, and `conda` are forbidden ev
 ```bash
 uv sync                                   # install from the committed uv.lock
 cp .env.example .env                      # then fill in the blanks (see the table below)
-docker compose up -d                      # Postgres (PostGIS) + Redis, bound to 127.0.0.1
+docker compose up -d db redis             # data services only; run the API below
 uv run alembic upgrade head               # apply the schema (creates system wallets)
 uv run python -m app.seed                 # idempotent safety-net seed
 uv run uvicorn app.main:create_app --factory --reload   # http://localhost:8000
@@ -68,12 +59,6 @@ uv run uvicorn app.main:create_app --factory --reload   # http://localhost:8000
 
 Health check: `curl localhost:8000/api/health`. In development the OpenAPI docs are at
 `/docs`; they are disabled in test and production by design.
-
-### Optional: PgBouncer pooling path
-
-```bash
-docker compose --profile full up -d       # adds pgbouncer (transaction mode) on :6432
-```
 
 ## Environment variables
 
@@ -93,14 +78,14 @@ at runtime (task definition / compose override / systemd `EnvironmentFile`). See
 | `FIELD_ENCRYPTION_KEY_VERSION` | all | active key version in the map | `1` |
 | `IDENTITY_FINGERPRINT_PEPPER` | all | >= 32 bytes, distinct from every enc key | `<32+ random bytes>` |
 | `CORS_ALLOWED_ORIGINS` | production | exact origins; wildcard banned | `https://app.example.com` |
-| `STREAMPAY_*` | production | API key/secret, webhook secret, optional redirects | — |
+| `DHAMEN_*` | reserved only | Future vendor configuration; not loaded or used by an active client | — |
 | `SNDR_*` | production | email api key/base url/from/template | — |
 | `AWS_*`, `S3_BUCKET_NAME`, `CLOUDFRONT_*` | production | storage + signed CDN | — |
 | `ADMIN_SESSION_SECRET` | if dashboard on | >= 32 bytes | `<32+ random bytes>` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | if dashboard on | environment-backed login; production password >= 12 chars | `admin` / `admin` (development only) |
 
 The application **refuses to boot** if any production-safety rule is violated (DEBUG on,
-docs enabled, empty/wildcard CORS, missing StreamPay/sndr config, a bad encryption key, or
+docs enabled, empty/wildcard CORS, missing required storage/messaging config, a bad encryption key, or
 a pepper equal to an encryption key). This is the first of four layers of the production
 safety interlock (SPEC SECTION 5.2).
 
@@ -120,7 +105,7 @@ server trust the forwarded header from that proxy:
 
 ```bash
 # Trust X-Forwarded-For ONLY from your known proxy CIDRs — never "*".
-gunicorn app.main:create_app --factory \
+gunicorn 'app.main:create_app()' \
   --worker-class uvicorn.workers.UvicornWorker \
   --forwarded-allow-ips="10.0.0.0/8"
 ```
@@ -128,17 +113,42 @@ gunicorn app.main:create_app --factory \
 Without this, all unauthenticated traffic collapses into a single rate-limit bucket. Do
 not parse `X-Forwarded-For` in application code — trusting a
 client-supplied header is a spoofing footgun; let the server strip it against a trusted
-proxy list. This is audit finding **NF-1** in `docs/audit/`.
+proxy list.
 
 ## Running tests, lint, and types
 
 ```bash
-uv run pytest                 # full suite
-uv run pytest tests/unit -q   # fast unit tests only
-uvx ruff check --fix          # lint (replaces black, isort, flake8)
-uvx ruff format               # format
-uv run mypy app               # strict types on services/, repositories/, core/
+uv run --locked pytest                 # full suite; requires test services
+uv run --locked pytest tests/unit -q   # unit tests
+uv run --locked ruff check .           # lint, imports, security rules
+uv run --locked ruff format --check .  # verify formatting
+uv run --locked mypy app               # strict types
+uv run --locked ruff check --fix .     # apply intended lint/import fixes
+uv run --locked ruff format .          # apply formatting
 ```
+
+### Git hooks (Windows, Linux, and macOS)
+
+Run these commands from the backend root after each clone, with `uv` on PATH:
+
+```bash
+uv sync --locked --dev
+uv run --locked pre-commit install
+uv run --locked pre-commit run --all-files
+uv run --locked pre-commit run --all-files --hook-stage pre-push
+```
+
+Installation enables both **pre-commit** and **pre-push** hooks. Pre-commit checks
+staged Python lint/formatting, YAML/TOML/JSON syntax, merge conflicts, and private
+keys. It does not rewrite files: apply the fix commands above, review, and stage
+the result. Pre-push checks lint, formatting, and strict types across the project.
+All hook tools use the versions in `uv.lock`, matching CI. See
+[the pre-commit documentation](https://pre-commit.com/) for hook operation.
+
+The full test suite remains a separate CI gate because it needs disposable
+PostgreSQL/PostGIS and Redis services. Hooks do not replace CI or branch protection.
+Follow [AGENTS.md](AGENTS.md) for backend development rules. Push to `master` when
+authorized. On Windows, use `Copy-Item .env.example .env` in place of `cp` in setup.
 
 ## Migrations
 
@@ -157,22 +167,36 @@ autogenerated migration is a draft: read it before committing (SPEC SECTION 4.8)
 app/
   core/          config, security, crypto, money, pricing, logging, exceptions, db
   models/        SQLAlchemy ORM + enums + base mixins
-  integrations/  streampay/ email/ sms/ push/ storage/ — each behind an ABC, with fakes
+  integrations/  payments/ email/ sms/ push/ storage/ — interfaces and test fakes
   routers/       HTTP + WS (health, dev)              services/ repositories/ (per phase)
   admin/         server-rendered dashboard            workers/  background tasks
   migrations/    Alembic
-docs/            written for a separate UI-building agent (see docs/README.md)
 tests/           mirrors the source tree
 ```
 
-## Development payments
+## Payments and Dhamen
 
-With `ENVIRONMENT=development`, wallet top-ups and invoice gateway remainders settle
-immediately through the application's normal ledger and escrow flows. StreamPay is not
-called and the API returns `payment_url: null`. In production, the same endpoints create a
-StreamPay checkout and wait for its signed webhook. The development-only
-`POST /api/dev/streampay/simulate` route remains available for testing historical pending
-payment links and is not registered in test or production.
+Dhamen is the selected payment provider. Its database scaffolding and reserved
+`.env.example` entries are preparation only: there is no live Dhamen client or
+verified Dhamen callback endpoint yet. Do not enter live credentials to enable it;
+there is no enable flag.
+
+In production, wallet top-ups, invoice payments (including wallet-only payments),
+and direct webhook service calls fail with HTTP `503`, code `PAYMENTS_DISABLED`,
+before creating intents, changing balances, or contacting a gateway. The simulation
+webhook and development routes are not registered in production.
+
+With `ENVIRONMENT=development`, wallet top-ups and invoice remainders settle locally
+through the normal ledger/escrow flows and return `payment_url: null`. Tests can use
+`POST /api/webhooks/simulation` with the local fake signature. Development also has
+`POST /api/dev/simulation/simulate` for pending simulated checkouts. The payload and
+signature are a test harness, **not a Dhamen protocol**.
+
+The migration history was cleaned for fresh databases with the owner's confirmation
+that no existing database needs the previous history. Create a fresh database and run
+`uv run --locked alembic upgrade head`; do not apply this rewritten history to an
+older deployment. Downgrade testing must use a disposable database. Production
+payments require a separately reviewed Dhamen implementation before activation.
 
 ## Admin dashboard
 
@@ -184,21 +208,18 @@ calls the **same** services as the JSON API — it never queries the DB directly
 views are read-only except for audited user, courier-profile, and eligible order
 delivery-detail updates. Signed-in dashboard admins can view user and courier contact
 fields; documents, tokens, encrypted values, and financial fields remain restricted.
-See `docs/endpoints/admin.md` for the exact field-level boundary.
 
-## Docs
+## API documentation
 
-`docs/` is a first-class deliverable written for a UI-building agent that cannot read
-this source. Start at `docs/README.md`. `docs/openapi.json` is exported by CI.
+Development serves the interactive schema at `/docs`. CI exports the current schema
+as an `openapi` artifact. Generate a local copy with
+`uv run --locked python -m app.export_openapi` (writes `docs/openapi.json`).
+The previous static documentation archive has been removed; refer to the current
+schema and source for the implemented contract.
 
-## Audit
-
-`docs/audit/` holds a full self-audit of the finished codebase (security, money
-integrity, logic, performance, and guideline compliance), with severity-ranked
-findings and file:line evidence. Start at `docs/audit/README.md` — the finding index
-table is the executive summary. **All 17 actionable findings are fixed** (re-audited
-2026-07-20); what remains is the documented accepted-trade-off list and one
-vendor-blocked item.
+The [2026-09-17 backend review](docs/2026-09-17-backend-review.md) records open
+security, reliability, performance, and maintainability findings, proposed fixes,
+and verification limits. It is not a declaration of production readiness.
 
 ## Troubleshooting
 

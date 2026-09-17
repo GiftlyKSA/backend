@@ -1,4 +1,4 @@
-"""StreamPay payment-link contract used by payment orchestration."""
+"""Local payment simulation contract used by payment orchestration."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from decimal import Decimal
 
 
 @dataclass(frozen=True)
-class StreamPayCustomer:
-    """The known payer attached to a StreamPay checkout."""
+class PaymentCustomer:
+    """The known payer attached to a simulated payment checkout."""
 
     external_id: str
     name: str
@@ -18,8 +18,8 @@ class StreamPayCustomer:
 
 
 @dataclass(frozen=True)
-class StreamPayItem:
-    """One immutable invoice item represented as a StreamPay one-time product."""
+class PaymentItem:
+    """One immutable invoice item represented as a simulated payment one-time product."""
 
     name: str
     description: str | None
@@ -27,28 +27,28 @@ class StreamPayItem:
 
 
 @dataclass(frozen=True)
-class StreamPayCheckout:
+class PaymentCheckout:
     """The hosted checkout URL and its provider payment-link ID."""
 
     payment_link_id: str
     payment_url: str
 
 
-class StreamPayClient(ABC):
-    """Creates hosted StreamPay checkouts and authenticates Stream webhooks."""
+class PaymentClient(ABC):
+    """Creates hosted simulated payment checkouts and authenticates local simulation callbacks."""
 
     @abstractmethod
     async def create_payment_link(
         self,
         *,
         reference: str,
-        customer: StreamPayCustomer,
-        items: tuple[StreamPayItem, ...],
+        customer: PaymentCustomer,
+        items: tuple[PaymentItem, ...],
         success_redirect_url: str | None,
         failure_redirect_url: str | None,
-    ) -> StreamPayCheckout:
-        """Create a one-time StreamPay payment link for the supplied invoice items."""
+    ) -> PaymentCheckout:
+        """Create a one-time simulated payment link for the supplied invoice items."""
 
     @abstractmethod
     def verify_webhook_signature(self, raw_body: bytes, signature: str) -> bool:
-        """Verify StreamPay's timestamped HMAC signature in constant time."""
+        """Verify simulated payment's timestamped HMAC signature in constant time."""

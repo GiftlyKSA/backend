@@ -53,7 +53,7 @@ _REDACTED_COLUMNS = {
     "user_agent",
     "delivery_address_note",
     "iban_last4",
-    "streampay_payment_url",
+    "gateway_payment_url",
 }
 
 

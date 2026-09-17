@@ -118,7 +118,7 @@ async def test_expiry_reopens_order_and_releases_hold() -> None:
                 amount=Decimal("424.50"),
                 status=PaymentIntentStatus.NEW,
                 reference_invoice_id=invoice.id,
-                streampay_payment_link_id=f"LINK-{uuid.uuid4().hex[:10]}",
+                gateway_reference=f"LINK-{uuid.uuid4().hex[:10]}",
                 expires_at=datetime.now(UTC) - timedelta(hours=1),
             )
             session.add(intent)

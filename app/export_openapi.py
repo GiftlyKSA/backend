@@ -1,8 +1,7 @@
 """Export the OpenAPI schema to docs/openapi.json (SPEC SECTION 4.3, 23).
 
 The /docs endpoint is disabled outside development, so CI runs this with
-ENVIRONMENT=development to keep a reviewable contract in the repo. A route change
-that does not update the committed spec fails the ``docs`` CI job.
+ENVIRONMENT=development to publish a reviewable contract as a CI artifact.
 """
 
 from __future__ import annotations

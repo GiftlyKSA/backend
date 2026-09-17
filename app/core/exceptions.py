@@ -28,6 +28,14 @@ class DomainError(Exception):
             self.message = message
 
 
+class PaymentsDisabledError(DomainError):
+    """Production payments are suspended until Dhamen is implemented and verified."""
+
+    code = "PAYMENTS_DISABLED"
+    message = "Payments are temporarily unavailable."
+    status_code = 503
+
+
 class NotFoundError(DomainError):
     """The resource does not exist, or the actor has no relationship to it."""
 

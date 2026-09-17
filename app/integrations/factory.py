@@ -16,6 +16,9 @@ from app.core.config import Environment, Settings
 from app.integrations.email.base import EmailClient
 from app.integrations.email.fake import FakeEmailClient
 from app.integrations.email.sndr_client import SndrEmailClient
+from app.integrations.payments.base import PaymentClient
+from app.integrations.payments.disabled import DisabledPaymentClient
+from app.integrations.payments.fake import FakePaymentClient
 from app.integrations.push.base import PushClient
 from app.integrations.push.fake import FakePushClient
 from app.integrations.push.real import RealPushClient
@@ -25,16 +28,13 @@ from app.integrations.sms.real import RealSmsClient
 from app.integrations.storage.base import StorageClient
 from app.integrations.storage.fake import FakeStorageClient
 from app.integrations.storage.real import S3StorageClient
-from app.integrations.streampay.base import StreamPayClient
-from app.integrations.streampay.fake import FakeStreamPayClient
-from app.integrations.streampay.real import RealStreamPayClient
 
 
 @dataclass(frozen=True)
 class Clients:
     """The bundle of integration clients wired for the active environment."""
 
-    gateway: StreamPayClient
+    gateway: PaymentClient
     email: EmailClient
     sms: SmsClient
     push: PushClient
@@ -44,7 +44,8 @@ class Clients:
 def build_clients(settings: Settings) -> Clients:
     """Construct the integration clients for the active environment.
 
-    In production, returns only Real clients. In development/test, returns Fakes.
+    In production, payments are disabled; other integrations use real clients.
+    In development/test, returns Fakes.
     Selecting a Real client in production requires its config, which boot validation
     has already guaranteed present.
 
@@ -57,13 +58,7 @@ def build_clients(settings: Settings) -> Clients:
 
 
 def _build_production_clients(settings: Settings) -> Clients:
-    gateway = RealStreamPayClient(
-        api_key=_required_secret(settings.STREAMPAY_API_KEY, "STREAMPAY_API_KEY"),
-        api_secret=_required_secret(settings.STREAMPAY_API_SECRET, "STREAMPAY_API_SECRET"),
-        webhook_secret=_required_secret(
-            settings.STREAMPAY_WEBHOOK_SECRET, "STREAMPAY_WEBHOOK_SECRET"
-        ),
-    )
+    gateway = DisabledPaymentClient()
     email = SndrEmailClient(
         base_url=settings.SNDR_BASE_URL or "",
         api_key=_required_secret(settings.SNDR_API_KEY, "SNDR_API_KEY"),
@@ -107,7 +102,7 @@ def _required_secret(value: SecretStr | None, name: str) -> str:
 
 def _build_fake_clients(environment: Environment) -> Clients:
     return Clients(
-        gateway=FakeStreamPayClient(environment),
+        gateway=FakePaymentClient(environment),
         email=FakeEmailClient(environment),
         sms=FakeSmsClient(environment),
         push=FakePushClient(environment),

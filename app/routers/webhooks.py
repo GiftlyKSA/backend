@@ -1,4 +1,4 @@
-"""StreamPay webhook routes (SPEC SECTION 5.1, 17.2 A08)."""
+"""Payment simulation callbacks, registered only outside production."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ from app.services.payment_service import build_payment_service
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
-@router.post("/streampay", response_model=WebhookAck)
-async def streampay_webhook(
+@router.post("/simulation", response_model=WebhookAck)
+async def simulation_webhook(
     request: Request,
     x_webhook_signature: Annotated[str, Header()] = "",
 ) -> WebhookAck:
-    """Verify and process a StreamPay callback (signature over the raw body)."""
+    """Verify and process a simulated payment callback (signature over the raw body)."""
     raw_body = await request.body()
     # The webhook manages its own transaction; use a dedicated session that commits.
     factory = request.app.state.session_factory

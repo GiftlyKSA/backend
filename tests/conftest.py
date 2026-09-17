@@ -1,7 +1,7 @@
 """Shared test fixtures (SPEC SECTION 23).
 
 ENVIRONMENT=test is set here via the settings fixture, never by a developer's shell.
-In test mode the client factory returns Fakes, so the suite cannot reach StreamPay or
+In test mode the client factory returns Fakes, so the suite cannot reach simulated payment or
 sndr.sh even if it tried.
 """
 

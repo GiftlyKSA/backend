@@ -20,7 +20,7 @@ from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.core.redis import build_redis
 from app.core.security import sha256_hex
 from app.integrations.sms.fake import FakeSmsClient
-from app.models import CourierProfile, User, Wallet, Withdrawal
+from app.models import Base, CourierProfile, User, Wallet, Withdrawal
 from app.models.enums import UserRole, UserStatus, WalletType, WithdrawalStatus
 from app.repositories.admin_read_repository import AdminReadRepository
 from app.repositories.admin_session_repository import AdminSessionRepository
@@ -99,7 +99,7 @@ async def test_overview_and_reads(db_session: AsyncSession, redis_client: Redis)
     assert await service.list_withdrawals() is not None
     assert await service.list_wallets() is not None
     assert await service.list_topups() is not None
-    assert len(service.list_table_catalog()) == 23
+    assert {table.name for table in service.list_table_catalog()} == set(Base.metadata.tables)
     page = await service.get_table_page("users", page=1)
     assert page is not None and page.table.editable is True
     assert "phone" in page.columns
