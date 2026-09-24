@@ -165,12 +165,12 @@ class UserRepository:
             .on_conflict_do_nothing()
         )
         await self._session.flush()
-        return await self.get(admin_id)
+        return await self.get_for_update(admin_id)
 
     async def update_admin_profile(
         self, user: User, *, phone: str | None, full_name: str | None, email: str | None
     ) -> None:
-        """Update the safe, non-authentication fields exposed in the admin dashboard."""
+        """Persist dashboard profile fields; the service invalidates changed login identities."""
         if phone is not None:
             user.phone = phone
         user.full_name = full_name

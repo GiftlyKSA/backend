@@ -7,6 +7,8 @@ added as each phase lands; the broker itself is the shared entry point.
 
 from __future__ import annotations
 
+from importlib import import_module
+
 from taskiq_redis import ListQueueBroker
 
 from app.core.config import get_settings
@@ -14,3 +16,7 @@ from app.core.config import get_settings
 _settings = get_settings()
 
 broker = ListQueueBroker(url=_settings.REDIS_URL.get_secret_value())
+
+# Taskiq loads this broker entry point without discovering modules named outside tasks.py.
+for _module in ("auto_approve", "expiry", "receipts", "reconciliation"):
+    import_module(f"app.workers.{_module}")

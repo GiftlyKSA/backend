@@ -33,9 +33,10 @@ class FakeStorageClient(StorageClient):
         """Return the recorded object metadata, or None."""
         return self._objects.get(storage_key)
 
-    async def verify_image_magic_bytes(self, storage_key: str) -> bool:
+    async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
         """Report a recorded object as a valid image."""
-        return storage_key in self._objects
+        head = self._objects.get(storage_key)
+        return head is not None and head.content_type == content_type
 
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a deterministic fake CDN URL."""

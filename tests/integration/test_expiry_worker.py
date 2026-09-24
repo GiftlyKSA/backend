@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -10,6 +11,8 @@ from decimal import Decimal
 import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
+from app.core.redis import build_redis
+from app.integrations.payments.fake import FakePaymentClient
 from app.models import Invoice, Order, PaymentIntent, User, Wallet
 from app.models.enums import (
     InvoiceStatus,
@@ -20,8 +23,11 @@ from app.models.enums import (
     UserRole,
     WalletType,
 )
+from app.repositories.payment_repository import PaymentRepository
 from app.repositories.wallet_repository import WalletRepository
+from app.services.expiry_service import ExpiryService
 from app.services.money_service import Leg, MoneyService
+from app.services.payment_service import WebhookEvent, build_payment_service
 from app.workers.expiry import expire_stale
 from geoalchemy2 import WKTElement
 from sqlalchemy import select
@@ -116,6 +122,7 @@ async def test_expiry_reopens_order_and_releases_hold() -> None:
                 user_id=customer.id,
                 purpose=PaymentPurpose.ORDER_INVOICE,
                 amount=Decimal("424.50"),
+                wallet_reserved_amount=Decimal("300.00"),
                 status=PaymentIntentStatus.NEW,
                 reference_invoice_id=invoice.id,
                 gateway_reference=f"LINK-{uuid.uuid4().hex[:10]}",
@@ -164,3 +171,143 @@ async def test_expiry_builds_own_engine_and_scheduled_task() -> None:
 
     # The scheduled entry point acquires a Redis lock, sweeps, and releases it.
     await run_expire_stale()
+
+
+async def test_topup_settles_between_expiry_selection_and_lock(monkeypatch) -> None:
+    settings = _settings()
+    engine = build_engine(settings)
+    factory = build_session_factory(engine)
+    redis = build_redis(settings)
+    try:
+        async with factory() as session:
+            await session.execute(select(User.id).limit(1))
+    except Exception as exc:  # noqa: BLE001
+        await engine.dispose()
+
+        await redis.aclose()
+        pytest.skip(f"database unavailable: {exc}")
+    try:
+        async with factory() as session:
+            user = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
+            session.add(user)
+            await session.flush()
+            wallet = Wallet(user_id=user.id, type=WalletType.CUSTOMER)
+            session.add(wallet)
+            await session.flush()
+            service = build_payment_service(
+                session=session,
+                gateway=FakePaymentClient(settings.ENVIRONMENT),
+                redis=redis,
+                settings=settings,
+            )
+            result = await service.create_topup(user_id=user.id, amount=Decimal("100.00"))
+            intent = await PaymentRepository(session).get_intent(result.intent_id)
+            assert intent is not None and intent.gateway_reference is not None
+            intent.expires_at = datetime.now(UTC) - timedelta(hours=1)
+            intent_id, wallet_id, reference = intent.id, wallet.id, intent.gateway_reference
+            await session.commit()
+
+        lock_started, settlement_done = asyncio.Event(), asyncio.Event()
+        original_lock = PaymentRepository.lock_intent
+
+        async def wait_for_settlement(repository, payment_intent_id):
+            lock_started.set()
+            await asyncio.wait_for(settlement_done.wait(), timeout=5)
+            return await original_lock(repository, payment_intent_id)
+
+        monkeypatch.setattr(PaymentRepository, "lock_intent", wait_for_settlement)
+
+        async def expire_candidate() -> bool:
+            async with factory() as session:
+                # Keep the stale NEW identity in the session to verify locked refresh.
+                candidate = await PaymentRepository(session).get_intent(intent_id)
+                assert candidate is not None and candidate.status is PaymentIntentStatus.NEW
+                expired = await ExpiryService(session).expire_topup_intent(intent_id)
+                await session.commit()
+                assert candidate.status is PaymentIntentStatus.PAID
+                return expired
+
+        async def settle_candidate() -> None:
+            await asyncio.wait_for(lock_started.wait(), timeout=5)
+            async with factory() as session:
+                service = build_payment_service(
+                    session=session,
+                    gateway=FakePaymentClient(settings.ENVIRONMENT),
+                    redis=redis,
+                    settings=settings,
+                )
+                await service._settle_locked(WebhookEvent(reference, "PAID", Decimal("100.00")))
+                await session.commit()
+            settlement_done.set()
+
+        expired, _ = await asyncio.wait_for(
+            asyncio.gather(expire_candidate(), settle_candidate()), timeout=10
+        )
+        assert not expired
+        async with factory() as session:
+            intent = await session.get(PaymentIntent, intent_id)
+            wallet = await session.get(Wallet, wallet_id)
+            assert intent is not None and intent.status is PaymentIntentStatus.PAID
+            assert wallet is not None and wallet.balance == Decimal("100.00")
+            assert wallet.held_balance == Decimal("0.00")
+    finally:
+        await redis.aclose()
+        await engine.dispose()
+
+
+async def test_concurrent_reservation_releases_refresh_wallet_after_lock() -> None:
+    settings = _settings()
+    engine = build_engine(settings)
+    factory = build_session_factory(engine)
+    redis = build_redis(settings)
+    try:
+        async with factory() as session:
+            await session.execute(select(User.id).limit(1))
+    except Exception as exc:  # noqa: BLE001
+        await engine.dispose()
+        await redis.aclose()
+        pytest.skip(f"database unavailable: {exc}")
+    try:
+        async with factory() as session:
+            user = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
+            session.add(user)
+            await session.flush()
+            wallet = Wallet(user_id=user.id, type=WalletType.CUSTOMER)
+            session.add(wallet)
+            await session.flush()
+            payments = PaymentRepository(session)
+            intent = await payments.create_intent(
+                user_id=user.id,
+                purpose=PaymentPurpose.WALLET_TOPUP,
+                amount=Decimal("100.00"),
+                reference_invoice_id=None,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+            money = MoneyService(WalletRepository(session))
+            await money.credit_topup(
+                user_wallet_id=wallet.id, amount=intent.amount, intent_id=intent.id
+            )
+            await payments.mark_paid(intent, paid_at=datetime.now(UTC))
+            await money.hold_funds(wallet_id=wallet.id, amount=Decimal("100.00"))
+            user_id, wallet_id = user.id, wallet.id
+            await session.commit()
+
+        async with factory() as first, factory() as second:
+            first_money = MoneyService(WalletRepository(first))
+            second_wallet = await WalletRepository(second).get_by_user(user_id)
+            assert second_wallet is not None and second_wallet.held_balance == Decimal("100.00")
+            await first_money.release_hold(wallet_id=wallet_id, amount=Decimal("40.00"))
+            pending_release = asyncio.create_task(
+                MoneyService(WalletRepository(second)).release_hold(
+                    wallet_id=wallet_id, amount=Decimal("60.00")
+                )
+            )
+            await first.commit()
+            await asyncio.wait_for(pending_release, timeout=5)
+            await second.commit()
+            await second.refresh(second_wallet)
+            assert second_wallet.balance == Decimal("100.00")
+            assert second_wallet.held_balance == Decimal("0.00")
+    finally:
+        await redis.aclose()
+        await engine.dispose()

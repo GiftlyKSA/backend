@@ -1,8 +1,8 @@
 """Admin dashboard operations (SPEC SECTION 18.3).
 
 The dashboard calls these methods; it never queries the DB directly. Reads aggregate
-through the read repository. The only dashboard edits are safe fields on users,
-courier profiles, and pre-payment orders; every mutation writes an audit row.
+through the read repository. These domain edits cover users, courier profiles, and
+pre-payment orders; generic audited table maintenance lives in AdminTableService.
 Money-moving admin actions (dispute payout resolution, withdrawal settlement) belong
 to the ledger service and are intentionally not performed here.
 """
@@ -27,6 +27,7 @@ from app.repositories.admin_read_repository import (
     AdminTableInfo,
     AdminTablePage,
 )
+from app.repositories.admin_table_repository import AdminTableRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.courier_repository import CourierRepository
@@ -60,6 +61,7 @@ class AdminService:
         auth_repo: AuthRepository,
         redis: Redis,
         settings: Settings,
+        tables: AdminTableRepository | None = None,
     ) -> None:
         """Wire the repositories, Redis, and settings the admin operations need."""
         self._reads = reads
@@ -71,6 +73,26 @@ class AdminService:
         self._auth_repo = auth_repo
         self._redis = redis
         self._settings = settings
+        self._tables = tables
+
+    async def relationship_choices(
+        self,
+        table_name: str,
+        field: str,
+        *,
+        record_id: uuid.UUID | None = None,
+        search: str = "",
+        after: uuid.UUID | None = None,
+    ) -> dict[str, object]:
+        """Return bounded related-record choices for authenticated admin forms."""
+        if self._tables is None:
+            raise RuntimeError("Admin table repository is not configured.")
+        if len(search) > 100:
+            raise ValidationDomainError("Search must contain at most 100 characters.")
+        items, cursor = await self._tables.choices(
+            table_name, field, record_id=record_id, search=search, after=after
+        )
+        return {"items": items, "next_cursor": cursor}
 
     @staticmethod
     def _now() -> datetime:
@@ -263,17 +285,22 @@ class AdminService:
     ) -> None:
         """Ban or unban a user, revoke their live sessions, and audit it.
 
-        A ban must end access immediately (audit SEC-1): every live refresh token is
-        revoked, and a Redis flag outliving the access-token TTL kills the tokens
-        already in the wild — ``require_auth`` checks it on every request.
+        Current database status and credential version govern HTTP and socket access.
+        Security changes revoke refresh and dashboard sessions in this transaction.
+        The Redis flag is mirrored for older instances during a rolling deployment.
         """
         user = await self._users.get_for_update(user_id)
         if user is None:
             raise NotFoundError("User not found.")
-        await self._users.set_status(user, UserStatus.BANNED if banned else UserStatus.ACTIVE)
+        status = UserStatus.BANNED if banned else UserStatus.ACTIVE
+        changed = user.status is not status
+        await self._users.set_status(user, status)
+        if changed:
+            await self._auth_repo.invalidate_user_credentials(user_id, self._now())
         banned_key = f"auth:banned:{user_id}"
         if banned:
-            await self._auth_repo.revoke_all_for_user(user_id, datetime.now(UTC))
+            if not changed:
+                await self._auth_repo.revoke_all_for_user(user_id, self._now())
             await self._redis.set(
                 banned_key, "1", ex=self._settings.JWT_ACCESS_TTL_MINUTES * 60 + 60
             )
@@ -298,7 +325,7 @@ class AdminService:
         phone: str | None = None,
     ) -> None:
         """Update a user's dashboard-managed profile fields without changing their role."""
-        user = await self._users.get(user_id)
+        user = await self._users.get_for_update(user_id)
         if user is None:
             raise NotFoundError("User not found.")
         if phone:
@@ -309,7 +336,10 @@ class AdminService:
             owner = await self._users.get_by_email(email)
             if owner is not None and owner.id != user_id:
                 raise ConflictError("That email is already used by another user.")
+        phone_changed = phone is not None and phone != user.phone
         await self._users.update_admin_profile(user, phone=phone, full_name=full_name, email=email)
+        if phone_changed:
+            await self._auth_repo.invalidate_user_credentials(user_id, self._now())
         await self._audit.record(
             actor_user_id=admin_id,
             action="USER_PROFILE_UPDATE",
@@ -351,13 +381,13 @@ class AdminService:
 
     async def delete_user(self, *, admin_id: uuid.UUID, user_id: uuid.UUID, ip: str | None) -> None:
         """Soft-delete a user and revoke access without erasing financial history."""
-        user = await self._users.get(user_id)
+        user = await self._users.get_for_update(user_id)
         if user is None:
             raise NotFoundError("User not found.")
         if user.role is UserRole.ADMIN:
             raise ValidationDomainError("Dashboard administrator accounts are environment-managed.")
         await self._users.soft_delete(user)
-        await self._auth_repo.revoke_all_for_user(user_id, self._now())
+        await self._auth_repo.invalidate_user_credentials(user_id, self._now())
         await self._redis.set(
             f"auth:banned:{user_id}",
             "1",

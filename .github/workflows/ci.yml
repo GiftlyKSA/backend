@@ -97,7 +97,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --dev
-      - run: uvx pip-audit --strict
+      - name: Audit the locked production dependencies
+        run: |
+          uv export --locked --no-dev --no-hashes --format requirements-txt \
+            --output-file "$RUNNER_TEMP/production-requirements.txt"
+          uvx pip-audit==2.10.1 --strict --no-deps --disable-pip \
+            --requirement "$RUNNER_TEMP/production-requirements.txt"
 
   docs:
     runs-on: ubuntu-latest
@@ -129,6 +134,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Compose services
+        run: docker compose config --quiet
       - name: Build the deployment image
         run: docker build -t safe-gift:ci .
       - name: Assert the image runs as non-root
@@ -142,10 +149,11 @@ jobs:
           # so we diff its history out and check what remains. Pull the base first so
           # `docker history python:3.13-slim` works even under buildkit (which does not
           # populate the classic image store for the FROM image).
-          docker pull python:3.13-slim >/dev/null
+          base_image=$(sed -n 's/^FROM \(.*\) AS builder$/\1/p' Dockerfile)
+          docker pull "$base_image" >/dev/null
           comm -23 \
             <(docker history --no-trunc --format '{{.CreatedBy}}' safe-gift:ci | sort -u) \
-            <(docker history --no-trunc --format '{{.CreatedBy}}' python:3.13-slim | sort -u) \
+            <(docker history --no-trunc --format '{{.CreatedBy}}' "$base_image" | sort -u) \
             > our_layers.txt
           echo "Our image's unique layers:"; cat our_layers.txt
           if grep -Ei "SECRET|KEY|PASSWORD" our_layers.txt; then

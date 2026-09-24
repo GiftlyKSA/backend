@@ -106,13 +106,13 @@ class OrderService:
             raise ValidationDomainError("Longitude is outside the service area.")
         if len(data.request_media_keys) > _MAX_REQUEST_MEDIA:
             raise ValidationDomainError("At most 3 request photos are allowed.")
+        await self._orders.lock_actor(customer_id)
         if await self._orders.count_customer_active(customer_id) >= _MAX_CUSTOMER_ACTIVE:
             raise ConflictError("You have reached the maximum number of active orders.")
 
-        # Validate every media object before writing anything (HEAD + magic bytes).
-        for key in data.request_media_keys:
-            await self._media.confirm(key)
-
+        media_heads = await self._media.claim_many(
+            data.request_media_keys, actor_id=customer_id, purpose="ORDER_REQUEST"
+        )
         order = await self._orders.create(
             customer_id=customer_id,
             description=data.description,
@@ -123,13 +123,14 @@ class OrderService:
             address_note=None,
         )
         for key in data.request_media_keys:
+            head = media_heads[key]
             await self._orders.add_media(
                 order_id=order.id,
                 uploaded_by_user_id=customer_id,
                 media_type=MediaType.CUSTOMER_REQUEST,
                 storage_key=key,
-                content_type="image/jpeg",
-                byte_size=0,
+                content_type=head.content_type,
+                byte_size=head.byte_size,
             )
         return order
 
@@ -144,6 +145,7 @@ class OrderService:
                 longer NEW.
         """
         await self.require_active_verified_courier(courier_id)
+        await self._orders.lock_actor(courier_id)
         if await self._orders.count_courier_active(courier_id) >= _MAX_COURIER_ACTIVE:
             raise ForbiddenError("You have reached the maximum number of active assignments.")
 
@@ -187,7 +189,7 @@ class OrderService:
             InvalidStateTransitionError: The order is past the cancellable window.
         """
         await self._eligibility.require_eligible_actor(actor_id)
-        order = await self._orders.get_for_actor(order_id, actor_id)
+        order = await self._orders.lock_for_actor(order_id, actor_id)
         if order is None:
             raise NotFoundError("Order not found.")
         assert_transition(order.status, OrderStatus.CANCELLED)

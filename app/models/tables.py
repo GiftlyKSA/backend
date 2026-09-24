@@ -110,6 +110,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    auth_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -211,6 +212,34 @@ class CourierPortfolio(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
     __table_args__ = (Index("idx_courier_portfolios_courier", "courier_id", "display_order"),)
+
+
+class MediaUpload(UUIDPrimaryKeyMixin, Base):
+    """An issued upload grant bound to one user, purpose, and attachment."""
+
+    __tablename__ = "media_uploads"
+
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("storage_key", name="uq_media_uploads_storage_key"),
+        CheckConstraint("purpose IN ('ORDER_REQUEST', 'DELIVERY_PROOF')", name="chk_media_purpose"),
+        CheckConstraint(
+            "content_type IN ('image/jpeg', 'image/png')", name="chk_media_content_type"
+        ),
+        CheckConstraint("byte_size > 0", name="chk_media_byte_size_positive"),
+    )
 
 
 class FeaturedGift(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -631,6 +660,9 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     purpose: Mapped[enums.PaymentPurpose] = mapped_column(_payment_purpose, nullable=False)
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    wallet_reserved_amount: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default=text("'SAR'"))
     status: Mapped[enums.PaymentIntentStatus] = mapped_column(
         _payment_intent_status,
@@ -652,6 +684,11 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint("amount > 0", name="chk_intent_amount_positive"),
+        CheckConstraint("wallet_reserved_amount >= 0", name="chk_intent_reservation_nonnegative"),
+        CheckConstraint(
+            "purpose='ORDER_INVOICE' OR wallet_reserved_amount=0",
+            name="chk_intent_reservation_purpose",
+        ),
         CheckConstraint(
             "(purpose='ORDER_INVOICE' AND reference_invoice_id IS NOT NULL) "
             "OR (purpose='WALLET_TOPUP' AND reference_invoice_id IS NULL)",

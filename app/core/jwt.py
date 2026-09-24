@@ -2,7 +2,7 @@
 
 The expected algorithm is pinned from configuration and never read from the token's
 own header — this defeats ``alg: none`` and the RS256->HS256 confusion attack. Access
-tokens carry only ``sub, role, jti, iat, exp, iss, aud``; profile data is never in the
+tokens carry ``sub, role, jti, iat, exp, iss, aud, auth_version``; profile data is never in the
 token. A separate short-lived registration token gates ``/api/auth/register``.
 """
 
@@ -31,6 +31,7 @@ class AccessClaims:
     role: str
     jti: str
     exp: int
+    auth_version: int = 0
 
 
 def _signing_key(settings: Settings) -> str:
@@ -54,7 +55,7 @@ def _verify_key(settings: Settings) -> str:
 
 
 def create_access_token(
-    settings: Settings, *, user_id: uuid.UUID, role: str
+    settings: Settings, *, user_id: uuid.UUID, role: str, auth_version: int = 0
 ) -> tuple[str, str, int]:
     """Create a signed access token.
 
@@ -67,6 +68,7 @@ def create_access_token(
     payload = {
         "sub": str(user_id),
         "role": role,
+        "auth_version": auth_version,
         "jti": jti,
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
@@ -96,8 +98,23 @@ def decode_access_token(settings: Settings, token: str) -> AccessClaims:
         raise JwtError(str(exc)) from exc
     if "purpose" in payload:
         raise JwtError("Not an access token.")
+    try:
+        uuid.UUID(payload["sub"])
+        version = payload.get("auth_version", 0)
+        if type(version) is not int or version < 0:
+            raise ValueError("Invalid credential version")
+        if type(payload["exp"]) is not int:
+            raise ValueError("Invalid expiry")
+        if not isinstance(payload["role"], str) or not isinstance(payload["jti"], str):
+            raise ValueError("Invalid identity claims")
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise JwtError("Malformed access claims.") from exc
     return AccessClaims(
-        sub=payload["sub"], role=payload["role"], jti=payload["jti"], exp=payload["exp"]
+        sub=payload["sub"],
+        role=payload["role"],
+        jti=payload["jti"],
+        exp=payload["exp"],
+        auth_version=version,
     )
 
 

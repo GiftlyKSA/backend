@@ -79,6 +79,15 @@ async def test_media_upload_confirm_and_order_with_photo() -> None:
             )
             assert conf.status_code == 200 and conf.json()["confirmed"] is True
 
+            other = await _register_customer(
+                client, app, f"+96650{_secrets.randbelow(10_000_000):07d}"
+            )
+            other_headers = {"Authorization": f"Bearer {other['access_token']}"}
+            stolen_confirm = await client.post(
+                "/api/media/confirm", headers=other_headers, json={"storage_key": key}
+            )
+            assert stolen_confirm.status_code == 400
+
             # An oversized request is rejected.
             too_big = await client.post(
                 "/api/media/upload-urls",
@@ -99,19 +108,27 @@ async def test_media_upload_confirm_and_order_with_photo() -> None:
             )
             assert bad.status_code == 400
 
-            # The confirmed photo can be attached to a new order.
-            created = await client.post(
+            order_body = {
+                "delivery_city": "Jeddah",
+                "latitude": 21.5,
+                "longitude": 39.2,
+                "delivery_date": (date.today() + timedelta(days=15)).isoformat(),
+                "request_media_keys": [key],
+            }
+            stolen_attach = await client.post("/api/orders", headers=other_headers, json=order_body)
+            assert stolen_attach.status_code == 400
+            duplicate = await client.post(
                 "/api/orders",
                 headers=headers,
-                json={
-                    "delivery_city": "Jeddah",
-                    "latitude": 21.5,
-                    "longitude": 39.2,
-                    "delivery_date": (date.today() + timedelta(days=15)).isoformat(),
-                    "request_media_keys": [key],
-                },
+                json={**order_body, "request_media_keys": [key, key]},
             )
+            assert duplicate.status_code == 409
+
+            # A rejected duplicate request cannot consume the upload grant.
+            created = await client.post("/api/orders", headers=headers, json=order_body)
             assert created.status_code == 201, created.text
+            reused = await client.post("/api/orders", headers=headers, json=order_body)
+            assert reused.status_code == 409
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

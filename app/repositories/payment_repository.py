@@ -39,6 +39,7 @@ class PaymentRepository:
         amount: Decimal,
         reference_invoice_id: uuid.UUID | None,
         expires_at: datetime,
+        wallet_reserved_amount: Decimal = Decimal("0.00"),
     ) -> PaymentIntent:
         """Insert a NEW payment intent for a top-up or an invoice remainder."""
         intent = PaymentIntent(
@@ -48,6 +49,7 @@ class PaymentRepository:
             status=PaymentIntentStatus.NEW,
             reference_invoice_id=reference_invoice_id,
             expires_at=expires_at,
+            wallet_reserved_amount=wallet_reserved_amount,
         )
         self._session.add(intent)
         await self._session.flush()
@@ -94,6 +96,17 @@ class PaymentRepository:
                 PaymentIntent.gateway_reference == payment_link_id,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result
+
+    async def get_intent_by_payment_link(self, payment_link_id: str) -> PaymentIntent | None:
+        """Find the invoice reference before acquiring invoice-first settlement locks."""
+        result: PaymentIntent | None = await self._session.scalar(
+            select(PaymentIntent).where(
+                PaymentIntent.checkout_provider == "SIMULATED",
+                PaymentIntent.gateway_reference == payment_link_id,
+            )
         )
         return result
 
@@ -201,23 +214,27 @@ class PaymentRepository:
         )
         return result
 
-    async def get_open_intent_for_invoice(self, invoice_id: uuid.UUID) -> PaymentIntent | None:
+    async def get_open_intent_for_invoice(
+        self, invoice_id: uuid.UUID, *, for_update: bool = False
+    ) -> PaymentIntent | None:
         """Return a still-NEW gateway intent for an invoice, or None (avoids duplicates)."""
-        result: PaymentIntent | None = await self._session.scalar(
-            select(PaymentIntent).where(
-                PaymentIntent.reference_invoice_id == invoice_id,
-                PaymentIntent.status == PaymentIntentStatus.NEW,
-            )
+        statement = select(PaymentIntent).where(
+            PaymentIntent.reference_invoice_id == invoice_id,
+            PaymentIntent.status == PaymentIntentStatus.NEW,
         )
+        if for_update:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        result: PaymentIntent | None = await self._session.scalar(statement)
         return result
 
     async def list_expired_new(self, *, now: datetime, limit: int) -> list[PaymentIntent]:
-        """Return NEW intents whose expiry has passed (oldest first)."""
+        """Return expired NEW top-ups; invoice attempts have a separate expiry policy."""
         return list(
             await self._session.scalars(
                 select(PaymentIntent)
                 .where(
                     PaymentIntent.status == PaymentIntentStatus.NEW,
+                    PaymentIntent.purpose == PaymentPurpose.WALLET_TOPUP,
                     PaymentIntent.expires_at < now,
                 )
                 .order_by(PaymentIntent.expires_at)
@@ -228,7 +245,10 @@ class PaymentRepository:
     async def lock_intent(self, intent_id: uuid.UUID) -> PaymentIntent | None:
         """Load a payment intent by id FOR UPDATE."""
         result: PaymentIntent | None = await self._session.scalar(
-            select(PaymentIntent).where(PaymentIntent.id == intent_id).with_for_update()
+            select(PaymentIntent)
+            .where(PaymentIntent.id == intent_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result
 

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "relationship_field.html" import relationship_field %}
+{% block content %}
+<p><a href="/admin/tables/{{ form.table_name }}">Back to {{ form.table_name|replace('_', ' ') }}</a></p>
+<h1>{{ 'Edit' if form.record_id else 'Add' }} {{ form.table_name|replace('_', ' ') }}</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<p class="note">Blank fields keep existing values when editing or use defaults when adding. Use “Clear” to remove an optional value. Database relationship, uniqueness, and protected-record rules still apply.</p>
+<form method="post" action="/admin/step-up/request">
+  <input type="hidden" name="next" value="{{ request.url.path }}">
+  <button type="submit" class="secondary">Confirm password to authorize changes</button>
+</form>
+<section class="card edit-card">
+  <form method="post" action="{{ request.url.path }}" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
+    <input type="hidden" name="revision" value="{{ form.revision }}">
+    {% for field in form.fields %}
+    <div class="table-form-field">
+      {% if field.readonly %}
+        <label>{{ field.label }}<input value="{{ field.selected_label or field.value }}" readonly></label>
+      {% elif field.kind == 'relationship' %}
+        {{ relationship_field(form.table_name, field.name, field.label, field.required, field.value, field.selected_label, form.record_id or '') }}
+      {% elif field.secret %}
+        <label>{{ field.label }}<input name="{{ field.name }}" type="password" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %} autocomplete="new-password"></label>
+        <p class="note">Stored value is hidden. {% if field.name.endswith('_encrypted') %}Enter replacement text; it will be encrypted when saved.{% else %}Enter a replacement in this field’s stored format.{% endif %}</p>
+      {% elif field.kind in ['enum', 'boolean'] %}
+        <label>{{ field.label }}<select name="{{ field.name }}" {% if field.required %}required{% endif %}>
+          <option value="">Default / unchanged</option>
+          {% for choice in (['true', 'false'] if field.kind == 'boolean' else field.choices) %}
+          <option value="{{ choice }}" {% if choice == field.value %}selected{% endif %}>{{ choice }}</option>
+          {% endfor %}
+        </select></label>
+      {% elif field.kind in ['textarea', 'json'] %}
+        <label>{{ field.label }}<textarea name="{{ field.name }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}>{{ field.value }}</textarea></label>
+      {% else %}
+        <label>{{ field.label }}<input name="{{ field.name }}" type="{{ 'date' if field.kind == 'date' else 'text' }}" value="{{ field.value }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}></label>
+        {% if field.kind == 'datetime' %}<p class="note">Date and time with timezone, e.g. 2026-09-18T12:00:00+03:00.</p>{% endif %}
+        {% if field.kind == 'point' %}<p class="note">Longitude, latitude (for example: 46.6753, 24.7136).</p>{% endif %}
+      {% endif %}
+      {% if field.nullable and not field.readonly %}<label class="clear-field"><input type="checkbox" name="null__{{ field.name }}" value="1"> Clear {{ field.label|lower }}</label>{% endif %}
+    </div>
+    {% endfor %}
+    <button type="submit">{{ 'Save changes' if form.record_id else 'Create record' }}</button>
+  </form>
+</section>
+{% if form.record_id %}
+<section class="card edit-card">
+  <h2>Delete record</h2>
+  <form method="post" action="/admin/tables/{{ form.table_name }}/{{ form.record_id }}/delete">
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
+    <input type="hidden" name="revision" value="{{ form.revision }}">
+    <label class="clear-field"><input type="checkbox" name="confirm_delete" value="yes" required> Permanently delete this record and any dependent records configured to cascade.</label>
+    <button type="submit" class="danger">Delete record</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

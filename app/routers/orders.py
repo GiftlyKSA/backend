@@ -20,6 +20,7 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.device_token_repository import DeviceTokenRepository
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
@@ -61,7 +62,9 @@ def _service(request: Request, db: AsyncSession) -> OrderService:
         eligibility=CourierEligibilityService(
             users=UserRepository(db), couriers=CourierRepository(db)
         ),
-        media=MediaService(request.app.state.clients.storage, get_settings(request)),
+        media=MediaService(
+            request.app.state.clients.storage, get_settings(request), MediaRepository(db)
+        ),
         messages=MessageWriter(db),
         ratings=RatingService(
             orders=OrderRepository(db),
@@ -82,7 +85,9 @@ def _fulfillment(request: Request, db: AsyncSession) -> FulfillmentService:
         disputes=DisputeRepository(db),
         wallets=WalletRepository(db),
         money=MoneyService(WalletRepository(db)),
-        media=MediaService(request.app.state.clients.storage, get_settings(request)),
+        media=MediaService(
+            request.app.state.clients.storage, get_settings(request), MediaRepository(db)
+        ),
         settings=get_settings(request),
     )
 

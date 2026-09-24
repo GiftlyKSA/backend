@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Query, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,10 +31,12 @@ from app.admin.deps import (
     require_step_up,
     verify_csrf,
 )
+from app.admin.table_router import router as table_router
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.models.enums import UserRole
 
 router = APIRouter(prefix="/admin", tags=["admin"], include_in_schema=False)
+router.include_router(table_router)
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -52,6 +54,24 @@ def _render(
 
 async def _ctx(request: Request, db: AsyncSession) -> AdminContext:
     return await require_admin(request, db)
+
+
+@router.get("/relationships/{table_name}/{field}")
+async def relationship_choices(
+    request: Request,
+    db: DbDep,
+    table_name: str,
+    field: str,
+    search: str = Query(default="", max_length=100),
+    after: uuid.UUID | None = None,
+    record_id: uuid.UUID | None = None,
+) -> JSONResponse:
+    """Load one page of related records without exposing credentials or private documents."""
+    ctx = await _ctx(request, db)
+    choices = await ctx.service.relationship_choices(
+        table_name, field, record_id=record_id, search=search, after=after
+    )
+    return JSONResponse(choices, headers={"Cache-Control": "no-store"})
 
 
 # --- Authentication ----------------------------------------------------------
@@ -102,12 +122,15 @@ async def login(
 
 
 @router.post("/logout")
-async def logout(request: Request, db: DbDep) -> RedirectResponse:
+async def logout(
+    request: Request, db: DbDep, csrf_token: Annotated[str, Form()] = ""
+) -> RedirectResponse:
     """Revoke the current session and clear the cookie."""
     raw = request.cookies.get(SESSION_COOKIE)
     if raw:
-        auth = build_auth_service(db, get_redis_from(request), get_settings_from(request))
-        await auth.logout(raw)
+        ctx = await _ctx(request, db)
+        verify_csrf(ctx, csrf_token, get_settings_from(request))
+        await ctx.auth.logout(raw)
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/admin")
     return response

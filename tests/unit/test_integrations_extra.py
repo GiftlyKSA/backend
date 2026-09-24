@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 import pytest
@@ -12,6 +12,9 @@ from app.integrations.factory import build_clients
 from app.integrations.push.real import RealPushClient
 from app.integrations.sms.real import RealSmsClient
 from app.integrations.storage.real import S3StorageClient
+from botocore.auth import S3SigV4QueryAuth
+from botocore.awsrequest import AWSRequest
+from botocore.credentials import Credentials
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -57,6 +60,18 @@ def _mock_httpx(monkeypatch: pytest.MonkeyPatch, response: httpx.Response) -> No
     monkeypatch.setattr(httpx, "AsyncClient", factory)
 
 
+def _upload_signature(url: str, headers: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query))
+    query.pop("X-Amz-Signature")
+    unsigned_url = urlunparse(parsed._replace(query=urlencode(query)))
+    request = AWSRequest(method="PUT", url=unsigned_url, headers=headers)
+    request.context["timestamp"] = query["X-Amz-Date"]
+    signer = S3SigV4QueryAuth(Credentials("test-access-key", "test-secret-key"), "s3", "eu-west-1")
+    canonical = signer.canonical_request(request)
+    return signer.signature(signer.string_to_sign(request, canonical), request)
+
+
 async def test_sndr_email_send(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_httpx(monkeypatch, httpx.Response(200, json={"ok": True}))
     client = SndrEmailClient(base_url="https://sndr", api_key="k", from_email="f@x", from_name="F")
@@ -94,6 +109,38 @@ async def test_real_storage_signs_upload_length_and_cloudfront_read() -> None:
     )
     upload_query = parse_qs(urlparse(upload).query)
     assert "content-length" in upload_query["X-Amz-SignedHeaders"][0]
+    assert "if-none-match" in upload_query["X-Amz-SignedHeaders"][0]
+    required_headers = {
+        "Content-Type": "image/jpeg",
+        "Content-Length": "1234",
+        "If-None-Match": "*",
+    }
+    assert _upload_signature(upload, required_headers) == upload_query["X-Amz-Signature"][0]
+    assert (
+        _upload_signature(
+            upload, {k: v for k, v in required_headers.items() if k != "If-None-Match"}
+        )
+        != upload_query["X-Amz-Signature"][0]
+    )
+
+    objects: dict[str, bytes] = {}
+
+    def conditional_put(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("if-none-match") != "*":
+            return httpx.Response(403)
+        key = request.url.path
+        if key in objects:
+            return httpx.Response(412)
+        objects[key] = request.content
+        return httpx.Response(200)
+
+    first_image = b"\xff\xd8\xff" + b"a" * 1231
+    second_image = b"\xff\xd8\xff" + b"b" * 1231
+    async with httpx.AsyncClient(transport=httpx.MockTransport(conditional_put)) as uploader:
+        first_put = await uploader.put(upload, content=first_image, headers=required_headers)
+        second_put = await uploader.put(upload, content=second_image, headers=required_headers)
+    assert (first_put.status_code, second_put.status_code) == (200, 412)
+    assert objects[urlparse(upload).path] == first_image
 
     read = client.signed_read_url("orders/proof/file.jpg", ttl_seconds=60)
     read_query = parse_qs(urlparse(read).query)

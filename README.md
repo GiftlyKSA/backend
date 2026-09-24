@@ -60,6 +60,23 @@ uv run uvicorn app.main:create_app --factory --reload   # http://localhost:8000
 Health check: `curl localhost:8000/api/health`. In development the OpenAPI docs are at
 `/docs`; they are disabled in test and production by design.
 
+### Scheduled maintenance
+
+Compose starts one `scheduler` service alongside the `worker`. The scheduler reads
+the cron labels registered by `app.workers.broker` and enqueues expiry,
+auto-approval, receipt, ledger reconciliation, and refresh-token cleanup jobs. Keep
+one scheduler instance per deployment to avoid duplicate enqueues; the jobs retain
+their Redis locks and idempotency checks. To run both processes outside Compose after
+starting PostgreSQL and Redis, use two terminals:
+
+```bash
+uv run --locked taskiq worker app.workers.broker:broker
+uv run --locked taskiq scheduler app.workers.scheduler:scheduler
+```
+
+The same commands work in PowerShell. Schedule changes require restarting the
+scheduler and workers. Check their logs for startup errors and job failures.
+
 ## Environment variables
 
 Every secret is an environment variable — there is no secrets manager. Secrets are
@@ -202,12 +219,46 @@ payments require a separately reviewed Dhamen implementation before activation.
 
 Server-rendered (Jinja2), mounted at `/admin`, gated by `ADMIN_DASHBOARD_ENABLED`. It
 authenticates with environment-backed username/password into server-side sessions and
-calls the **same** services as the JSON API — it never queries the DB directly.
+calls backend services — it never queries the DB directly.
 
-`/admin/tables` provides a paginated, redacted view of every application table. Those
-views are read-only except for audited user, courier-profile, and eligible order
-delivery-detail updates. Signed-in dashboard admins can view user and courier contact
-fields; documents, tokens, encrypted values, and financial fields remain restricted.
+`/admin/tables` provides paginated views and add/edit/delete forms for all 29 application
+tables in every environment, including production. Every write requires an active admin
+session, CSRF verification, and recent password confirmation. Each successful operation
+records the actor, table, record, and changed field names without logging field values.
+Deletion requires a confirmation checkbox and follows database cascade rules.
+
+Foreign-key inputs search related records in pages of 25 instead of asking for IDs.
+One-to-one choices exclude already-used records and preserve the current edit selection.
+Secrets and encrypted values remain masked; replacement encrypted text is encrypted by
+the service. Blank edit inputs preserve stored values; **Clear** explicitly sets an
+optional field to NULL. Generated identifiers and timestamps are not editable. Concurrent
+edits return a conflict and show the latest record instead of overwriting it.
+
+Apply `uv run --locked alembic upgrade head` before using the table editors. Migration
+`d4e5f6a7b8c9` adds a transaction-local maintenance override tied to an active admin session
+for ledger, invoice-item, and message immutability triggers. It is enabled only around the
+audited maintenance operation and cleared afterward; foreign keys, uniqueness, and CHECK
+constraints remain enforced. Invalid writes roll back with a safe error message.
+
+These are direct administrative data corrections: editing financial or lifecycle fields
+does not run payment settlement, create balancing ledger entries, or notify customers.
+Admins must keep related balances and business state consistent. Production payment
+processing remains disabled. For an editor-only rollback, deploy compatible code that
+removes the editor, or use a reviewed forward migration restoring normal immutable-row
+triggers while preserving later schema. Do not downgrade to `c9d0e1f2a3b4` as an editor-only
+rollback: the linear chain also removes credential versions, media upload grants, and
+payment reservation ownership. A full-chain rollback requires a reviewed deployment and
+data-restoration plan with backups; it does not undo administrative data corrections.
+
+Courier identity edits derive their duplicate-detection fingerprint from the final
+national ID, falling back to the passport. An explicitly entered fingerprint remains an
+administrator maintenance override; use it only for deliberate identity-index corrections.
+
+`POST /api/auth/logout` signs out **all devices**: access tokens, refresh-token families,
+and dashboard sessions for that account are revoked together. Clients should clear both
+local tokens after the 204 response. Other devices must authenticate again; open chat
+sockets reject revoked credentials on their next authorization check (at most the normal
+five-second polling interval plus the dependency deadline).
 
 ## API documentation
 
@@ -216,6 +267,15 @@ as an `openapi` artifact. Generate a local copy with
 `uv run --locked python -m app.export_openapi` (writes `docs/openapi.json`).
 The previous static documentation archive has been removed; refer to the current
 schema and source for the implemented contract.
+
+For order request photos and delivery proof, the actor who requested the upload URL
+must confirm the uploaded key before attaching it. Each confirmed key can be attached
+once, for its requested purpose; rejected order or delivery transactions leave the key
+available for retry.
+The PUT to the returned S3 URL must include the issued `Content-Type` and
+`Content-Length` plus `If-None-Match: *`. The signed condition makes the upload
+create-only; another PUT to the same key fails with HTTP 412. Browser clients also
+need `If-None-Match` allowed by the S3 bucket's CORS configuration.
 
 The [2026-09-17 backend review](docs/2026-09-17-backend-review.md) records open
 security, reliability, performance, and maintainability findings, proposed fixes,

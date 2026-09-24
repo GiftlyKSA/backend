@@ -84,10 +84,8 @@ class FulfillmentService:
             ValidationDomainError: Outside the delivery radius, missing/too many photos, or
                 a proof object that fails validation.
         """
-        if await self._orders.get_for_actor(order_id, courier_id) is None:
-            raise NotFoundError("Order not found.")
-        order = await self._orders.lock(order_id)
-        if order is None:  # pragma: no cover - just confirmed it exists
+        order = await self._orders.lock_for_actor(order_id, courier_id)
+        if order is None or order.courier_id != courier_id:
             raise NotFoundError("Order not found.")
         assert_transition(order.status, OrderStatus.DELIVERED)
 
@@ -101,17 +99,19 @@ class FulfillmentService:
         if distance is None or distance > self._settings.MAX_DELIVERY_RADIUS_METERS:
             raise ValidationDomainError("You are too far from the drop-off location.")
 
-        for key in data.proof_media_keys:
-            await self._media.confirm(key)
+        media_heads = await self._media.claim_many(
+            data.proof_media_keys, actor_id=courier_id, purpose="DELIVERY_PROOF"
+        )
         captured_at = self._now()
         for key in data.proof_media_keys:
+            head = media_heads[key]
             await self._orders.add_media(
                 order_id=order.id,
                 uploaded_by_user_id=courier_id,
                 media_type=MediaType.DELIVERY_PROOF,
                 storage_key=key,
-                content_type="image/jpeg",
-                byte_size=0,
+                content_type=head.content_type,
+                byte_size=head.byte_size,
                 capture_longitude=data.longitude,
                 capture_latitude=data.latitude,
                 captured_at=captured_at,
@@ -128,10 +128,8 @@ class FulfillmentService:
             NotFoundError: Not this customer's order.
             InvalidStateTransitionError: The order is not DELIVERED.
         """
-        if await self._orders.get_for_actor(order_id, customer_id) is None:
-            raise NotFoundError("Order not found.")
-        order = await self._orders.lock(order_id)
-        if order is None:  # pragma: no cover - just confirmed it exists
+        order = await self._orders.lock_for_actor(order_id, customer_id)
+        if order is None or order.customer_id != customer_id:
             raise NotFoundError("Order not found.")
         await self._complete_and_release(order)
         return order
@@ -189,10 +187,8 @@ class FulfillmentService:
             InvalidStateTransitionError: The order cannot be disputed from its state.
             ConflictError: A dispute already exists for this order.
         """
-        if await self._orders.get_for_actor(order_id, actor_id) is None:
-            raise NotFoundError("Order not found.")
-        order = await self._orders.lock(order_id)
-        if order is None:  # pragma: no cover
+        order = await self._orders.lock_for_actor(order_id, actor_id)
+        if order is None:
             raise NotFoundError("Order not found.")
         if await self._disputes.get_for_order(order.id) is not None:
             raise ConflictError("A dispute already exists for this order.")

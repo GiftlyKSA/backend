@@ -94,11 +94,28 @@ services:
   worker:
     <<: *app-service
     command: ["taskiq", "worker", "app.workers.broker:broker"]
+    healthcheck:
+      disable: true
     volumes:
       - ./app:/app/app
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  scheduler:
+    <<: *app-service
+    command: ["taskiq", "scheduler", "app.workers.scheduler:scheduler"]
+    healthcheck:
+      disable: true
+    deploy:
+      replicas: 1
+    volumes:
+      - ./app:/app/app
+    depends_on:
       redis:
         condition: service_healthy
       migrate:

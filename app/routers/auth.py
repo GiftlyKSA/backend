@@ -103,7 +103,7 @@ async def logout(
     db: DbDep,
     actor: Annotated[Actor, Depends(require_auth)],
 ) -> Response:
-    """Denylist the caller's access token until it would have expired."""
+    """Sign out all devices by revoking the account's access and refresh credentials."""
     from app.core.jwt import decode_access_token
 
     token = request.headers.get("Authorization", "")[len("Bearer ") :].strip()
@@ -111,5 +111,8 @@ async def logout(
     from datetime import datetime
 
     remaining = claims.exp - int(datetime.now(UTC).timestamp())
-    await _service(request, db).logout(jti=actor.jti, remaining_ttl_seconds=remaining)
+    await _service(request, db).logout(
+        user_id=actor.id, jti=actor.jti, remaining_ttl_seconds=remaining
+    )
+    await db.commit()
     return Response(status_code=204)

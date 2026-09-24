@@ -11,17 +11,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
 from app.models.enums import UserRole
@@ -36,6 +36,7 @@ from app.schemas.chat import (
     MessageResponse,
     SendMessageRequest,
 )
+from app.services.auth_service import validate_access_claims
 from app.services.chat_service import ChatMessage, ChatService, conversation_channel
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.notification_service import NotificationService
@@ -207,23 +208,39 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
     redis: Redis = websocket.app.state.redis
     pubsub = redis.pubsub()
     await pubsub.subscribe(conversation_channel(conversation_id))
-    reader = asyncio.create_task(_pump_pubsub_to_socket(pubsub, websocket))
+    tasks = [
+        asyncio.create_task(_pump_pubsub_to_socket(pubsub, websocket, conversation_id)),
+        asyncio.create_task(
+            _pump_socket_to_chat(websocket, conversation_id, actor, recipient_id, factory, redis)
+        ),
+        asyncio.create_task(_monitor_authorization(websocket, conversation_id)),
+    ]
     try:
-        await _pump_socket_to_chat(websocket, conversation_id, actor, recipient_id, factory, redis)
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
     except WebSocketDisconnect:
         pass
+    except (UnauthorizedError, ForbiddenError, NotFoundError):
+        await websocket.close(code=4401)
+    except Exception:
+        await websocket.close(code=1011)
+        raise
     finally:
-        reader.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await reader
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         with contextlib.suppress(Exception):
             await pubsub.unsubscribe(conversation_channel(conversation_id))
             await pubsub.aclose()  # type: ignore[no-untyped-call]
 
 
-async def _pump_pubsub_to_socket(pubsub: PubSub, websocket: WebSocket) -> None:
+async def _pump_pubsub_to_socket(
+    pubsub: PubSub, websocket: WebSocket, conversation_id: uuid.UUID
+) -> None:
     async for event in pubsub.listen():
         if event.get("type") == "message":
+            await _require_live_authorization(websocket, conversation_id)
             data = event["data"]
             await websocket.send_text(data.decode() if isinstance(data, bytes) else str(data))
 
@@ -233,7 +250,7 @@ async def _pump_socket_to_chat(
     conversation_id: uuid.UUID,
     actor: Actor,
     recipient_id: uuid.UUID,
-    factory: object,
+    factory: async_sessionmaker[AsyncSession],
     redis: Redis,
 ) -> None:
     """Read inbound frames, guard them, persist the message, and push the recipient.
@@ -254,17 +271,17 @@ async def _pump_socket_to_chat(
         if len(raw.encode("utf-8")) > settings.WS_MAX_FRAME_BYTES:
             continue  # oversized frame: dropped before any decrypt/persist work
         decision = await limiter.check_guarded(
-            f"ws:{actor.id}", blocked_key=f"auth:banned:{actor.id}"
+            f"ws:{actor.id}", blocked_key=f"jwt:denylist:{actor.jti}"
         )
         if decision.blocked:
-            await websocket.close(code=4401)  # banned mid-connection
-            return
+            raise UnauthorizedError("This session is no longer valid.")
         if not decision.allowed:
             continue  # over the per-user message ceiling: dropped
+        await _require_live_authorization(websocket, conversation_id)
         text = _extract_text(raw)
         if not text:
             continue
-        async with factory() as session:  # type: ignore[operator]
+        async with factory() as session:
             service = _session_service(session, redis, settings)
             dto = await service.send_message(
                 conversation_id=conversation_id, sender_id=actor.id, text=text
@@ -299,7 +316,9 @@ def _extract_text(raw: str) -> str:
     return ""
 
 
-async def _authenticate_ws(websocket: WebSocket) -> Actor | None:
+async def _authenticate_ws(
+    websocket: WebSocket, conversation_id: uuid.UUID | None = None
+) -> Actor | None:
     token = websocket.query_params.get("token", "")
     if not token:
         return None
@@ -309,7 +328,16 @@ async def _authenticate_ws(websocket: WebSocket) -> Actor | None:
     except JwtError:
         return None
     redis: Redis = websocket.app.state.redis
-    if await redis.get(f"jwt:denylist:{claims.jti}"):
+    try:
+        async with websocket.app.state.session_factory() as session:
+            await validate_access_claims(claims, redis=redis, users=UserRepository(session))
+            if conversation_id is not None:
+                await _session_service(session, redis, settings).get_conversation_for_actor(
+                    conversation_id=conversation_id, actor_id=uuid.UUID(claims.sub)
+                )
+    except UnauthorizedError:
+        return None
+    if claims.exp <= datetime.now(UTC).timestamp():
         return None
     try:
         role = UserRole(claims.role)
@@ -318,6 +346,21 @@ async def _authenticate_ws(websocket: WebSocket) -> Actor | None:
     if role not in (UserRole.CUSTOMER, UserRole.COURIER):
         return None
     return Actor(id=uuid.UUID(claims.sub), role=role, jti=claims.jti)
+
+
+async def _require_live_authorization(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
+    """Check expiry, revocation, account state, and current conversation membership."""
+    async with asyncio.timeout(5):
+        actor = await _authenticate_ws(websocket, conversation_id)
+    if actor is None:
+        raise UnauthorizedError("This session is no longer valid.")
+
+
+async def _monitor_authorization(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
+    """Recheck idle connections every five seconds, with a five-second dependency deadline."""
+    while True:
+        await _require_live_authorization(websocket, conversation_id)
+        await asyncio.sleep(5)
 
 
 def _parse_cursor(cursor: str | None) -> tuple[datetime, uuid.UUID] | None:

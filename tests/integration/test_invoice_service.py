@@ -28,6 +28,7 @@ from app.services.invoice_service import (
     InvoiceService,
     NewInvoiceInput,
 )
+from app.services.payment_reservation_service import build_payment_reservation_service
 from app.services.promo_service import PromoService
 from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,7 @@ def _settings() -> Settings:
 def _service(db: AsyncSession) -> InvoiceService:
     return InvoiceService(
         invoices=InvoiceRepository(db),
+        reservations=build_payment_reservation_service(db),
         orders=OrderRepository(db),
         promos=PromoService(PromoRepository(db)),
         eligibility=CourierEligibilityService(

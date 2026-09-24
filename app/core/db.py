@@ -25,6 +25,7 @@ def build_engine(settings: Settings) -> AsyncEngine:
     return create_async_engine(
         settings.DATABASE_URL.get_secret_value(),
         echo=False if settings.is_production else settings.DEBUG,
+        hide_parameters=True,
         pool_pre_ping=True,
         # PgBouncer transaction mode: no server-side statement cache.
         connect_args={"statement_cache_size": 0},

@@ -35,8 +35,8 @@ class StorageClient(ABC):
         """Return object metadata, or None if it does not exist."""
 
     @abstractmethod
-    async def verify_image_magic_bytes(self, storage_key: str) -> bool:
-        """Return whether the object's real content is a supported image (magic bytes)."""
+    async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
+        """Return whether the object's bytes match its issued image type."""
 
     @abstractmethod
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:

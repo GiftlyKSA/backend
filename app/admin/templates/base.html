@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}SAFE-GIFT Admin{% endblock %}</title>
   <link rel="stylesheet" href="/admin/static/admin.css">
+  <script src="/admin/static/relationships.js" defer></script>
 </head>
 <body>
 {% if ctx %}
@@ -24,6 +25,7 @@
     <a href="/admin/audit-logs">Audit</a>
   </nav>
   <form method="post" action="/admin/logout" class="logout">
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <button type="submit">Sign out</button>
   </form>
 </header>

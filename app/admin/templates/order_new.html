@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from "relationship_field.html" import relationship_field %}
 {% block content %}
 <h1>Add order</h1>
 <p class="note">Orders are created as NEW for an existing active customer. Coordinates are longitude first, then latitude.</p>
 <section class="card edit-card">
   <form method="post" action="/admin/orders">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <label>Customer user ID<input name="customer_id" type="text" required></label>
+    {{ relationship_field('orders', 'customer_id', 'Customer') }}
     <label>City<input name="delivery_city" maxlength="100" required></label>
     <label>Delivery date<input name="delivery_date" type="date" min="{{ today }}" required></label>
     <label>Longitude<input name="longitude" type="number" step="any" required></label>

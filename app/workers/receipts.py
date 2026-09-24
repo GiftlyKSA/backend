@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
@@ -32,7 +34,7 @@ async def send_pending_receipts(
     *,
     limit: int = 100,
     email: EmailClient | None = None,
-    factory: object | None = None,
+    factory: async_sessionmaker[AsyncSession] | None = None,
     settings: Settings | None = None,
 ) -> int:
     """Send every pending paid-invoice receipt; returns how many were sent.
@@ -49,12 +51,12 @@ async def send_pending_receipts(
 
     sent = 0
     try:
-        async with factory() as session:  # type: ignore[operator]
+        async with factory() as session:
             pending = await InvoiceRepository(session).list_receipt_pending(limit)
             invoice_ids = [invoice.id for invoice in pending]
 
         for invoice_id in invoice_ids:
-            async with factory() as session:  # type: ignore[operator]
+            async with factory() as session:
                 service = ReceiptService(
                     invoices=InvoiceRepository(session),
                     orders=OrderRepository(session),

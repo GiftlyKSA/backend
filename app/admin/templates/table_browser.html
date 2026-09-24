@@ -10,16 +10,14 @@
     <h1>{{ data.table.label }}</h1>
   </div>
   <span class="table-card__mode {% if data.table.editable %}is-editable{% endif %}">
-    {% if data.table.editable %}Controlled edit{% else %}Read only{% endif %}
+    Full admin access
   </span>
 </div>
-{% if data.table.name == "users" %}<p><a class="btn" href="/admin/users/new">Add user</a></p>
-{% elif data.table.name == "courier_profiles" %}<p><a class="btn" href="/admin/couriers/new">Add courier profile</a></p>
-{% elif data.table.name == "orders" %}<p><a class="btn" href="/admin/orders/new">Add order</a></p>{% endif %}
+<p><a class="btn" href="/admin/tables/{{ data.table.name }}/new">Add record</a></p>
 <p class="note">
   Showing up to 50 records per page. Encrypted, credential, and token fields stay masked.
   {% if data.table.name == "users" %}Signed-in dashboard admins can view user contact fields.{% else %}Personal-contact fields stay masked.{% endif %}
-  {% if data.table.editable %}Open a record link to edit only the safe fields for this table.{% endif %}
+  Open a record link to view, edit, or delete it.
 </p>
 <div class="table-scroll">
   <table class="list data-table">

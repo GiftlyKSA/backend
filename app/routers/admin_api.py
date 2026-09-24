@@ -22,6 +22,7 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
@@ -47,7 +48,9 @@ def _fulfillment(request: Request, db: AsyncSession) -> FulfillmentService:
         disputes=DisputeRepository(db),
         wallets=WalletRepository(db),
         money=MoneyService(WalletRepository(db)),
-        media=MediaService(request.app.state.clients.storage, get_settings(request)),
+        media=MediaService(
+            request.app.state.clients.storage, get_settings(request), MediaRepository(db)
+        ),
         settings=get_settings(request),
     )
 

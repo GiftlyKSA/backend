@@ -31,6 +31,7 @@ from app.models.enums import (
     WalletType,
 )
 from app.repositories.wallet_repository import WalletRepository
+from app.services.expiry_service import ExpiryService
 from app.services.money_service import MoneyService
 from app.services.payment_service import build_payment_service
 from geoalchemy2 import WKTElement
@@ -360,3 +361,149 @@ async def test_webhook_marks_intent_failed_on_non_paid(
         raw_body=body, signature=_signed(body)
     )
     assert out.outcome == "failed"
+
+
+@pytest.mark.parametrize("retry_outcome", ["PAID", "EXPIRED", "FAILED", "CANCELLED"])
+async def test_split_failure_retry_preserves_other_holds_and_exact_balances(
+    db_session: AsyncSession, redis_client: Redis, retry_outcome: str
+) -> None:
+    from app.repositories.payment_repository import PaymentRepository
+
+    user, order, invoice = await _issued_invoice(db_session)
+    wallets = WalletRepository(db_session)
+    wallet = await wallets.get_by_user(user.id)
+    assert wallet is not None
+    money = MoneyService(wallets)
+    await _service(
+        db_session, redis_client, settings=_settings(ENVIRONMENT=Environment.DEVELOPMENT.value)
+    ).create_topup(user_id=user.id, amount=Decimal("350.00"))
+    await money.hold_funds(wallet_id=wallet.id, amount=Decimal("50.00"))
+    service = _service(db_session, redis_client)
+    payments = PaymentRepository(db_session)
+    await service.pay_invoice(invoice_id=invoice.id, customer_id=user.id)
+    first = await payments.get_open_intent_for_invoice(invoice.id)
+    assert first is not None and first.gateway_reference is not None
+    assert first.wallet_reserved_amount == Decimal("300.00")
+    await db_session.refresh(wallet)
+    assert (wallet.balance, wallet.held_balance) == (Decimal("350.00"), Decimal("350.00"))
+
+    failed_body = _body(first.gateway_reference, "424.50", "FAILED")
+    assert (
+        await service.handle_webhook(raw_body=failed_body, signature=_signed(failed_body))
+    ).outcome == "failed"
+    await db_session.refresh(wallet)
+    assert (wallet.balance, wallet.held_balance) == (Decimal("350.00"), Decimal("50.00"))
+    assert await money.available_balance(user.id) == Decimal("300.00")
+
+    # A retry owns a different amount; stale failure/success callbacks must not release it.
+    await money.hold_funds(wallet_id=wallet.id, amount=Decimal("25.00"))
+    await service.pay_invoice(invoice_id=invoice.id, customer_id=user.id)
+    second = await payments.get_open_intent_for_invoice(invoice.id)
+    assert second is not None and second.id != first.id and second.gateway_reference is not None
+    assert second.wallet_reserved_amount == Decimal("275.00")
+    for status in ("FAILED", "PAID"):
+        stale_body = _body(first.gateway_reference, "424.50", status)
+        assert (
+            await service.handle_webhook(raw_body=stale_body, signature=_signed(stale_body))
+        ).outcome == "already_processed"
+    await db_session.refresh(wallet)
+    assert wallet.held_balance == Decimal("350.00")
+
+    if retry_outcome == "CANCELLED":
+        from unittest.mock import AsyncMock
+
+        from app.repositories.invoice_repository import InvoiceRepository
+        from app.repositories.order_repository import OrderRepository
+        from app.repositories.promo_repository import PromoRepository
+        from app.services.invoice_service import InvoiceService
+        from app.services.payment_reservation_service import build_payment_reservation_service
+        from app.services.promo_service import PromoService
+
+        invoices = InvoiceService(
+            invoices=InvoiceRepository(db_session),
+            orders=OrderRepository(db_session),
+            promos=PromoService(PromoRepository(db_session)),
+            eligibility=AsyncMock(),
+            reservations=build_payment_reservation_service(db_session),
+            settings=_settings(),
+        )
+        await invoices.cancel_invoice(invoice_id=invoice.id, courier_id=order.courier_id)
+        assert invoice.status is InvoiceStatus.CANCELLED
+        assert order.status is OrderStatus.ASSIGNED
+        assert second.status is PaymentIntentStatus.EXPIRED
+        assert not await ExpiryService(db_session).expire_invoice(invoice.id)
+        body = _body(second.gateway_reference, "449.50", "PAID")
+        assert (
+            await service.handle_webhook(raw_body=body, signature=_signed(body))
+        ).outcome == "already_processed"
+    elif retry_outcome == "EXPIRED":
+        invoice.expires_at = datetime.now(UTC) - timedelta(hours=1)
+        await db_session.flush()
+        assert await ExpiryService(db_session).expire_invoice(invoice.id)
+        assert not await ExpiryService(db_session).expire_invoice(invoice.id)
+        assert order.status is OrderStatus.ASSIGNED
+    else:
+        body = _body(second.gateway_reference, "449.50", retry_outcome)
+        await service.handle_webhook(raw_body=body, signature=_signed(body))
+        assert (
+            await service.handle_webhook(raw_body=body, signature=_signed(body))
+        ).outcome == "already_processed"
+        if retry_outcome == "FAILED":
+            invoice.expires_at = datetime.now(UTC) - timedelta(hours=1)
+            await db_session.flush()
+            assert await ExpiryService(db_session).expire_invoice(invoice.id)
+        else:
+            assert invoice.status is InvoiceStatus.PAID
+            assert order.status is OrderStatus.IN_PROGRESS
+    await db_session.refresh(wallet)
+    assert wallet.held_balance == Decimal("75.00")
+    assert wallet.balance == Decimal("75.00" if retry_outcome == "PAID" else "350.00")
+    assert await money.available_balance(user.id) == Decimal(
+        "0.00" if retry_outcome == "PAID" else "275.00"
+    )
+
+
+@pytest.mark.parametrize("operation", ["failure", "expiry"])
+async def test_reservation_release_rolls_back_with_terminal_transition_failure(
+    db_session: AsyncSession, redis_client: Redis, monkeypatch, operation: str
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.repositories.payment_repository import PaymentRepository
+
+    user, order, invoice = await _issued_invoice(db_session)
+    wallet = await WalletRepository(db_session).get_by_user(user.id)
+    assert wallet is not None
+    await _service(
+        db_session, redis_client, settings=_settings(ENVIRONMENT=Environment.DEVELOPMENT.value)
+    ).create_topup(user_id=user.id, amount=Decimal("300.00"))
+    service = _service(db_session, redis_client)
+    await service.pay_invoice(invoice_id=invoice.id, customer_id=user.id)
+    intent = await PaymentRepository(db_session).get_open_intent_for_invoice(invoice.id)
+    assert intent is not None and intent.gateway_reference is not None
+    invoice.expires_at = datetime.now(UTC) - timedelta(hours=1)
+    await db_session.flush()
+
+    with pytest.raises(RuntimeError, match="storage failed"):
+        async with db_session.begin_nested():
+            if operation == "failure":
+                monkeypatch.setattr(
+                    service._payments,
+                    "mark_failed",
+                    AsyncMock(side_effect=RuntimeError("storage failed")),
+                )
+                body = _body(intent.gateway_reference, "424.50", "FAILED")
+                await service.handle_webhook(raw_body=body, signature=_signed(body))
+            else:
+                expiry = ExpiryService(db_session)
+                monkeypatch.setattr(
+                    expiry._promos, "release", AsyncMock(side_effect=RuntimeError("storage failed"))
+                )
+                await expiry.expire_invoice(invoice.id)
+    for record in (wallet, intent, invoice, order):
+        await db_session.refresh(record)
+    assert wallet.balance == Decimal("300.00")
+    assert wallet.held_balance == Decimal("300.00")
+    assert intent.status is PaymentIntentStatus.NEW
+    assert invoice.status is InvoiceStatus.ISSUED
+    assert order.status is OrderStatus.WAITING_PAYMENT

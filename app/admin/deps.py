@@ -20,6 +20,7 @@ from app.core.security import sha256_hex, verify_csrf_token
 from app.models import AdminSession, User
 from app.repositories.admin_read_repository import AdminReadRepository
 from app.repositories.admin_session_repository import AdminSessionRepository
+from app.repositories.admin_table_repository import AdminTableRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.courier_repository import CourierRepository
@@ -28,6 +29,7 @@ from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_service import AdminService
+from app.services.admin_table_service import AdminTableService
 
 SESSION_COOKIE = "admin_session"
 
@@ -51,6 +53,7 @@ class AdminContext:
     auth: AdminAuthService
     service: AdminService
     csrf_token: str
+    tables: AdminTableService
 
 
 def get_settings_from(request: Request) -> Settings:
@@ -91,6 +94,7 @@ def build_admin_service(db: AsyncSession, settings: Settings, redis: Redis) -> A
     """Assemble the admin operations service for a request."""
     return AdminService(
         reads=AdminReadRepository(db),
+        tables=AdminTableRepository(db),
         users=UserRepository(db),
         couriers=CourierRepository(db),
         orders=OrderRepository(db),
@@ -115,7 +119,15 @@ async def require_admin(request: Request, db: AsyncSession) -> AdminContext:
     redis = get_redis_from(request)
     auth = build_auth_service(db, redis, settings)
     try:
-        session_row, admin = await auth.load_session(raw)
+        # Mutations must lock users before revoking sessions, not hold a session
+        # UPDATE lock while waiting for the same user's security change.
+        session_row, admin = await auth.load_session(
+            raw,
+            extend_expiry=(
+                request.method == "GET"
+                and request.path_params.get("table_name") != "admin_sessions"
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 — any auth failure means "go log in".
         raise AdminRedirect() from exc
     return AdminContext(
@@ -125,6 +137,9 @@ async def require_admin(request: Request, db: AsyncSession) -> AdminContext:
         auth=auth,
         service=build_admin_service(db, settings, redis),
         csrf_token=auth.csrf_token_for(session_row.session_token_hash),
+        tables=AdminTableService(
+            AdminTableRepository(db), AuditRepository(db), settings, AuthRepository(db)
+        ),
     )
 
 

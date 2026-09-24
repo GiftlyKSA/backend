@@ -52,6 +52,7 @@ from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.services.money_service import MoneyService
 from app.services.order_state import assert_transition
+from app.services.payment_reservation_service import PaymentReservationService
 from app.services.promo_service import PromoService
 
 _WEBHOOK_LOCK_TTL = 15
@@ -121,6 +122,9 @@ class PaymentService:
         self._gateway = gateway
         self._redis = redis
         self._settings = settings
+        self._reservations = PaymentReservationService(
+            payments=payments, wallets=wallets, money=money
+        )
 
     def _require_payments_available(self) -> None:
         if self._settings.is_production:
@@ -199,16 +203,29 @@ class PaymentService:
         invoice = await self._invoices.get_for_actor(invoice_id, customer_id)
         if invoice is None:
             raise NotFoundError("Invoice not found.")
+        invoice = await self._invoices.lock(invoice_id)
+        if invoice is None:
+            raise NotFoundError("Invoice not found.")
         if invoice.status is not InvoiceStatus.ISSUED:
             raise ConflictError("This invoice is not awaiting payment.")
         if invoice.expires_at is not None and self._now() > invoice.expires_at:
             raise ConflictError("This invoice has expired.")
 
         order = await self._orders.lock(invoice.order_id)
-        if order is None:  # pragma: no cover - FK guarantees the order exists
+        if order is None or order.customer_id != customer_id:
             raise NotFoundError("Order not found.")
         if order.status is not OrderStatus.WAITING_PAYMENT:
             raise InvalidStateTransitionError("This order is not awaiting payment.")
+
+        existing = await self._payments.get_open_intent_for_invoice(invoice.id)
+        if existing is not None:
+            return PayResult(
+                invoice_id=invoice.id,
+                status="PENDING",
+                amount_from_wallet=existing.wallet_reserved_amount,
+                amount_from_gateway=existing.amount,
+                payment_url=existing.gateway_payment_url,
+            )
 
         wallet = await self._wallets.get_by_user(customer_id)
         if wallet is None:  # pragma: no cover - the customer always has a wallet
@@ -239,17 +256,6 @@ class PaymentService:
                 amount_from_wallet=total,
                 amount_from_gateway=ZERO,
                 payment_url=None,
-            )
-
-        # A remainder is due from the gateway. Reuse an open intent if one exists.
-        existing = await self._payments.get_open_intent_for_invoice(invoice.id)
-        if existing is not None and existing.gateway_payment_url is not None:
-            return PayResult(
-                invoice_id=invoice.id,
-                status="PENDING",
-                amount_from_wallet=invoice.amount_from_wallet,
-                amount_from_gateway=existing.amount,
-                payment_url=existing.gateway_payment_url,
             )
 
         return await self._start_invoice_gateway_payment(
@@ -284,6 +290,7 @@ class PaymentService:
             amount=gateway_amount,
             reference_invoice_id=invoice.id,
             expires_at=self._expiry(),
+            wallet_reserved_amount=wallet_amount,
         )
         if self._settings.ENVIRONMENT is Environment.DEVELOPMENT:
             await self._settle_invoice(intent)
@@ -338,13 +345,24 @@ class PaymentService:
             return await self._settle_locked(event)
 
     async def _settle_locked(self, event: WebhookEvent) -> WebhookResult:
+        candidate = await self._payments.get_intent_by_payment_link(event.payment_link_id)
+        if candidate is None:
+            raise NotFoundError("Unknown simulated payment link.")
+        invoice_id = candidate.reference_invoice_id
+        if invoice_id is not None:
+            # Invoice-first locking matches retries and expiry; refresh after waiting.
+            if await self._invoices.lock(invoice_id) is None:
+                raise NotFoundError("Invoice not found.")
         intent = await self._payments.lock_intent_by_payment_link(event.payment_link_id)
         if intent is None:
             raise NotFoundError("Unknown simulated payment link.")
+        if intent.reference_invoice_id != invoice_id:
+            raise ConflictError("The payment intent invoice reference changed.")
         if intent.status is not PaymentIntentStatus.NEW:
             # Already PAID/FAILED — a replay. Idempotent no-op.
             return WebhookResult(outcome="already_processed")
         if event.status.upper() != "PAID":
+            await self._reservations.release_locked_intent(intent)
             await self._payments.mark_failed(intent, reason=event.status)
             return WebhookResult(outcome="failed")
         if event.amount is None or quantize_money(event.amount) != quantize_money(intent.amount):
@@ -373,6 +391,8 @@ class PaymentService:
             raise NotFoundError("Invoice not found.")
         if invoice.status is InvoiceStatus.PAID:  # pragma: no cover - intent guard precedes
             return
+        if invoice.status is not InvoiceStatus.ISSUED:
+            raise ConflictError("This invoice is not awaiting payment.")
         order = await self._orders.lock(invoice.order_id)
         if order is None:  # pragma: no cover - FK guarantees the order exists
             raise NotFoundError("Order not found.")
@@ -382,16 +402,16 @@ class PaymentService:
 
         await self._money.fund_escrow_for_invoice(
             customer_wallet_id=wallet.id,
-            wallet_amount=invoice.amount_from_wallet,
+            wallet_amount=intent.wallet_reserved_amount,
             gateway_amount=intent.amount,
             invoice_id=invoice.id,
             order_id=order.id,
             intent_id=intent.id,
-            was_held=invoice.amount_from_wallet > ZERO,
+            was_held=intent.wallet_reserved_amount > ZERO,
         )
         method = invoice.payment_method or PaymentMethod.GATEWAY_ONLY
         await self._settle_invoice_record(
-            invoice, order, method, invoice.amount_from_wallet, intent.amount
+            invoice, order, method, intent.wallet_reserved_amount, intent.amount
         )
 
     async def _settle_invoice_record(

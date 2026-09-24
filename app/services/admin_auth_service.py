@@ -95,7 +95,12 @@ class AdminAuthService:
         if not self._credentials_match(username, password):
             raise generic
         user = await self._users.ensure_dashboard_admin(username)
-        if user is None or user.role is not UserRole.ADMIN or user.status is not UserStatus.ACTIVE:
+        if (
+            user is None
+            or user.role is not UserRole.ADMIN
+            or user.status is not UserStatus.ACTIVE
+            or user.deleted_at is not None
+        ):
             raise generic
         await self._redis.delete(*keys)
 
@@ -113,7 +118,9 @@ class AdminAuthService:
         csrf = make_csrf_token(token_hash, self._session_secret())
         return AdminLogin(raw_session_token=raw, csrf_token=csrf, admin=user)
 
-    async def load_session(self, raw_token: str) -> tuple[AdminSession, User]:
+    async def load_session(
+        self, raw_token: str, *, extend_expiry: bool = True
+    ) -> tuple[AdminSession, User]:
         """Load an active session and its admin, sliding the expiry within the cap.
 
         Raises:
@@ -128,12 +135,16 @@ class AdminAuthService:
             admin is None
             or admin.role is not UserRole.ADMIN
             or admin.status is not UserStatus.ACTIVE
+            or admin.deleted_at is not None
         ):
             raise UnauthorizedError("Your session is no longer valid.")
 
         cap = row.created_at + _ABSOLUTE_CAP
+        if now >= cap:
+            raise UnauthorizedError("Your session has expired. Please sign in again.")
         new_expiry = min(now + timedelta(minutes=self._settings.ADMIN_SESSION_TTL_MINUTES), cap)
-        await self._sessions.touch(row, new_expiry)
+        if extend_expiry:
+            await self._sessions.touch(row, new_expiry)
         return row, admin
 
     async def logout(self, raw_token: str) -> None:
@@ -142,6 +153,7 @@ class AdminAuthService:
         row = await self._sessions.get_active(sha256_hex(raw_token), now)
         if row is not None:
             await self._sessions.revoke(row, now)
+        await self._redis.delete(self._stepup_key(sha256_hex(raw_token)))
 
     def csrf_token_for(self, session_token_hash: str) -> str:
         """Return the CSRF token bound to a session hash."""

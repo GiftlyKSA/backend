@@ -8,7 +8,7 @@ from datetime import date, datetime
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CourierProfile, RefreshToken, User, Wallet
+from app.models import AdminSession, CourierProfile, RefreshToken, User, Wallet
 from app.models.enums import UserRole, UserStatus, WalletType
 
 
@@ -106,11 +106,38 @@ class AuthRepository:
         await self._session.flush()
 
     async def get_refresh_token(self, token_hash: str) -> RefreshToken | None:
-        """Load a refresh token row by its hash."""
+        """Lock a refresh token and reload its state after any concurrent rotation."""
         result: RefreshToken | None = await self._session.scalar(
-            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+            select(RefreshToken)
+            .where(RefreshToken.token_hash == token_hash)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result
+
+    async def lock_refresh_owner(self, token_hash: str) -> User | None:
+        """Serialize all family rotations and credential changes on their user first."""
+        result: User | None = await self._session.scalar(
+            select(User)
+            .join(RefreshToken, RefreshToken.user_id == User.id)
+            .where(RefreshToken.token_hash == token_hash)
+            .with_for_update(of=User)
+            .execution_options(populate_existing=True)
+        )
+        return result
+
+    async def invalidate_user_credentials(self, user_id: uuid.UUID, now: datetime) -> None:
+        """Invalidate access, refresh, and dashboard credentials in this transaction."""
+        await self._session.execute(
+            update(User).where(User.id == user_id).values(auth_version=User.auth_version + 1)
+        )
+        await self.revoke_all_for_user(user_id, now)
+        await self._session.execute(
+            update(AdminSession)
+            .where(AdminSession.admin_user_id == user_id, AdminSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        await self._session.flush()
 
     async def mark_refresh_used(self, row: RefreshToken, now: datetime) -> None:
         """Mark a refresh token consumed (part of rotation)."""

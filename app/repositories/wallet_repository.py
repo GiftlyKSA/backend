@@ -9,13 +9,25 @@ SETTLED|REVERSED status change handled elsewhere).
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import Numeric, Uuid, cast, func, null, select, true, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction
 
+from app.core.money import ZERO
 from app.models import Transaction, Wallet
 from app.models.enums import TransactionStatus, TransactionType, WalletType
+
+
+@dataclass
+class ReconciliationSnapshot:
+    """Counts and discrepancies read from one database snapshot."""
+
+    wallets_checked: int = 0
+    correlations_checked: int = 0
+    wallet_drifts: list[tuple[uuid.UUID, Decimal, Decimal]] = field(default_factory=list)
+    correlation_drifts: list[tuple[uuid.UUID, Decimal]] = field(default_factory=list)
 
 
 class WalletRepository:
@@ -53,7 +65,11 @@ class WalletRepository:
         """Lock the given wallets FOR UPDATE in ascending id order; return them by id."""
         ordered = sorted(set(wallet_ids))
         rows = await self._session.scalars(
-            select(Wallet).where(Wallet.id.in_(ordered)).order_by(Wallet.id).with_for_update()
+            select(Wallet)
+            .where(Wallet.id.in_(ordered))
+            .order_by(Wallet.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return {w.id: w for w in rows}
 
@@ -139,42 +155,60 @@ class WalletRepository:
                 )
         return list(await self._session.scalars(query))
 
-    async def all_wallets(self) -> list[Wallet]:
-        """Return every wallet (for reconciliation)."""
-        return list(await self._session.scalars(select(Wallet)))
+    async def reconciliation_snapshot(self) -> ReconciliationSnapshot:
+        """Read counts and only discrepancies in one READ COMMITTED statement snapshot.
 
-    async def settled_sums_by_wallet(self) -> dict[uuid.UUID, Decimal]:
-        """Return every wallet's SETTLED sum in ONE aggregate (audit PERF-2).
-
-        Replaces a per-wallet SUM loop: reconciliation stays a single query however
-        large the ledger grows. Wallets with no transactions are simply absent.
+        Worker memory is O(discrepancies), not O(wallets or ledger groups). Both
+        persisted money columns are NUMERIC with scale 2, so SQL equality preserves
+        the money primitive's comparison without rounding or float conversion.
         """
-        rows = await self._session.execute(
-            select(Transaction.wallet_id, func.sum(Transaction.amount))
+        wallet_sums = (
+            select(Transaction.wallet_id, func.sum(Transaction.amount).label("total"))
             .where(Transaction.status == TransactionStatus.SETTLED)
             .group_by(Transaction.wallet_id)
+            .subquery("wallet_sums")
         )
-        return {wid: Decimal(total) for wid, total in rows.all()}
-
-    async def correlation_drift_sums(self) -> dict[uuid.UUID, Decimal]:
-        """Return ONLY the correlation groups whose SETTLED sum is not zero.
-
-        The zero-sum check runs SQL-side (``HAVING SUM != 0``, audit PERF-2), so the
-        result is O(violations) — normally empty — instead of the whole ledger.
-        """
-        rows = await self._session.execute(
-            select(Transaction.correlation_id, func.sum(Transaction.amount))
+        correlation_sums = (
+            select(Transaction.correlation_id, func.sum(Transaction.amount).label("total"))
             .where(Transaction.status == TransactionStatus.SETTLED)
             .group_by(Transaction.correlation_id)
-            .having(func.sum(Transaction.amount) != 0)
+            .cte("correlation_sums")
         )
-        return {cid: Decimal(total) for cid, total in rows.all()}
-
-    async def correlation_count(self) -> int:
-        """Count distinct SETTLED correlation groups (for the reconcile report)."""
-        total = await self._session.scalar(
-            select(func.count(func.distinct(Transaction.correlation_id))).where(
-                Transaction.status == TransactionStatus.SETTLED
+        settled = func.coalesce(wallet_sums.c.total, ZERO)
+        discrepancies = union_all(
+            select(
+                Wallet.id.label("wallet_id"),
+                Wallet.balance,
+                settled.label("total"),
+                cast(null(), Uuid).label("correlation_id"),
             )
+            .outerjoin(wallet_sums, Wallet.id == wallet_sums.c.wallet_id)
+            .where(Wallet.balance != settled),
+            select(
+                cast(null(), Uuid).label("wallet_id"),
+                cast(null(), Numeric).label("balance"),
+                correlation_sums.c.total,
+                correlation_sums.c.correlation_id,
+            ).where(correlation_sums.c.total != ZERO),
+        ).subquery("discrepancies")
+        counts = select(
+            select(func.count(Wallet.id)).scalar_subquery().label("wallets_checked"),
+            select(func.count())
+            .select_from(correlation_sums)
+            .scalar_subquery()
+            .label("correlations_checked"),
+        ).subquery("counts")
+        rows = await self._session.execute(
+            select(counts, discrepancies)
+            .select_from(counts.outerjoin(discrepancies, true()))
+            .order_by(discrepancies.c.wallet_id.asc().nulls_last(), discrepancies.c.correlation_id)
         )
-        return int(total or 0)
+        snapshot = ReconciliationSnapshot()
+        for wallet_count, correlation_count, wallet_id, balance, total, correlation_id in rows:
+            snapshot.wallets_checked = wallet_count
+            snapshot.correlations_checked = correlation_count
+            if wallet_id is not None:
+                snapshot.wallet_drifts.append((wallet_id, balance, total))
+            elif correlation_id is not None:
+                snapshot.correlation_drifts.append((correlation_id, total))
+        return snapshot

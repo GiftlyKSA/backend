@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.pricing import PricingResult
+from app.core.pricing import PricingLine, PricingResult
 from app.models import Invoice, InvoiceItem, Order
 from app.models.enums import InvoiceStatus
 
@@ -71,24 +71,22 @@ class InvoiceRepository:
         invoice.expires_at = expires_at
         await self._session.flush()
 
-    async def add_item(self, *, invoice_id: uuid.UUID, line: object) -> None:
+    async def add_item(self, *, invoice_id: uuid.UUID, line: PricingLine) -> None:
         """Attach one computed line (a :class:`PricingLine`) to an invoice."""
-        # ``line`` is a PricingLine; typed as object to avoid a core->repo import cycle
-        # in signatures. Attribute access is checked by the caller's typing.
         self._session.add(
             InvoiceItem(
                 invoice_id=invoice_id,
-                position=line.position,  # type: ignore[attr-defined]
-                title=line.title,  # type: ignore[attr-defined]
-                description=line.description,  # type: ignore[attr-defined]
-                unit_price_amount=line.unit_price_amount,  # type: ignore[attr-defined]
-                quantity=line.quantity,  # type: ignore[attr-defined]
-                tax_rate=line.tax_rate,  # type: ignore[attr-defined]
-                line_net_amount=line.line_net_amount,  # type: ignore[attr-defined]
-                line_discount_amount=line.line_discount_amount,  # type: ignore[attr-defined]
-                line_taxable_amount=line.line_taxable_amount,  # type: ignore[attr-defined]
-                line_tax_amount=line.line_tax_amount,  # type: ignore[attr-defined]
-                line_total_amount=line.line_total_amount,  # type: ignore[attr-defined]
+                position=line.position,
+                title=line.title,
+                description=line.description,
+                unit_price_amount=line.unit_price_amount,
+                quantity=line.quantity,
+                tax_rate=line.tax_rate,
+                line_net_amount=line.line_net_amount,
+                line_discount_amount=line.line_discount_amount,
+                line_taxable_amount=line.line_taxable_amount,
+                line_tax_amount=line.line_tax_amount,
+                line_total_amount=line.line_total_amount,
             )
         )
         await self._session.flush()
@@ -136,7 +134,10 @@ class InvoiceRepository:
     async def lock(self, invoice_id: uuid.UUID) -> Invoice | None:
         """Load an invoice FOR UPDATE (pay/cancel serialization)."""
         result: Invoice | None = await self._session.scalar(
-            select(Invoice).where(Invoice.id == invoice_id).with_for_update()
+            select(Invoice)
+            .where(Invoice.id == invoice_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result
 
@@ -148,6 +149,7 @@ class InvoiceRepository:
             select(Invoice)
             .where(Invoice.id == invoice_id, Invoice.issued_by_courier_id == courier_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result
 

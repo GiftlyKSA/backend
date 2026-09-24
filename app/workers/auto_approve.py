@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
@@ -20,6 +20,7 @@ from app.core.redis import build_redis
 from app.integrations.factory import build_clients
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.services.fulfillment_service import FulfillmentService
@@ -39,13 +40,16 @@ def _service(session: AsyncSession, settings: Settings) -> FulfillmentService:
         disputes=DisputeRepository(session),
         wallets=WalletRepository(session),
         money=MoneyService(WalletRepository(session)),
-        media=MediaService(build_clients(settings).storage, settings),
+        media=MediaService(build_clients(settings).storage, settings, MediaRepository(session)),
         settings=settings,
     )
 
 
 async def auto_approve_delivered(
-    *, limit: int = 100, factory: object | None = None, settings: Settings | None = None
+    *,
+    limit: int = 100,
+    factory: async_sessionmaker[AsyncSession] | None = None,
+    settings: Settings | None = None,
 ) -> int:
     """Auto-approve delivered orders past the window; returns how many completed."""
     settings = settings or get_settings()
@@ -56,13 +60,13 @@ async def auto_approve_delivered(
 
     completed = 0
     try:
-        async with factory() as session:  # type: ignore[operator]
+        async with factory() as session:
             cutoff = _service(session, settings).auto_approve_cutoff()
             due = await OrderRepository(session).list_auto_approve_due(cutoff, limit)
             order_ids = [order.id for order in due]
 
         for order_id in order_ids:
-            async with factory() as session:  # type: ignore[operator]
+            async with factory() as session:
                 try:
                     if await _service(session, settings).auto_approve(order_id=order_id):
                         completed += 1

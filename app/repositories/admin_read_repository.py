@@ -33,8 +33,6 @@ from app.models.enums import (
 )
 
 _PAGE_SIZE = 50
-_EDITABLE_TABLES = frozenset({"users", "courier_profiles", "orders"})
-_EDIT_URL_COLUMNS = {"users": "id", "courier_profiles": "user_id", "orders": "id"}
 _ADMIN_VISIBLE_USER_COLUMNS = {"phone", "email", "full_name", "date_of_birth"}
 _REDACTED_MARKERS = (
     "encrypted",
@@ -99,10 +97,7 @@ class AdminReadRepository:
 
     def list_table_catalog(self) -> list[AdminTableInfo]:
         """Return every application-owned table, excluding database extension tables."""
-        return [
-            AdminTableInfo(name=name, editable=name in _EDITABLE_TABLES)
-            for name in sorted(Base.metadata.tables)
-        ]
+        return [AdminTableInfo(name=name, editable=True) for name in sorted(Base.metadata.tables)]
 
     async def list_table_page(self, table_name: str, *, page: int) -> AdminTablePage | None:
         """Return a bounded, redacted page for a known application table.
@@ -114,14 +109,14 @@ class AdminReadRepository:
         table = Base.metadata.tables.get(table_name)
         if table is None:
             return None
-        info = AdminTableInfo(name=table_name, editable=table_name in _EDITABLE_TABLES)
+        info = AdminTableInfo(name=table_name, editable=True)
         columns = [column.name for column in table.columns]
         ordering = table.c.get("created_at")
         if ordering is None:
             ordering = next(iter(table.primary_key.columns), None)
         query = select(table)
         if ordering is not None:
-            query = query.order_by(ordering.desc())
+            query = query.order_by(ordering.desc(), next(iter(table.primary_key.columns)).desc())
         result = await self._session.execute(
             query.limit(_PAGE_SIZE + 1).offset((page - 1) * _PAGE_SIZE)
         )
@@ -137,7 +132,7 @@ class AdminReadRepository:
         return AdminTablePage(
             table=info,
             columns=columns,
-            edit_column=_EDIT_URL_COLUMNS.get(table_name),
+            edit_column=next(iter(table.primary_key.columns)).name,
             rows=rows,
             page=page,
             has_next=has_next,
@@ -145,12 +140,9 @@ class AdminReadRepository:
 
     @staticmethod
     def _edit_url(table_name: str, row: Any) -> str | None:
-        """Return the restricted edit URL for one of the explicitly editable tables."""
-        key = _EDIT_URL_COLUMNS.get(table_name)
-        if key is None or row[key] is None:
-            return None
-        plural = "couriers" if table_name == "courier_profiles" else table_name
-        return f"/admin/{plural}/{row[key]}"
+        """Return the generic record editor URL for an application table."""
+        key = next(iter(Base.metadata.tables[table_name].primary_key.columns)).name
+        return f"/admin/tables/{table_name}/{row[key]}/edit"
 
     @staticmethod
     def _display_value(table_name: str, column: str, value: object) -> str:

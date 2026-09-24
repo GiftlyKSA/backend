@@ -11,8 +11,44 @@ from redis.asyncio import Redis
 
 from app.core.config import Settings
 from app.core.exceptions import RateLimitedError
-from app.core.security import constant_time_equals, generate_otp, hmac_hex
+from app.core.security import generate_otp, hmac_hex
 from app.integrations.sms.base import SmsClient
+
+_ISSUE_LUA = """
+if redis.call('EXISTS', KEYS[4]) == 1 then return 0 end
+local count = redis.call('INCR', KEYS[3])
+if count == 1 or redis.call('TTL', KEYS[3]) < 0 then
+    redis.call('EXPIRE', KEYS[3], ARGV[3])
+end
+if count > tonumber(ARGV[4]) then
+    redis.call('SET', KEYS[4], '1', 'EX', ARGV[5])
+    return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+redis.call('DEL', KEYS[2])
+return 1
+"""
+
+_VERIFY_LUA = """
+local stored = redis.call('GET', KEYS[1])
+if not stored then return 0 end
+local attempts = redis.call('INCR', KEYS[2])
+if attempts == 1 or redis.call('TTL', KEYS[2]) < 0 then
+    redis.call('EXPIRE', KEYS[2], ARGV[2])
+end
+if attempts > 5 then
+    redis.call('DEL', KEYS[1])
+    return -1
+end
+local difference = bit.bxor(string.len(stored), string.len(ARGV[1]))
+for i = 1, string.len(stored) do
+    difference = bit.bor(difference, bit.bxor(string.byte(stored, i),
+        string.byte(ARGV[1], i) or 0))
+end
+if difference ~= 0 then return 0 end
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+return 1
+"""
 
 
 class OtpService:
@@ -56,25 +92,22 @@ class OtpService:
         Raises:
             RateLimitedError: The phone is blocked or over its request window.
         """
-        if await self._redis.get(self._block_key(phone)):
-            raise RateLimitedError(self._settings.OTP_BLOCK_SECONDS)
-
-        count = await self._redis.incr(self._rate_key(phone))
-        # First hit sets the window; TTL<0 repairs a counter stranded by a crash
-        # between INCR and EXPIRE (audit SEC-6) so nobody is throttled forever.
-        if count == 1 or await self._redis.ttl(self._rate_key(phone)) < 0:
-            await self._redis.expire(self._rate_key(phone), self._settings.OTP_WINDOW_SECONDS)
-        if count > self._settings.OTP_MAX_PER_WINDOW:
-            await self._redis.set(self._block_key(phone), "1", ex=self._settings.OTP_BLOCK_SECONDS)
-            raise RateLimitedError(self._settings.OTP_BLOCK_SECONDS)
-
         code = generate_otp()
-        await self._redis.set(
+        issued = await self._redis.eval(
+            _ISSUE_LUA,
+            4,
             self._code_key(phone),
+            self._attempts_key(phone),
+            self._rate_key(phone),
+            self._block_key(phone),
             hmac_hex(code, self._hmac_key),
-            ex=self._settings.OTP_TTL_SECONDS,
+            self._settings.OTP_TTL_SECONDS,
+            self._settings.OTP_WINDOW_SECONDS,
+            self._settings.OTP_MAX_PER_WINDOW,
+            self._settings.OTP_BLOCK_SECONDS,
         )
-        await self._redis.delete(self._attempts_key(phone))
+        if not issued:
+            raise RateLimitedError(self._settings.OTP_BLOCK_SECONDS)
         await self._sms.send_otp(phone, code)
 
         return code if self._settings.ENVIRONMENT.value == "development" else None
@@ -88,20 +121,15 @@ class OtpService:
         Raises:
             RateLimitedError: Too many verification attempts for this code.
         """
-        attempts = await self._redis.incr(self._attempts_key(phone))
-        if attempts == 1 or await self._redis.ttl(self._attempts_key(phone)) < 0:
-            await self._redis.expire(self._attempts_key(phone), self._settings.OTP_TTL_SECONDS)
-        if attempts > 5:
-            await self._redis.delete(self._code_key(phone))
+        result = await self._redis.eval(
+            _VERIFY_LUA,
+            3,
+            self._code_key(phone),
+            self._attempts_key(phone),
+            self._rate_key(phone),
+            hmac_hex(code, self._hmac_key),
+            self._settings.OTP_TTL_SECONDS,
+        )
+        if result == -1:
             raise RateLimitedError(self._settings.OTP_TTL_SECONDS)
-
-        raw: bytes | str | None = await self._redis.get(self._code_key(phone))
-        if raw is None:
-            return False
-        stored = raw.decode() if isinstance(raw, bytes) else raw
-        if not constant_time_equals(stored, hmac_hex(code, self._hmac_key)):
-            return False
-
-        await self._redis.delete(self._code_key(phone), self._attempts_key(phone))
-        await self._redis.delete(self._rate_key(phone))
-        return True
+        return bool(result == 1)

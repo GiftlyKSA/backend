@@ -34,6 +34,7 @@ from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.order_state import assert_transition
+from app.services.payment_reservation_service import PaymentReservationService
 from app.services.promo_service import PromoService, to_pricing_promo
 
 
@@ -77,6 +78,7 @@ class InvoiceService:
         orders: OrderRepository,
         promos: PromoService,
         eligibility: CourierEligibilityService,
+        reservations: PaymentReservationService,
         settings: Settings,
     ) -> None:
         """Wire the collaborators the invoice flows need."""
@@ -84,6 +86,7 @@ class InvoiceService:
         self._orders = orders
         self._promos = promos
         self._eligibility = eligibility
+        self._reservations = reservations
         self._settings = settings
 
     def _pricing_config(self) -> PricingConfig:
@@ -118,10 +121,10 @@ class InvoiceService:
             Promo* errors: The supplied promo failed validation (each a 422).
         """
         await self._eligibility.require_courier(courier_id)
-        # Ownership is in the query: get_for_actor returns the order only if this courier
-        # is its assignee (a non-participant courier gets 404, no existence leak).
-        order = await self._orders.get_for_actor(order_id, courier_id)
-        if order is None:
+        # No existing invoice is locked here: authoring inserts a new row under the
+        # order lock. Existing-invoice mutations keep their invoice-first lock order.
+        order = await self._orders.lock_for_actor(order_id, courier_id)
+        if order is None or order.courier_id != courier_id:
             raise NotFoundError("Order not found.")
         # ASSIGNED -> WAITING_PAYMENT is the only legal path into an invoice.
         assert_transition(order.status, OrderStatus.WAITING_PAYMENT)
@@ -207,6 +210,8 @@ class InvoiceService:
             raise NotFoundError("Invoice not found.")
         if invoice.status is not InvoiceStatus.ISSUED:
             raise InvalidStateTransitionError("Only an issued, unpaid invoice can be cancelled.")
+
+        await self._reservations.expire_for_invoice(invoice.id)
 
         order = await self._orders.lock(invoice.order_id)
         if order is None:  # pragma: no cover - FK guarantees the order exists

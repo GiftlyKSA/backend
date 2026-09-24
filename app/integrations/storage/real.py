@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
 from app.integrations.storage.base import ObjectHead, StorageClient
 
-_IMAGE_MAGIC = (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")
+_IMAGE_MAGIC = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG\r\n\x1a\n"}
 
 
 class S3StorageClient(StorageClient):
@@ -60,7 +60,7 @@ class S3StorageClient(StorageClient):
     async def create_upload_url(
         self, *, storage_key: str, content_type: str, byte_size: int, ttl_seconds: int
     ) -> str:
-        """Return a pre-signed PUT URL pinned to the content-type."""
+        """Return a create-only pre-signed PUT URL pinned to type and size."""
         async with self._session.client(
             "s3", region_name=self._region, config=self._client_config
         ) as s3:
@@ -71,6 +71,7 @@ class S3StorageClient(StorageClient):
                     "Key": storage_key,
                     "ContentType": content_type,
                     "ContentLength": byte_size,
+                    "IfNoneMatch": "*",
                 },
                 ExpiresIn=ttl_seconds,
             )
@@ -94,14 +95,15 @@ class S3StorageClient(StorageClient):
             content_type=str(resp.get("ContentType", "")),
         )
 
-    async def verify_image_magic_bytes(self, storage_key: str) -> bool:
-        """Read the first bytes and confirm they are a supported image signature."""
+    async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
+        """Read the first bytes and confirm they match the issued image type."""
         async with self._session.client(
             "s3", region_name=self._region, config=self._client_config
         ) as s3:
             resp = await s3.get_object(Bucket=self._bucket, Key=storage_key, Range="bytes=0-15")
             head = await resp["Body"].read()
-        return any(head.startswith(sig) for sig in _IMAGE_MAGIC)
+        signature = _IMAGE_MAGIC.get(content_type)
+        return signature is not None and head.startswith(signature)
 
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a short-lived, RSA-signed CloudFront read URL."""

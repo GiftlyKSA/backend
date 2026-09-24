@@ -26,6 +26,7 @@ from app.models.enums import (
 )
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.services.fulfillment_service import DeliveryInput, FulfillmentService
@@ -54,7 +55,7 @@ def _service(db: AsyncSession) -> FulfillmentService:
         disputes=DisputeRepository(db),
         wallets=WalletRepository(db),
         money=MoneyService(WalletRepository(db)),
-        media=MediaService(FakeStorageClient(Environment.TEST), settings),
+        media=MediaService(FakeStorageClient(Environment.TEST), settings, MediaRepository(db)),
         settings=settings,
     )
 
@@ -118,19 +119,10 @@ async def _paid_order(
     return customer, courier, order, invoice
 
 
-async def _proof_key(db: AsyncSession) -> str:
-    """Register a delivery-proof key in the fake storage so confirm() passes."""
-    media = MediaService(FakeStorageClient(Environment.TEST), _settings())
-    _url, key, _ttl = await media.request_upload_url(
-        purpose="DELIVERY_PROOF", content_type="image/jpeg", byte_size=1000
-    )
-    return key
-
-
 async def test_deliver_requires_geofence(db_session: AsyncSession) -> None:
     _cust, courier, order, _inv = await _paid_order(db_session)
     svc = _service(db_session)
-    key = await _proof_key(db_session)
+    key = "orders/proof/unused.jpg"
     # Far from the drop-off (different city) -> rejected.
     with pytest.raises(ValidationDomainError):
         await svc.submit_delivery(
@@ -148,8 +140,9 @@ async def test_deliver_and_approve_releases_escrow(db_session: AsyncSession) -> 
     # The fake storage client used by the service must know the proof key; request it
     # through the service's own media client so confirm() sees it uploaded.
     _url, key, _ttl = await svc._media.request_upload_url(  # type: ignore[attr-defined]
-        purpose="DELIVERY_PROOF", content_type="image/jpeg", byte_size=1000
+        actor_id=courier.id, purpose="DELIVERY_PROOF", content_type="image/jpeg", byte_size=1000
     )
+    await svc._media.confirm(key, actor_id=courier.id)  # type: ignore[attr-defined]
     delivered = await svc.submit_delivery(
         order_id=order.id,
         courier_id=courier.id,

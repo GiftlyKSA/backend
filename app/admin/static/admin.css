@@ -44,3 +44,8 @@ code { background:#f0f0f5; padding:.1rem .3rem; border-radius:4px; }
 .pager { align-items:center; display:flex; gap:.6rem; margin-top:.8rem; }
 .edit-card { max-width:720px; }
 @media (max-width:640px) { .page-heading { align-items:flex-start; flex-direction:column; } .topbar .logout { margin-left:0; } }
+.table-form-field { padding:.65rem 0; border-bottom:1px solid var(--line); margin-bottom:.65rem; }
+.clear-field { display:flex; align-items:center; gap:.5rem; }
+.clear-field input { width:auto; }
+.relationship-field select { width:100%; }
+.relationship-field [hidden] { display:none; }

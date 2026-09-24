@@ -24,6 +24,7 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.invoices import PromoPreviewResponse, PromoValidateRequest
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_service import InvoiceService
+from app.services.payment_reservation_service import build_payment_reservation_service
 from app.services.promo_service import PromoService
 
 router = APIRouter(prefix="/api/promos", tags=["promos"])
@@ -35,6 +36,7 @@ _Customer = require_role(UserRole.CUSTOMER)
 def _service(request: Request, db: AsyncSession) -> InvoiceService:
     return InvoiceService(
         invoices=InvoiceRepository(db),
+        reservations=build_payment_reservation_service(db),
         orders=OrderRepository(db),
         promos=PromoService(PromoRepository(db)),
         eligibility=CourierEligibilityService(

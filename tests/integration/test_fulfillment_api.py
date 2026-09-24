@@ -161,7 +161,10 @@ async def _proof_key(client: AsyncClient, headers: dict) -> str:
         json={"purpose": "DELIVERY_PROOF", "content_type": "image/jpeg", "byte_size": 1000},
     )
     assert up.status_code == 201, up.text
-    return up.json()["storage_key"]
+    key = up.json()["storage_key"]
+    confirmed = await client.post("/api/media/confirm", headers=headers, json={"storage_key": key})
+    assert confirmed.status_code == 200, confirmed.text
+    return key
 
 
 async def test_full_lifecycle_deliver_approve_rate() -> None:

@@ -494,21 +494,13 @@ class MoneyService:
         listing any drift (the caller pages on a non-empty result).
         """
         drifts: list[str] = []
-        wallets = await self._wallets.all_wallets()
-        # One GROUP BY instead of a SUM per wallet (audit PERF-2); a wallet with no
-        # transactions must sum to zero.
-        settled_sums = await self._wallets.settled_sums_by_wallet()
-        for wallet in wallets:
-            settled = settled_sums.get(wallet.id, ZERO)
-            if quantize_money(settled) != quantize_money(wallet.balance):
-                drifts.append(
-                    f"wallet {wallet.id} balance {wallet.balance} != settled sum {settled}"
-                )
-        # The zero-sum check runs SQL-side; only violators come back (audit PERF-2).
-        for correlation_id, total in (await self._wallets.correlation_drift_sums()).items():
+        snapshot = await self._wallets.reconciliation_snapshot()
+        for wallet_id, balance, settled in snapshot.wallet_drifts:
+            drifts.append(f"wallet {wallet_id} balance {balance} != settled sum {settled}")
+        for correlation_id, total in snapshot.correlation_drifts:
             drifts.append(f"correlation {correlation_id} settled sum {total} != 0.00")
         return ReconcileReport(
-            wallets_checked=len(wallets),
-            correlations_checked=await self._wallets.correlation_count(),
+            wallets_checked=snapshot.wallets_checked,
+            correlations_checked=snapshot.correlations_checked,
             drifts=drifts,
         )

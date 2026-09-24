@@ -133,9 +133,16 @@ async def test_auth_full_flow_and_negatives() -> None:
             after = await client.post("/api/auth/refresh", json={"refresh_token": new_refresh})
             assert after.status_code == 401  # family revoked
 
-            # --- logout denylists the access token ---
+            # Logout revokes both this device and a separately authenticated device.
             fresh = await _register_customer(client, app, fresh_phone)
             fresh_access = fresh["access_token"]
+            await client.post("/api/auth/send-otp", json={"phone": fresh_phone})
+            other_otp = app.state.clients.sms.last_otp[fresh_phone]
+            other_login = await client.post(
+                "/api/auth/verify-otp", json={"phone": fresh_phone, "otp": other_otp}
+            )
+            assert other_login.status_code == 200
+            other_device = other_login.json()
             out = await client.post(
                 "/api/auth/logout", headers={"Authorization": f"Bearer {fresh_access}"}
             )
@@ -144,6 +151,18 @@ async def test_auth_full_flow_and_negatives() -> None:
                 "/api/users/me", headers={"Authorization": f"Bearer {fresh_access}"}
             )
             assert gone.status_code == 401
+            assert (
+                await client.get(
+                    "/api/users/me",
+                    headers={"Authorization": f"Bearer {other_device['access_token']}"},
+                )
+            ).status_code == 401
+            for device in (fresh, other_device):
+                assert (
+                    await client.post(
+                        "/api/auth/refresh", json={"refresh_token": device["refresh_token"]}
+                    )
+                ).status_code == 401
 
             # --- Courier registration encrypts the national id and is PENDING ---
             await client.post("/api/auth/send-otp", json={"phone": courier_phone})

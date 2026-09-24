@@ -3,7 +3,7 @@
 Implements SPEC SECTION 20.A. Access tokens are 30-minute JWTs; refresh tokens are
 opaque 30-day tokens stored hashed in families with reuse detection. A new phone gets
 a short-lived registration token from verify-otp, not an access token. Logout
-denylists the access token's ``jti`` in Redis.
+revokes the account's access, refresh, and dashboard credentials on all devices.
 """
 
 from __future__ import annotations
@@ -18,16 +18,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, UnauthorizedError, ValidationDomainError
+from app.core.identity import identity_fingerprint
 from app.core.jwt import (
+    AccessClaims,
     create_access_token,
     create_registration_token,
     decode_registration_token,
 )
-from app.core.security import generate_session_token, hmac_hex, sha256_hex
+from app.core.security import generate_session_token, sha256_hex
 from app.models.enums import UserRole, UserStatus
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.user_repository import UserRepository
 from app.services.otp_service import OtpService
+
+
+async def validate_access_claims(
+    claims: AccessClaims, *, redis: Redis, users: UserRepository
+) -> None:
+    """Enforce current account state and credential revocation for HTTP and sockets."""
+    denylisted = await redis.get(f"jwt:denylist:{claims.jti}")
+    if denylisted:
+        raise UnauthorizedError("This session has been revoked.")
+    user = await users.get(uuid.UUID(claims.sub))
+    if (
+        user is None
+        or user.deleted_at is not None
+        or user.status is UserStatus.BANNED
+        or user.role.value != claims.role
+        or user.auth_version != claims.auth_version
+    ):
+        raise UnauthorizedError("This session is no longer valid.")
 
 
 @dataclass(frozen=True)
@@ -90,10 +110,13 @@ class AuthService:
         if user is None:
             token = create_registration_token(self._settings, phone=phone)
             return VerifyResult(is_new_user=True, tokens=None, registration_token=token)
+        user = await self._users.get_for_update(user.id)
+        if user is None or user.phone != phone or user.deleted_at is not None:
+            raise UnauthorizedError("This account is no longer available.")
         if user.status is UserStatus.BANNED:
             # A ban blocks fresh logins too, not just live tokens (audit SEC-1).
             raise UnauthorizedError("This account has been suspended.")
-        tokens = await self._issue_tokens(user.id, user.role.value)
+        tokens = await self._issue_tokens(user.id, user.role.value, user.auth_version)
         return VerifyResult(is_new_user=False, tokens=tokens, registration_token=None)
 
     async def register(
@@ -153,9 +176,8 @@ class AuthService:
         if not (national_id or passport_id):
             raise ValidationDomainError("A courier must provide a national id or passport.")
 
-        raw_id = (national_id or passport_id or "").strip()
-        fingerprint = hmac_hex(
-            raw_id, self._settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
+        fingerprint = identity_fingerprint(
+            national_id, passport_id, self._settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
         )
         if await self._repo.fingerprint_exists(fingerprint):
             raise ConflictError("This identity document is already registered.")
@@ -199,9 +221,12 @@ class AuthService:
                 (which also revokes the whole family).
         """
         token_hash = sha256_hex(raw_refresh)
+        user = await self._repo.lock_refresh_owner(token_hash)
+        if user is None:
+            raise UnauthorizedError("Invalid refresh token.")
         row = await self._repo.get_refresh_token(token_hash)
         now = self._now()
-        if row is None:
+        if row is None or row.user_id != user.id:
             raise UnauthorizedError("Invalid refresh token.")
         if row.revoked_at is not None or row.used_at is not None:
             # Reuse of a rotated/revoked token: the family is compromised. Commit the
@@ -214,18 +239,22 @@ class AuthService:
             raise UnauthorizedError("Refresh token has expired.")
 
         await self._repo.mark_refresh_used(row, now)
-        user = await self._users.get(row.user_id)
-        if user is None:
+        if user.deleted_at is not None:
             raise UnauthorizedError("Account no longer exists.")
         if user.status is UserStatus.BANNED:
             # A banned account must not mint fresh tokens (audit SEC-1).
             raise UnauthorizedError("This account has been suspended.")
-        access, _, _ = create_access_token(self._settings, user_id=user.id, role=user.role.value)
+        access, _, _ = create_access_token(
+            self._settings, user_id=user.id, role=user.role.value, auth_version=user.auth_version
+        )
         new_refresh = await self._new_refresh(user.id, row.family_id)
         return TokenPair(access_token=access, refresh_token=new_refresh, role=user.role.value)
 
-    async def logout(self, *, jti: str, remaining_ttl_seconds: int) -> None:
-        """Denylist an access token's jti until it would have expired."""
+    async def logout(self, *, user_id: uuid.UUID, jti: str, remaining_ttl_seconds: int) -> None:
+        """Sign out every device, serializing credential revocation against rotation."""
+        if await self._users.get_for_update(user_id) is None:
+            raise UnauthorizedError("This account is no longer available.")
+        await self._repo.invalidate_user_credentials(user_id, self._now())
         ttl = max(remaining_ttl_seconds, 1)
         await self._redis.set(f"jwt:denylist:{jti}", "1", ex=ttl)
 
@@ -233,8 +262,12 @@ class AuthService:
         """Return whether an access token's jti has been revoked."""
         return bool(await self._redis.get(f"jwt:denylist:{jti}"))
 
-    async def _issue_tokens(self, user_id: uuid.UUID, role: str) -> TokenPair:
-        access, _, _ = create_access_token(self._settings, user_id=user_id, role=role)
+    async def _issue_tokens(
+        self, user_id: uuid.UUID, role: str, auth_version: int = 0
+    ) -> TokenPair:
+        access, _, _ = create_access_token(
+            self._settings, user_id=user_id, role=role, auth_version=auth_version
+        )
         refresh = await self._new_refresh(user_id, uuid.uuid4())
         return TokenPair(access_token=access, refresh_token=refresh, role=role)
 

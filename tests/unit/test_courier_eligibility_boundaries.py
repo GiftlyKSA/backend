@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -255,8 +256,15 @@ class _LockRequiredUsers:
 
 
 class _NoopAuth:
-    async def revoke_all_for_user(self, *_args: object) -> None:
-        return None
+    def __init__(self) -> None:
+        self.invalidated: list[uuid.UUID] = []
+        self.revoked: list[uuid.UUID] = []
+
+    async def invalidate_user_credentials(self, user_id: uuid.UUID, _now: datetime) -> None:
+        self.invalidated.append(user_id)
+
+    async def revoke_all_for_user(self, user_id: uuid.UUID, _now: datetime) -> None:
+        self.revoked.append(user_id)
 
 
 class _NoopRedis:
@@ -270,6 +278,7 @@ class _NoopRedis:
 async def test_admin_ban_transition_uses_locked_user_row() -> None:
     """Ban and verification must serialize through the same user-row lock."""
     users = _LockRequiredUsers()
+    auth = _NoopAuth()
     service = AdminService(
         reads=Any,
         users=users,  # type: ignore[arg-type]
@@ -277,7 +286,7 @@ async def test_admin_ban_transition_uses_locked_user_row() -> None:
         orders=Any,
         promos=Any,
         audit=_AuditCapture(),  # type: ignore[arg-type]
-        auth_repo=_NoopAuth(),  # type: ignore[arg-type]
+        auth_repo=auth,  # type: ignore[arg-type]
         redis=_NoopRedis(),  # type: ignore[arg-type]
         settings=SimpleNamespace(JWT_ACCESS_TTL_MINUTES=30),
     )
@@ -287,6 +296,8 @@ async def test_admin_ban_transition_uses_locked_user_row() -> None:
     )
 
     assert users.locked.status is UserStatus.BANNED
+    assert auth.invalidated == [users.locked.id]
+    assert auth.revoked == []
 
 
 class _AssignedOrder:
@@ -322,6 +333,7 @@ def _rejected_eligibility() -> CourierEligibilityService:
 async def test_rejected_courier_cannot_create_invoice() -> None:
     """Invoice creation must stop at eligibility before order or pricing work."""
     service = InvoiceService(
+        reservations=Any,
         invoices=_EmptyInvoices(),  # type: ignore[arg-type]
         orders=_AssignedOrder(),  # type: ignore[arg-type]
         promos=Any,
@@ -340,6 +352,7 @@ async def test_rejected_courier_cannot_create_invoice() -> None:
 async def test_rejected_courier_cannot_cancel_invoice() -> None:
     """Invoice cancellation must stop at eligibility before invoice lookup."""
     service = InvoiceService(
+        reservations=Any,
         invoices=_EmptyInvoices(),  # type: ignore[arg-type]
         orders=_AssignedOrder(),  # type: ignore[arg-type]
         promos=Any,

@@ -23,7 +23,13 @@ class UploadUrlRequest(BaseModel):
 class UploadUrlResponse(BaseModel):
     """A pre-signed upload URL and the server-generated key."""
 
-    upload_url: str = Field(..., description="PUT the bytes here directly (never via the API).")
+    upload_url: str = Field(
+        ...,
+        description=(
+            "PUT bytes directly to this URL with the issued Content-Type and Content-Length, "
+            "plus If-None-Match: *. An existing object rejects a second PUT."
+        ),
+    )
     storage_key: str = Field(..., description="Confirm this key after uploading.")
     expires_in: int = Field(..., description="Seconds the URL is valid.")
 

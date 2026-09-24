@@ -18,25 +18,17 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
-from app.core.money import ZERO
 from app.core.redis import build_redis
-from app.models.enums import (
-    InvoiceStatus,
-    OrderStatus,
-    PaymentPurpose,
-)
+from app.models.enums import PaymentPurpose
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.invoice_repository import InvoiceRepository
-from app.repositories.order_repository import OrderRepository
 from app.repositories.payment_repository import PaymentRepository
-from app.repositories.promo_repository import PromoRepository
-from app.repositories.wallet_repository import WalletRepository
-from app.services.money_service import MoneyService
-from app.services.order_state import assert_transition
-from app.services.promo_service import PromoService
+from app.services.expiry_service import ExpiryService
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.expiry")
@@ -45,7 +37,10 @@ _LOCK_TTL_SECONDS = 300
 
 
 async def expire_stale(
-    *, limit: int = 200, factory: object | None = None, settings: Settings | None = None
+    *,
+    limit: int = 200,
+    factory: async_sessionmaker[AsyncSession] | None = None,
+    settings: Settings | None = None,
 ) -> tuple[int, int]:
     """Expire lapsed invoices and top-up intents; returns (invoices, intents) expired."""
     settings = settings or get_settings()
@@ -58,7 +53,7 @@ async def expire_stale(
     invoices_expired = 0
     intents_expired = 0
     try:
-        async with factory() as session:  # type: ignore[operator]
+        async with factory() as session:
             invoice_ids = [
                 inv.id
                 for inv in await InvoiceRepository(session).list_expired_issued(
@@ -72,11 +67,11 @@ async def expire_stale(
             ]
 
         for invoice_id in invoice_ids:
-            async with factory() as session:  # type: ignore[operator]
+            async with factory() as session:
                 if await _expire_invoice(session, invoice_id):
                     invoices_expired += 1
         for intent_id in topup_ids:
-            async with factory() as session:  # type: ignore[operator]
+            async with factory() as session:
                 if await _expire_topup_intent(session, intent_id):
                     intents_expired += 1
     finally:
@@ -89,53 +84,26 @@ async def expire_stale(
     return invoices_expired, intents_expired
 
 
-async def _expire_invoice(session: object, invoice_id: uuid.UUID) -> bool:
-    invoices = InvoiceRepository(session)  # type: ignore[arg-type]
-    invoice = await invoices.lock(invoice_id)
-    if invoice is None or invoice.status is not InvoiceStatus.ISSUED:
-        return False
+async def _expire_invoice(session: AsyncSession, invoice_id: uuid.UUID) -> bool:
     try:
-        payments = PaymentRepository(session)  # type: ignore[arg-type]
-        wallets = WalletRepository(session)  # type: ignore[arg-type]
-        # Release the held wallet portion and expire the open gateway intent, if any.
-        intent = await payments.get_open_intent_for_invoice(invoice.id)
-        if intent is not None:
-            if invoice.amount_from_wallet > ZERO:
-                wallet = await wallets.get_by_user(intent.user_id)
-                if wallet is not None:
-                    await MoneyService(wallets).release_hold(
-                        wallet_id=wallet.id, amount=invoice.amount_from_wallet
-                    )
-            await payments.mark_expired(intent)
-
-        await PromoService(PromoRepository(session)).release(invoice_id=invoice.id)  # type: ignore[arg-type]
-        invoice.status = InvoiceStatus.EXPIRED
-
-        order = await OrderRepository(session).lock(invoice.order_id)  # type: ignore[arg-type]
-        if order is not None and order.status is OrderStatus.WAITING_PAYMENT:
-            assert_transition(order.status, OrderStatus.ASSIGNED)
-            order.status = OrderStatus.ASSIGNED
-            order.total_amount = ZERO
-        await invoices.flush()
-        await session.commit()  # type: ignore[attr-defined]
-        return True
+        expired = await ExpiryService(session).expire_invoice(invoice_id)
+        if expired:
+            await session.commit()
+        return expired
     except Exception:  # noqa: BLE001 - one bad invoice must not stall the sweep
-        await session.rollback()  # type: ignore[attr-defined]
+        await session.rollback()
         _logger.exception("failed to expire invoice %s", invoice_id)
         return False
 
 
-async def _expire_topup_intent(session: object, intent_id: uuid.UUID) -> bool:
-    payments = PaymentRepository(session)  # type: ignore[arg-type]
-    intent = await payments.lock_intent(intent_id)
-    if intent is None or intent.purpose is not PaymentPurpose.WALLET_TOPUP:
-        return False
+async def _expire_topup_intent(session: AsyncSession, intent_id: uuid.UUID) -> bool:
     try:
-        await payments.mark_expired(intent)
-        await session.commit()  # type: ignore[attr-defined]
-        return True
-    except Exception:  # noqa: BLE001
-        await session.rollback()  # type: ignore[attr-defined]
+        expired = await ExpiryService(session).expire_topup_intent(intent_id)
+        if expired:
+            await session.commit()
+        return expired
+    except Exception:  # noqa: BLE001 - one bad intent must not stall the sweep
+        await session.rollback()
         _logger.exception("failed to expire intent %s", intent_id)
         return False
 
@@ -157,7 +125,7 @@ async def run_expire_stale() -> None:
 
 
 async def purge_refresh_tokens(
-    *, factory: object | None = None, settings: Settings | None = None
+    *, factory: async_sessionmaker[AsyncSession] | None = None, settings: Settings | None = None
 ) -> int:
     """Delete refresh tokens expired for longer than the retention window (audit PERF-3).
 
@@ -176,7 +144,7 @@ async def purge_refresh_tokens(
         factory = build_session_factory(own_engine)
     cutoff = datetime.now(UTC) - timedelta(days=settings.REFRESH_TOKEN_RETENTION_DAYS)
     try:
-        async with factory() as session:  # type: ignore[operator]
+        async with factory() as session:
             deleted = await AuthRepository(session).purge_expired(before=cutoff)
             await session.commit()
         if deleted:

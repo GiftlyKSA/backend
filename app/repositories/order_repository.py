@@ -17,7 +17,7 @@ from redis.asyncio import Redis
 from sqlalchemy import Select, cast, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, Order, OrderMedia
+from app.models import Conversation, Order, OrderMedia, User
 from app.models.enums import MediaType, OrderStatus
 
 # Statuses that count against a customer's concurrent-order limit.
@@ -121,9 +121,31 @@ class OrderRepository:
     async def lock(self, order_id: uuid.UUID) -> Order | None:
         """Load an order FOR UPDATE (the DB layer of the accept race)."""
         result: Order | None = await self._session.scalar(
-            select(Order).where(Order.id == order_id).with_for_update()
+            select(Order)
+            .where(Order.id == order_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result
+
+    async def lock_for_actor(self, order_id: uuid.UUID, actor_id: uuid.UUID) -> Order | None:
+        """Lock and refresh current participation before validating a transition."""
+        result: Order | None = await self._session.scalar(
+            select(Order)
+            .where(
+                Order.id == order_id,
+                (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result
+
+    async def lock_actor(self, actor_id: uuid.UUID) -> None:
+        """Serialize quota decisions before order locks, without blocking FK references."""
+        await self._session.scalar(
+            select(User.id).where(User.id == actor_id).with_for_update(key_share=True)
+        )
 
     async def update_admin_details(
         self,

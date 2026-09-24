@@ -21,6 +21,7 @@ from app.integrations.storage.fake import FakeStorageClient
 from app.models import CourierProfile, User
 from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.repositories.courier_repository import CourierRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
@@ -66,7 +67,7 @@ def _service(db: AsyncSession, redis: Redis) -> OrderService:
         eligibility=CourierEligibilityService(
             users=UserRepository(db), couriers=CourierRepository(db)
         ),
-        media=MediaService(FakeStorageClient(Environment.TEST), settings),
+        media=MediaService(FakeStorageClient(Environment.TEST), settings, MediaRepository(db)),
         messages=MessageWriter(db),
         ratings=RatingService(
             orders=OrderRepository(db),

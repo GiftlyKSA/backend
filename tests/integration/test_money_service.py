@@ -31,6 +31,7 @@ from app.models.enums import (
 )
 from app.repositories.wallet_repository import WalletRepository
 from app.services.money_service import LedgerImbalanceError, Leg, MoneyService
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -336,3 +337,131 @@ async def test_run_reconciliation_job(committing_factory: async_sessionmaker[Asy
 
     report = await run_reconciliation()
     assert report.wallets_checked >= 4  # at least the four system wallets
+
+
+async def test_reconciliation_counts_and_exact_discrepancies(db_session: AsyncSession) -> None:
+    repo = WalletRepository(db_session)
+    service = MoneyService(repo)
+    baseline = await service.reconcile()
+    assert baseline.ok, baseline.drifts
+    await _make_user_wallet(db_session, WalletType.CUSTOMER)
+    empty_wallet = await _make_user_wallet(db_session, WalletType.CUSTOMER)
+    empty_wallet.balance = Decimal("0.01")
+    settled_wallet = await _make_user_wallet(db_session, WalletType.CUSTOMER)
+    settled_wallet.balance = Decimal("10.01")
+    correlation_id = uuid.uuid4()
+    for status, amount in [
+        (TransactionStatus.SETTLED, Decimal("10.00")),
+        (TransactionStatus.SETTLED, Decimal("0.01")),
+        (TransactionStatus.PENDING, Decimal("99.00")),
+        (TransactionStatus.REVERSED, Decimal("7.00")),
+    ]:
+        repo.append_transaction(
+            wallet_id=settled_wallet.id,
+            amount=amount,
+            txn_type=TransactionType.TOPUP,
+            status=status,
+            correlation_id=correlation_id if status == TransactionStatus.SETTLED else uuid.uuid4(),
+            balance_after=settled_wallet.balance,
+        )
+    await db_session.flush()
+    statements: list[str] = []
+
+    def record_statement(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    connection = await db_session.connection()
+    event.listen(connection.sync_connection, "before_cursor_execute", record_statement)
+    try:
+        report = await service.reconcile()
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", record_statement)
+
+    assert len(statements) == 1
+    assert report.wallets_checked == baseline.wallets_checked + 3
+    assert report.correlations_checked == baseline.correlations_checked + 1
+    assert report.drifts == [
+        f"wallet {empty_wallet.id} balance 0.01 != settled sum 0.00",
+        f"correlation {correlation_id} settled sum 10.01 != 0.00",
+    ]
+
+
+async def test_reconciliation_ignores_cached_wallet_balance(db_session: AsyncSession) -> None:
+    repo = WalletRepository(db_session)
+    wallet = await _make_user_wallet(db_session, WalletType.CUSTOMER)
+    gateway = await repo.get_system(WalletType.SYSTEM_GATEWAY)
+    service = MoneyService(repo)
+    await service.post_group(
+        correlation_id=uuid.uuid4(),
+        legs=[
+            Leg(wallet_id=gateway.id, amount=Decimal("-0.01"), txn_type=TransactionType.TOPUP),
+            Leg(wallet_id=wallet.id, amount=Decimal("0.01"), txn_type=TransactionType.TOPUP),
+        ],
+    )
+    # A loaded ORM instance must not override the balance in the statement snapshot.
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    set_committed_value(wallet, "balance", Decimal("0.00"))
+    report = await service.reconcile()
+    assert report.ok, report.drifts
+
+
+async def test_reconciliation_snapshot_survives_post_between_reads(
+    committing_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with committing_factory() as setup:
+        wallet = await _make_user_wallet(setup, WalletType.CUSTOMER)
+        gateway = await WalletRepository(setup).get_system(WalletType.SYSTEM_GATEWAY)
+        wallet_id, gateway_id = wallet.id, gateway.id
+        await setup.commit()
+
+    async with committing_factory() as reader:
+        baseline = await MoneyService(WalletRepository(reader)).reconcile()
+        assert baseline.ok, baseline.drifts
+        await reader.rollback()
+        posted = False
+
+        async def post_after_read(original, *args, **kwargs):
+            nonlocal posted
+            result = await original(*args, **kwargs)
+            if not posted:
+                posted = True
+                async with committing_factory() as writer:
+                    await MoneyService(WalletRepository(writer)).post_group(
+                        correlation_id=uuid.uuid4(),
+                        legs=[
+                            Leg(
+                                wallet_id=gateway_id,
+                                amount=Decimal("-0.01"),
+                                txn_type=TransactionType.TOPUP,
+                            ),
+                            Leg(
+                                wallet_id=wallet_id,
+                                amount=Decimal("0.01"),
+                                txn_type=TransactionType.TOPUP,
+                            ),
+                        ],
+                    )
+                    await writer.commit()
+            return result
+
+        original_execute, original_scalars = reader.execute, reader.scalars
+
+        async def execute(*args, **kwargs):
+            return await post_after_read(original_execute, *args, **kwargs)
+
+        async def scalars(*args, **kwargs):
+            return await post_after_read(original_scalars, *args, **kwargs)
+
+        monkeypatch.setattr(reader, "execute", execute)
+        monkeypatch.setattr(reader, "scalars", scalars)
+        report = await MoneyService(WalletRepository(reader)).reconcile()
+        assert posted
+        assert report.ok, report.drifts
+        assert report.wallets_checked == baseline.wallets_checked
+        assert report.correlations_checked == baseline.correlations_checked
+
+    async with committing_factory() as verifier:
+        after = await MoneyService(WalletRepository(verifier)).reconcile()
+        assert after.ok, after.drifts
+        assert after.correlations_checked == baseline.correlations_checked + 1

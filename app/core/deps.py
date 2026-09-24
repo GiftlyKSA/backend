@@ -20,6 +20,8 @@ from app.core.config import Settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
 from app.models.enums import UserRole
+from app.repositories.user_repository import UserRepository
+from app.services.auth_service import validate_access_claims
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,7 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
             raise
 
 
-async def require_auth(request: Request) -> Actor:
+async def require_auth(request: Request, db: AsyncSession = Depends(get_db)) -> Actor:
     """Authenticate the request from its Bearer token.
 
     Raises:
@@ -73,13 +75,7 @@ async def require_auth(request: Request) -> Actor:
         raise UnauthorizedError("Invalid or expired token.") from exc
 
     redis = get_redis(request)
-    # One round trip: the logout denylist and the ban flag (audit SEC-1 — a ban must
-    # kill access tokens already in the wild, not just block new logins).
-    denylisted, banned = await redis.mget(f"jwt:denylist:{claims.jti}", f"auth:banned:{claims.sub}")
-    if denylisted:
-        raise UnauthorizedError("This session has been revoked.")
-    if banned:
-        raise UnauthorizedError("This account has been suspended.")
+    await validate_access_claims(claims, redis=redis, users=UserRepository(db))
 
     try:
         role = UserRole(claims.role)
