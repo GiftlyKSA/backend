@@ -20,18 +20,41 @@ shift after this report; linked files are the source of truth.
 | Priority | ID | Category | Severity | Finding |
 | --- | --- | --- | --- | --- |
 | 1 | PERF-02 | Scalability/reliability | High | New-order push is unbounded and precedes commit |
-| 2 | SEC-07 | Security, OWASP A06 | Medium | No concurrent chat-socket cap per account |
-| 3 | SEC-08 | Security, OWASP A06 | Medium | Upload issuance has no cumulative quota or retention cleanup |
-| 4 | REL-05 | Reliability | Medium | Receipt sends hold row locks across network calls and can outlive the sweep lease |
-| 5 | REL-06 | Financial reliability | Medium, latent | Order cancellation leaves an issued invoice and wallet hold pending |
-| 6 | PERF-03 | Query scalability | Medium | Deep admin pages use large OFFSET scans |
-| 7 | PERF-04 | Maintenance scalability | Medium | Key rotation buffers growing tables in one transaction |
-| 8 | PERF-05 | Maintenance scalability | Medium | Refresh-token purge is one unbounded delete |
-| 9 | TEST-01 | Verification | Medium, unverified | Actual CRUD across all 29 admin table shapes lacks DB proof |
-| 10 | PERF-06 | Admin contention | Low | Every authenticated admin GET writes its session row |
-| 11 | PERF-07 | Worker resource lifecycle | Low | Worker-owned email client is not closed |
+| 2 | SEC-09 | Supply-chain security | Reported High/Medium, unverified | GitHub reports four dependency alerts after push |
+| 3 | SEC-07 | Security, OWASP A06 | Medium | No concurrent chat-socket cap per account |
+| 4 | SEC-08 | Security, OWASP A06 | Medium | Upload issuance has no cumulative quota or retention cleanup |
+| 5 | REL-05 | Reliability | Medium | Receipt sends hold row locks across network calls and can outlive the sweep lease |
+| 6 | REL-06 | Financial reliability | Medium, latent | Order cancellation leaves an issued invoice and wallet hold pending |
+| 7 | PERF-03 | Query scalability | Medium | Deep admin pages use large OFFSET scans |
+| 8 | PERF-04 | Maintenance scalability | Medium | Key rotation buffers growing tables in one transaction |
+| 9 | PERF-05 | Maintenance scalability | Medium | Refresh-token purge is one unbounded delete |
+| 10 | CI-02 | Verification | Medium | No CI run started for the master push |
+| 11 | TEST-01 | Verification | Medium, unverified | Actual CRUD across all 29 admin table shapes lacks DB proof |
+| 12 | PERF-06 | Admin contention | Low | Every authenticated admin GET writes its session row |
+| 13 | PERF-07 | Worker resource lifecycle | Low | Worker-owned email client is not closed |
 
 ## Security
+
+### SEC-09 — GitHub dependency alerts require triage
+
+- **Status/severity:** Open external-signal discrepancy / reported two High and two
+  Moderate; affected package, applicability, and current status **UNCONFIRMED**.
+- **Trigger/evidence:** GitHub's response to the 2026-09-24 master push reported four
+  default-branch dependency vulnerabilities and linked its [Dependabot alerts](https://github.com/GiftlyKSA/backend/security/dependabot).
+  The earlier explicit `uv.lock` production export audited with pip-audit reported
+  zero known advisories. GitHub completed a dependency-graph update for the commit,
+  but alert details require repository authentication unavailable to this review.
+- **Impact if unresolved:** an affected deployed dependency could remain unnoticed,
+  or stale/development-only alerts could be mistaken for a runtime defect. Neither
+  interpretation is established by the alert count alone.
+- **Minimal fix / system impact:** inspect each alert's package, version, advisory,
+  scope, and dependency path; reconcile it with the current production export and
+  graph update; upgrade compatible vulnerable pins or document/dismiss non-applicable
+  entries with evidence. This removes affected artifacts or resolves false signals
+  without blind dependency churn.
+- **Verification:** repeat the production-lock audit, compare GitHub's refreshed
+  alerts to `uv.lock`, run storage/crypto integration checks for any changed package,
+  and verify the alert state after the graph refresh.
 
 ### SEC-07 — Concurrent chat-socket admission is unbounded
 
@@ -205,6 +228,22 @@ data are **UNCONFIRMED**. No index change is proposed without measurement.
 
 ## Maintainability, readability, naming, and verification
 
+### CI-02 — The master push has no backend CI run
+
+- **Status/severity:** Open verification gap / Medium; trigger root cause **UNCONFIRMED**.
+- **Trigger/evidence:** GitHub lists the checked-in `CI` workflow as active, but its
+  workflow-run API returned zero historical runs after commit `74f1edc` was pushed
+  to master. The only commit check was a successful dependency-graph update.
+- **Impact if unresolved:** disposable PostgreSQL/PostGIS/Redis tests, migrations,
+  coverage, image build, docs export, and security gates are configured but have not
+  verified this commit. Local unit/static checks cannot replace them.
+- **Minimal fix / system impact:** inspect repository Actions permissions and workflow
+  trigger diagnostics, then start a trusted CI run for this commit (or a follow-up
+  commit), correcting workflow configuration if necessary. This supplies the missing
+  service-backed evidence; it may require repository administration.
+- **Verification:** a completed `CI` workflow on master with green quality, test,
+  security, docs, and Docker jobs, including migration and 85% coverage checks.
+
 ### TEST-01 — Admin CRUD across all schema shapes lacks database proof
 
 - **Status/severity:** Open verification risk / Medium; actual defect **UNCONFIRMED**.
@@ -254,7 +293,7 @@ does not itself enforce every business invariant after direct edits.
 - **Not run locally:** Docker; PostgreSQL/PostGIS/Redis full suite and live migration
   upgrade/downgrade; socket/S3/provider integration; load and query-plan studies.
   The user prohibited local Docker. CI's disposable PostgreSQL and Redis services
-  must provide database/image evidence after push.
+  must provide database/image evidence; CI-02 records that this has not occurred.
 - **Deployment unknowns:** bucket/IAM/CORS policy for `If-None-Match`, proxy trust
   and access-log redaction, Redis isolation, DB roles, backups, alert routing,
   scheduler singleton/leases, and actual notification delivery are **UNCONFIRMED**.
