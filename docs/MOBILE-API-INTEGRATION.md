@@ -1,5 +1,7 @@
 # Giftly mobile API integration catalog
 
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 43 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat WebSocket contract, and unsupported-screen gaps.
+
 **Verified against backend source and offline development OpenAPI on 2026-09-27.** This catalogs every implemented non-admin HTTP endpoint (43) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
 ## Integration conventions
