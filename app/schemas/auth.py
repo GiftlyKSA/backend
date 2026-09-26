@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 _Phone = Annotated[str, StringConstraints(pattern=r"^\+9665\d{8}$")]
-_Otp = Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
+_Otp = Annotated[str, StringConstraints(pattern=r"^\d{5,6}$")]
 _PHONE_SEPARATORS = re.compile(r"[\s()-]+")
 
 
@@ -50,8 +50,11 @@ class SendOtpResponse(BaseModel):
     """OTP request accepted."""
 
     expires_in: int = Field(..., description="Seconds until the OTP expires.", examples=[180])
-    dev_otp: str | None = Field(
-        None, description="The OTP, returned only in development to ease local testing."
+    otp_dev: int | None = Field(
+        None,
+        ge=10_000,
+        le=99_999,
+        description="Five-digit OTP returned only in development; omitted elsewhere.",
     )
 
 
@@ -63,7 +66,11 @@ class VerifyOtpRequest(BaseModel):
         ...,
         description="Saudi mobile; accepts 0501234567, 501234567, or +966501234567.",
     )
-    otp: _Otp = Field(..., description="The 6-digit code.", examples=["849201"])
+    otp: _Otp = Field(
+        ...,
+        description="Five digits in development; six digits in test and production.",
+        examples=["849201"],
+    )
 
     @field_validator("phone", mode="before")
     @classmethod

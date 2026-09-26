@@ -51,11 +51,11 @@
 - **Who / authorization:** Signed-out; no bearer token.
 - **Path, query, headers:** None.
 - **Request body:** `SendOtpRequest` — `phone: string`
-- **Response:** HTTP 202; `SendOtpResponse` — `expires_in: integer`; `dev_otp?: string | null`
+- **Response:** HTTP 202; `SendOtpResponse` — `expires_in: integer`; `otp_dev?: integer | null` (five digits, development only; omitted otherwise)
 - **Before:** None.
 - **Then / dependent API:** `POST /api/auth/verify-otp`.
 
-**When/how (56 words):** Submit the user's Saudi mobile number when they request sign-in or resend a code. The backend accepts common local formats and normalizes them to E.164; the response deliberately looks the same whether the phone already has an account. Start the resend countdown from `expires_in`. `dev_otp` is for development only and must never be expected in production.
+**When/how (55 words):** Submit the user's Saudi mobile number when they request sign-in or resend a code. The backend accepts common local formats and normalizes them to E.164; the response deliberately looks the same whether the phone already has an account. Start the resend countdown from `expires_in`. Numeric five-digit `otp_dev` is returned only in development and omitted otherwise.
 
 ### POST /api/auth/verify-otp
 
@@ -65,10 +65,10 @@
 - **Path, query, headers:** None.
 - **Request body:** `VerifyOtpRequest` — `phone: string`; `otp: string`
 - **Response:** HTTP 200; `VerifyOtpResponse` — `is_new_user: boolean`; `role?: string | null`; `access_token?: string | null`; `refresh_token?: string | null`; `registration_token?: string | null`
-- **Before:** Successful send-otp and the received six-digit code.
+- **Before:** Successful send-otp and its five-digit development or six-digit non-development code.
 - **Then / dependent API:** Existing account: `GET /api/users/me`; new account: `POST /api/auth/register`.
 
-**When/how (55 words):** Send the phone number and the six-digit code entered on the OTP screen. If `is_new_user` is false, securely store the access and refresh tokens, use the returned role to choose the customer or courier experience, and fetch the profile. If true, carry the short-lived registration token to registration; never infer role from prototype phone fixtures.
+**When/how (59 words):** Send the phone number and the five-digit development or six-digit non-development code entered on the OTP screen. If `is_new_user` is false, securely store the access and refresh tokens, use the returned role to choose the customer or courier experience, and fetch the profile. If true, carry the short-lived registration token to registration; never infer role from prototype phone fixtures.
 
 ### POST /api/auth/register
 

@@ -42,3 +42,26 @@ def test_dev_routes_present_in_development() -> None:
     settings = make_test_settings(ENVIRONMENT="development")
     with _client(settings) as client:
         assert client.get("/api/dev/ping").status_code == 200
+
+
+def test_development_cors_accepts_any_origin_and_preflight() -> None:
+    settings = make_test_settings(ENVIRONMENT="development")
+    with _client(settings) as client:
+        response = client.get("/api/health", headers={"Origin": "https://any.example"})
+        assert response.headers["Access-Control-Allow-Origin"] == "*"
+        preflight = client.options(
+            "/api/auth/send-otp",
+            headers={
+                "Origin": "https://any.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert preflight.status_code == 200
+        assert preflight.headers["Access-Control-Allow-Origin"] == "*"
+
+
+def test_non_development_cors_does_not_allow_arbitrary_origin(test_settings: Settings) -> None:
+    with _client(test_settings) as client:
+        response = client.get("/api/health", headers={"Origin": "https://any.example"})
+        assert "Access-Control-Allow-Origin" not in response.headers

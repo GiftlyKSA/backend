@@ -49,11 +49,13 @@ def _service(request: Request, db: AsyncSession) -> AuthService:
     )
 
 
-@router.post("/send-otp", response_model=SendOtpResponse, status_code=202)
+@router.post(
+    "/send-otp", response_model=SendOtpResponse, response_model_exclude_none=True, status_code=202
+)
 async def send_otp(request: Request, db: DbDep, body: SendOtpRequest) -> SendOtpResponse:
     """Send a login OTP. The response is identical whether or not the phone exists."""
     expires_in, dev_code = await _service(request, db).send_otp(body.phone)
-    return SendOtpResponse(expires_in=expires_in, dev_otp=dev_code)
+    return SendOtpResponse(expires_in=expires_in, otp_dev=int(dev_code) if dev_code else None)
 
 
 @router.post("/verify-otp", response_model=VerifyOtpResponse, status_code=200)

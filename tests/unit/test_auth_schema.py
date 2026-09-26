@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from app.schemas.auth import SendOtpRequest, VerifyOtpRequest
+from app.schemas.auth import SendOtpRequest, SendOtpResponse, VerifyOtpRequest
 from pydantic import ValidationError
 
 
@@ -24,3 +24,15 @@ def test_otp_requests_normalize_common_saudi_mobile_entry(entered: str, canonica
 def test_otp_requests_reject_invalid_mobile_numbers(entered: str) -> None:
     with pytest.raises(ValidationError):
         SendOtpRequest(phone=entered)
+
+
+def test_verify_request_accepts_five_digit_development_otp() -> None:
+    assert VerifyOtpRequest(phone="0501234567", otp="12345").otp == "12345"
+    for invalid in ("1234", "1234567"):
+        with pytest.raises(ValidationError):
+            VerifyOtpRequest(phone="0501234567", otp=invalid)
+
+
+def test_development_otp_response_uses_numeric_otp_dev() -> None:
+    response = SendOtpResponse(expires_in=180, otp_dev=12345)
+    assert response.model_dump(exclude_none=True) == {"expires_in": 180, "otp_dev": 12345}

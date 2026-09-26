@@ -7,9 +7,11 @@ verification is single-use and capped. The admin dashboard reuses this service.
 
 from __future__ import annotations
 
+import secrets
+
 from redis.asyncio import Redis
 
-from app.core.config import Settings
+from app.core.config import Environment, Settings
 from app.core.exceptions import RateLimitedError
 from app.core.security import generate_otp, hmac_hex
 from app.integrations.sms.base import SmsClient
@@ -92,7 +94,11 @@ class OtpService:
         Raises:
             RateLimitedError: The phone is blocked or over its request window.
         """
-        code = generate_otp()
+        code = (
+            str(secrets.randbelow(90_000) + 10_000)
+            if self._settings.ENVIRONMENT is Environment.DEVELOPMENT
+            else generate_otp()
+        )
         issued = await self._redis.eval(
             _ISSUE_LUA,
             4,
@@ -110,7 +116,7 @@ class OtpService:
             raise RateLimitedError(self._settings.OTP_BLOCK_SECONDS)
         await self._sms.send_otp(phone, code)
 
-        return code if self._settings.ENVIRONMENT.value == "development" else None
+        return code if self._settings.ENVIRONMENT is Environment.DEVELOPMENT else None
 
     async def verify_otp(self, phone: str, code: str) -> bool:
         """Verify a submitted OTP, consuming it on success.

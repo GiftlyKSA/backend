@@ -86,7 +86,7 @@ at runtime (task definition / compose override / systemd `EnvironmentFile`). See
 
 | Name | Required in | Description | Example (never a real value) |
 | --- | --- | --- | --- |
-| `ENVIRONMENT` | all | `development` \| `test` \| `production`; no default | `development` |
+| `ENVIRONMENT` | all | `development` \| `test` \| `production`; no default. Development returns a five-digit numeric `otp_dev` and allows browser requests from any origin. | `development` |
 | `DATABASE_URL` | all | async Postgres DSN | `postgresql+asyncpg://user:pass@host/db` |
 | `REDIS_URL` | all | Redis DSN | `redis://:pass@host:6379/0` |
 | `JWT_SECRET` | all (HS256) | >= 32-byte signing secret | `<32+ random bytes>` |
@@ -94,7 +94,7 @@ at runtime (task definition / compose override / systemd `EnvironmentFile`). See
 | `FIELD_ENCRYPTION_KEYS` | all | JSON version->base64 32-byte key map | `{"1":"<base64 32B>"}` |
 | `FIELD_ENCRYPTION_KEY_VERSION` | all | active key version in the map | `1` |
 | `IDENTITY_FINGERPRINT_PEPPER` | all | >= 32 bytes, distinct from every enc key | `<32+ random bytes>` |
-| `CORS_ALLOWED_ORIGINS` | production | exact origins; wildcard banned | `https://app.example.com` |
+| `CORS_ALLOWED_ORIGINS` | production | exact origins; wildcard banned. Ignored in development, where CORS allows any origin without credentials. | `https://app.example.com` |
 | `DHAMEN_*` | reserved only | Future vendor configuration; not loaded or used by an active client | — |
 | `SNDR_*` | production | email api key/base url/from/template | — |
 | `AWS_*`, `S3_BUCKET_NAME`, `CLOUDFRONT_*` | production | storage + signed CDN | — |

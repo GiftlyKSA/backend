@@ -70,7 +70,7 @@
           "auth"
         ],
         "summary": "Send Otp",
-        "description": "Submit the user's Saudi mobile number when they request sign-in or resend a code. The backend accepts common local formats and normalizes them to E.164; the response deliberately looks the same whether the phone already has an account. Start the resend countdown from `expires_in`. `dev_otp` is for development only and must never be expected in production.",
+        "description": "Submit the user's Saudi mobile number when they request sign-in or resend a code. The backend accepts common local formats and normalizes them to E.164; the response deliberately looks the same whether the phone already has an account. Start the resend countdown from `expires_in`. Numeric five-digit `otp_dev` is returned only in development and omitted otherwise.",
         "operationId": "send_otp_api_auth_send_otp_post",
         "requestBody": {
           "content": {
@@ -118,7 +118,7 @@
           "auth"
         ],
         "summary": "Verify Otp",
-        "description": "Send the phone number and the six-digit code entered on the OTP screen. If `is_new_user` is false, securely store the access and refresh tokens, use the returned role to choose the customer or courier experience, and fetch the profile. If true, carry the short-lived registration token to registration; never infer role from prototype phone fixtures.",
+        "description": "Send the phone number and the five-digit development or six-digit non-development code entered on the OTP screen. If `is_new_user` is false, securely store the access and refresh tokens, use the returned role to choose the customer or courier experience, and fetch the profile. If true, carry the short-lived registration token to registration; never infer role from prototype phone fixtures.",
         "operationId": "verify_otp_api_auth_verify_otp_post",
         "requestBody": {
           "content": {
@@ -154,7 +154,7 @@
         },
         "x-mobile-screen": "OTP `/verify-otp`",
         "x-audience": "Signed-out; no bearer token",
-        "x-before": "Successful send-otp and the received six-digit code",
+        "x-before": "Successful send-otp and its five-digit development or six-digit non-development code",
         "x-dependent-api": "Existing account: `GET /api/users/me`; new account: `POST /api/auth/register`",
         "x-availability": "configured environments",
         "security": []
@@ -3642,17 +3642,19 @@
               180
             ]
           },
-          "dev_otp": {
+          "otp_dev": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer",
+                "maximum": 99999,
+                "minimum": 10000
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Dev Otp",
-            "description": "The OTP, returned only in development to ease local testing."
+            "title": "Otp Dev",
+            "description": "Five-digit OTP returned only in development; omitted elsewhere."
           }
         },
         "type": "object",
@@ -4117,9 +4119,9 @@
           },
           "otp": {
             "type": "string",
-            "pattern": "^\\d{6}$",
+            "pattern": "^\\d{5,6}$",
             "title": "Otp",
-            "description": "The 6-digit code.",
+            "description": "Five digits in development; six digits in test and production.",
             "examples": [
               "849201"
             ]

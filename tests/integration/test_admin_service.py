@@ -352,7 +352,7 @@ async def test_development_otp_is_returned_and_verifies(redis_client: Redis) -> 
 
     code = await otp.request_otp(phone)
 
-    assert code is not None and code.isdigit() and len(code) == 6
+    assert code is not None and code.isdigit() and len(code) == 5
     assert await otp.verify_otp(phone, code) is True
 
 
