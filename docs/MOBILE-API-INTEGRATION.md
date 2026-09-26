@@ -10,6 +10,7 @@
 - Domain failures generally use `{"error":{"code":"...","message":"...","request_id":"..."}}`; common codes include `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATE_TRANSITION`, `VALIDATION_ERROR`, `RATE_LIMITED`, and `PAYMENTS_DISABLED`. FastAPI request-schema errors may instead return `{"detail":[...]}` with HTTP 422. HTTP 429 carries `Retry-After`. Handle status and both shapes; never assume every failure has a domain envelope.
 - Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; Dhamen has no live adapter or verified callback. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
 - This document describes the current backend, not a proposed API. Each **When/how** paragraph is 50–100 words. **Before** is the prerequisite; **Then / dependent API** tells the UI agent which subsequent call consumes or follows this result.
+- **Future API work:** If a screen or action has no matching endpoint documented here, do not create, assume, or integrate a new route for it. Mark that feature as awaiting backend support; its route and contract will be added later in a separate backend change. Use only the implemented calls below for the current UI integration.
 
 ## Service health (not a mobile screen)
 
@@ -685,7 +686,7 @@ These types appear inside the request/response shapes above. Field names marked 
 
 ## Screen-to-API handoff and current gaps
 
-The prototype's labels and local-device data are not server contracts. The table maps each screen to implemented reads/actions and calls out missing backend support so the UI agent can use placeholders or request API work instead of inventing routes.
+The prototype's labels and local-device data are not server contracts. The table maps each screen to implemented reads/actions and calls out missing backend support. A gap means **API to be added later**, not permission to build or guess a route now; leave that screen action pending until the backend contract exists.
 
 | Mobile screen | Implemented calls | Integration gap or limit |
 | --- | --- | --- |
