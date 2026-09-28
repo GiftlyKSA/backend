@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import City, CourierProfile, DeviceToken, User
@@ -26,17 +27,19 @@ class DeviceTokenRepository:
 
     async def register(self, *, user_id: uuid.UUID, token: str, device_os: DeviceOs) -> DeviceToken:
         """Upsert a token to this user, refreshing last_seen_at (idempotent)."""
-        existing = await self._session.scalar(select(DeviceToken).where(DeviceToken.token == token))
-        if existing is not None:
-            existing.user_id = user_id
-            existing.device_os = device_os
-            existing.last_seen_at = datetime.now(UTC)
-            await self._session.flush()
-            return existing
-        row = DeviceToken(user_id=user_id, token=token, device_os=device_os)
-        self._session.add(row)
-        await self._session.flush()
-        return row
+        insert_statement = insert(DeviceToken).values(
+            user_id=user_id, token=token, device_os=device_os
+        )
+        upsert_statement = insert_statement.on_conflict_do_update(
+            constraint="uq_device_tokens_token",
+            set_={
+                "user_id": insert_statement.excluded.user_id,
+                "device_os": insert_statement.excluded.device_os,
+                "last_seen_at": datetime.now(UTC),
+            },
+        ).returning(DeviceToken)
+        result = await self._session.execute(upsert_statement)
+        return result.scalar_one()
 
     async def remove(self, *, user_id: uuid.UUID, token: str) -> None:
         """Delete a token, but only if it belongs to this user (ownership in query)."""

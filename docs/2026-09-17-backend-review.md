@@ -43,6 +43,7 @@ PostgreSQL/Redis and deployment verification remains pending where applicable.
 | PERF-05 | Bound refresh-token expiry cleanup and index its expiry | PostgreSQL query plan and worker backlog under load |
 | PERF-07 | Close worker-owned receipt integration clients | Worker lifecycle smoke test |
 | REL-07 | Lock chat conversation rows before unread/latest-message mutations | Two-session PostgreSQL race test |
+| QUAL-04 | Register device tokens with one PostgreSQL conflict upsert | Disposable PostgreSQL concurrency test |
 
 The OTP default is 60 seconds and the new city catalog is seeded with 20 active Saudi
 cities. Customer orders and courier profiles now store UUID foreign keys to `cities.id`;
@@ -75,7 +76,7 @@ to avoid breaking older clients; new clients can submit city IDs.
 | 16 | QUAL-02 | Quality / authentication | Mid 5 | Fixed offline | Invalid registration token produces HTTP 500 |
 | 17 | QUAL-03 | Quality / observability | Mid 5 | Fixed offline | JSON logger discards exception diagnostics |
 | 18 | TEST-01 | Improvements / verification | Mid 5 | UNCONFIRMED table failures | Generic admin writes lack complete DB coverage |
-| 19 | QUAL-04 | Quality / reliability | Mid 4 | Source race; DB proof pending | Device-token upsert can race into unique failure |
+| 19 | QUAL-04 | Quality / reliability | Mid 4 | Fixed offline; DB race proof pending | Device-token upsert can race into unique failure |
 | 20 | OPT-01 | Optimization | Low 3 | Setup confirmed; cost unmeasured | S3 client setup repeats per operation |
 | 21 | PERF-06 | Performance | Low 3 | Confirmed | Admin reads repeatedly update the session row |
 | 22 | PERF-07 | Optimization | Low 3 | Fixed offline | Receipt worker does not close owned clients |
@@ -428,7 +429,8 @@ No confirmed High finding in this category.
 - **Minimal fix / system effect:** PostgreSQL ON CONFLICT with explicit ownership/device-field
   semantics. Preserve intended reassignment when a device changes accounts.
 - **Verification:** concurrent same/different tokens and account switching; one correct row
-  remains and duplicate registration does not become an unexplained 500.
+  remains and duplicate registration does not become an unexplained 500. The new unit
+  regression verifies a single conflict upsert, but a real two-session race remains untested.
 
 ### Low — preventive suggestions
 
@@ -567,6 +569,7 @@ universal authorization correctness.
 | Check | Result / limitation |
 | --- | --- |
 | `uv run --locked pytest tests/unit -q` | Passed all 282 unit tests; one upstream Starlette/httpx deprecation warning |
+| `uv run --locked pytest tests/unit tests/integration/test_notifications.py -q -o addopts=''` | 286 passed, 7 skipped without PostgreSQL/Redis; one upstream deprecation warning. Temporary dummy test settings only |
 | `uv run --locked pytest tests/integration/test_app.py -q` | 7 passed |
 | `uv run --locked pytest tests/integration/test_city_catalog.py -q -rs` | Skipped: no local PostgreSQL service |
 | Full `pytest -q` | Attempted; stopped after slow database-dependent skips with no PostgreSQL/Redis services. No Docker was run |
