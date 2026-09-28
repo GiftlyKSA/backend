@@ -31,7 +31,6 @@ from app.integrations.factory import build_clients
 from app.models.base import Base
 from app.routers import health
 
-
 # ---------------------------------------------------------------------------
 # Database startup lock
 # ---------------------------------------------------------------------------
@@ -66,9 +65,8 @@ _ADMIN_CSP = (
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """
-    Initialize the database schema on startup and release shared
-    connection pools when the application stops.
+    """Initialize the database schema on startup and release shared connection pools when
+    the application stops.
 
     PostgreSQL advisory locking prevents multiple Gunicorn workers from
     attempting schema creation concurrently.
@@ -133,7 +131,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and return the configured FastAPI application."""
-
     settings = settings or get_settings()
 
     configure_logging(settings.LOG_LEVEL)
@@ -219,7 +216,6 @@ def _client_identity(request: Request, settings: Settings) -> str:
     A best-effort token decode (no denylist check — that is auth's job) lets an
     authenticated caller be limited by identity rather than a shared NAT address.
     """
-
     header = request.headers.get("Authorization", "")
 
     if header.startswith("Bearer "):
@@ -248,7 +244,6 @@ def _install_middleware(app: FastAPI, settings: Settings) -> None:
     (bound before any envelope is built), then the rate limiter and body-size guard,
     which short-circuit before a route or the database is ever touched.
     """
-
     _install_request_guards(app, settings)
 
     app.add_middleware(RequestIdMiddleware)
@@ -269,7 +264,6 @@ def _guard_body_size(
     (audit SEC-7) — the JSON API never needs chunked uploads (media bytes go straight
     to S3), so those requests are rejected with 411 Length Required.
     """
-
     content_length = request.headers.get("content-length")
 
     if content_length is not None:
@@ -350,7 +344,6 @@ def _install_cors(
     settings: Settings,
 ) -> None:
     """Add CORS: wildcard without credentials in development, the allow-list in production."""
-
     if settings.ENVIRONMENT.value == "development":
         origins = ["*"]
 
@@ -405,7 +398,6 @@ def _install_security_headers(app: FastAPI) -> None:
 
 def _register_admin(app: FastAPI) -> None:
     """Mount the server-rendered admin dashboard, its static files, and redirect handler."""
-
     from pathlib import Path
 
     from fastapi.staticfiles import StaticFiles
@@ -436,7 +428,6 @@ def _register_admin(app: FastAPI) -> None:
 
 def _register_dev_routes(app: FastAPI) -> None:
     """Register development-only routes (interlock layer 4)."""
-
     from app.routers import dev
 
     app.include_router(dev.router)

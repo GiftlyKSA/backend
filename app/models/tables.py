@@ -38,27 +38,23 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 # Native PG enum types, created once by the baseline migration (create_type=False so
 # the ORM never tries to re-create them at table-create time).
-_user_role = ENUM(enums.UserRole, name="user_role", create_type=False)
-_user_status = ENUM(enums.UserStatus, name="user_status", create_type=False)
-_order_status = ENUM(enums.OrderStatus, name="order_status", create_type=False)
-_invoice_status = ENUM(enums.InvoiceStatus, name="invoice_status", create_type=False)
-_payment_purpose = ENUM(enums.PaymentPurpose, name="payment_purpose", create_type=False)
-_payment_intent_status = ENUM(
-    enums.PaymentIntentStatus, name="payment_intent_status", create_type=False
-)
-_payment_method = ENUM(enums.PaymentMethod, name="payment_method", create_type=False)
-_promo_discount_type = ENUM(enums.PromoDiscountType, name="promo_discount_type", create_type=False)
-_promo_redemption_status = ENUM(
-    enums.PromoRedemptionStatus, name="promo_redemption_status", create_type=False
-)
-_media_type = ENUM(enums.MediaType, name="media_type", create_type=False)
-_message_type = ENUM(enums.MessageType, name="message_type", create_type=False)
-_wallet_type = ENUM(enums.WalletType, name="wallet_type", create_type=False)
-_transaction_type = ENUM(enums.TransactionType, name="transaction_type", create_type=False)
-_transaction_status = ENUM(enums.TransactionStatus, name="transaction_status", create_type=False)
-_device_os = ENUM(enums.DeviceOs, name="device_os", create_type=False)
-_withdrawal_status = ENUM(enums.WithdrawalStatus, name="withdrawal_status", create_type=False)
-_dispute_status = ENUM(enums.DisputeStatus, name="dispute_status", create_type=False)
+_user_role = ENUM(enums.UserRole, name="user_role")
+_user_status = ENUM(enums.UserStatus, name="user_status")
+_order_status = ENUM(enums.OrderStatus, name="order_status")
+_invoice_status = ENUM(enums.InvoiceStatus, name="invoice_status")
+_payment_purpose = ENUM(enums.PaymentPurpose, name="payment_purpose")
+_payment_intent_status = ENUM(enums.PaymentIntentStatus, name="payment_intent_status")
+_payment_method = ENUM(enums.PaymentMethod, name="payment_method")
+_promo_discount_type = ENUM(enums.PromoDiscountType, name="promo_discount_type")
+_promo_redemption_status = ENUM(enums.PromoRedemptionStatus, name="promo_redemption_status")
+_media_type = ENUM(enums.MediaType, name="media_type")
+_message_type = ENUM(enums.MessageType, name="message_type")
+_wallet_type = ENUM(enums.WalletType, name="wallet_type")
+_transaction_type = ENUM(enums.TransactionType, name="transaction_type")
+_transaction_status = ENUM(enums.TransactionStatus, name="transaction_status")
+_device_os = ENUM(enums.DeviceOs, name="device_os")
+_withdrawal_status = ENUM(enums.WithdrawalStatus, name="withdrawal_status")
+_dispute_status = ENUM(enums.DisputeStatus, name="dispute_status")
 
 _MONEY = Numeric(12, 2)
 _RATE = Numeric(6, 4)
