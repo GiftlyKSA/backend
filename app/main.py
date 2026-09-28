@@ -102,6 +102,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             text("SELECT pg_advisory_xact_lock(:lock_id)"),
             {"lock_id": _DATABASE_SCHEMA_LOCK_ID},
         )
+        await conn.execute(
+            text("CREATE EXTENSION IF NOT EXISTS postgis")
+            )
 
         await conn.run_sync(
             Base.metadata.create_all,
