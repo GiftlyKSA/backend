@@ -24,6 +24,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    Sequence,
     SmallInteger,
     String,
     Text,
@@ -36,6 +37,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models import enums
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+
+gateway_customer_identifier_seq = Sequence(
+    "gateway_customer_identifier_seq",
+    metadata=Base.metadata,
+    start=1,
+)
 # Native PG enum types, created once by the baseline migration (create_type=False so
 # the ORM never tries to re-create them at table-create time).
 _user_role = ENUM(enums.UserRole, name="user_role")
