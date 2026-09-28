@@ -55,7 +55,7 @@ docker compose up -d db redis             # data services only; run the API belo
 uv run alembic upgrade head               # apply the schema (creates system wallets)
 uv run python -m app.seed                 # idempotent safety-net seed
 uv run --locked python -m app.seed_cities  # add 20 active Saudi cities if the catalog is empty
-uv run uvicorn app.main:create_app --factory --reload   # http://localhost:8000
+uv run uvicorn app.main:create_app --factory --reload   # http://localhost:3000
 ```
 
 The city migration creates 20 active Saudi city choices; `app.seed_cities` is an
@@ -67,7 +67,7 @@ Responses include both the city ID and display name. API services reject inactiv
 `shortcut` values are application labels, not official municipality codes. The
 initial city selection follows the [Saudi National Debt Management Center map](https://ndmc.gov.sa/IssuancePrograms/Documents/KSA%20Ijarah%20Sukuk%20Establishment%202025.pdf).
 
-Health check: `curl localhost:8000/api/health`. In development the OpenAPI docs are at
+Health check: `curl localhost:3000/api/health`. In development the OpenAPI docs are at
 `/docs`; they are disabled in test and production by design.
 
 ### Scheduled maintenance

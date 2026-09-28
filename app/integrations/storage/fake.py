@@ -27,7 +27,7 @@ class FakeStorageClient(StorageClient):
         self._objects[storage_key] = ObjectHead(
             exists=True, byte_size=byte_size, content_type=content_type
         )
-        return f"http://localhost:8000/dev/upload/{storage_key}"
+        return f"http://localhost:3000/dev/upload/{storage_key}"
 
     async def head_object(self, storage_key: str) -> ObjectHead | None:
         """Return the recorded object metadata, or None."""
@@ -40,4 +40,4 @@ class FakeStorageClient(StorageClient):
 
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a deterministic fake CDN URL."""
-        return f"http://localhost:8000/dev/cdn/{storage_key}?ttl={ttl_seconds}"
+        return f"http://localhost:3000/dev/cdn/{storage_key}?ttl={ttl_seconds}"

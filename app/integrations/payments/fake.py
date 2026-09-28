@@ -44,7 +44,7 @@ class FakePaymentClient(PaymentClient):
         return PaymentCheckout(
             payment_link_id=payment_link_id,
             payment_url=(
-                "http://localhost:8000/api/dev/simulation/simulate?"
+                "http://localhost:3000/api/dev/simulation/simulate?"
                 f"payment_link_id={payment_link_id}"
             ),
         )

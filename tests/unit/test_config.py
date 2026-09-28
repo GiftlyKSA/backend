@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import base64
+import logging
 
 import pytest
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 
 _ZERO_KEY_B64 = base64.b64encode(b"\x00" * 32).decode()
 
@@ -31,6 +32,23 @@ def test_valid_test_settings_boot() -> None:
     settings = Settings(_env_file=None, **_base_env())  # type: ignore[call-arg]
     assert settings.ENVIRONMENT.value == "test"
     assert not settings.docs_enabled
+
+
+def test_startup_logs_real_validation_reason_without_environment_values(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    for name, value in _base_env(FIELD_ENCRYPTION_KEYS="not-json").items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        with caplog.at_level(logging.ERROR, logger="app.core.config"):
+            with pytest.raises(RuntimeError, match="FIELD_ENCRYPTION_KEYS is not valid JSON"):
+                get_settings()
+        assert "FIELD_ENCRYPTION_KEYS is not valid JSON" in caplog.text
+        assert "not-json" not in caplog.text
+        assert "postgresql+asyncpg" not in caplog.text
+    finally:
+        get_settings.cache_clear()
 
 
 def test_missing_environment_refuses_boot(monkeypatch: pytest.MonkeyPatch) -> None:

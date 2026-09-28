@@ -41,7 +41,7 @@ EXPOSE 3000
 
 # Liveness only — a readiness probe here would restart on a transient Redis blip.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:3000/api/health').status==200 else 1)"
 
 # Workers and timeouts come from the environment; no `uv run` at runtime.
 CMD ["gunicorn", "app.main:create_app()", \
