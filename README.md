@@ -54,8 +54,16 @@ cp .env.example .env                      # then fill in the blanks (see the tab
 docker compose up -d db redis             # data services only; run the API below
 uv run alembic upgrade head               # apply the schema (creates system wallets)
 uv run python -m app.seed                 # idempotent safety-net seed
+uv run --locked python -m app.seed_cities  # add 20 active Saudi cities if the catalog is empty
 uv run uvicorn app.main:create_app --factory --reload   # http://localhost:8000
 ```
+
+The city migration creates 20 active Saudi city choices; `app.seed_cities` is an
+idempotent safety net for an empty catalog. `GET /api/cities` lists active choices
+without authentication. Order and courier city fields still send the selected `name`;
+the database requires a catalog name, and API services reject inactive names. The
+`shortcut` values are application labels, not official municipality codes. The
+initial city selection follows the [Saudi National Debt Management Center map](https://ndmc.gov.sa/IssuancePrograms/Documents/KSA%20Ijarah%20Sukuk%20Establishment%202025.pdf).
 
 Health check: `curl localhost:8000/api/health`. In development the OpenAPI docs are at
 `/docs`; they are disabled in test and production by design.
@@ -221,7 +229,7 @@ Server-rendered (Jinja2), mounted at `/admin`, gated by `ADMIN_DASHBOARD_ENABLED
 authenticates with environment-backed username/password into server-side sessions and
 calls backend services — it never queries the DB directly.
 
-`/admin/tables` provides paginated views and add/edit/delete forms for all 29 application
+`/admin/tables` provides paginated views and add/edit/delete forms for all 30 application
 tables in every environment, including production. Every write requires an active admin
 session, CSRF verification, and recent password confirmation. Each successful operation
 records the actor, table, record, and changed field names without logging field values.

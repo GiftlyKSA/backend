@@ -94,18 +94,23 @@ class ChatService:
         return self._cipher().decrypt(blob, aad)
 
     async def _require_conversation(
-        self, conversation_id: uuid.UUID, actor_id: uuid.UUID
+        self, conversation_id: uuid.UUID, actor_id: uuid.UUID, *, for_update: bool = False
     ) -> Conversation:
         return await self.get_conversation_for_actor(
-            conversation_id=conversation_id, actor_id=actor_id
+            conversation_id=conversation_id, actor_id=actor_id, for_update=for_update
         )
 
     async def get_conversation_for_actor(
-        self, *, conversation_id: uuid.UUID, actor_id: uuid.UUID
+        self, *, conversation_id: uuid.UUID, actor_id: uuid.UUID, for_update: bool = False
     ) -> Conversation:
         """Return an eligible actor's conversation or hide it as not found."""
         await self._eligibility.require_eligible_actor(actor_id)
-        conversation = await self._chat.get_for_actor(conversation_id, actor_id)
+        if for_update:
+            conversation = await self._chat.get_for_actor(
+                conversation_id, actor_id, for_update=True
+            )
+        else:
+            conversation = await self._chat.get_for_actor(conversation_id, actor_id)
         if conversation is None:
             raise NotFoundError("Conversation not found.")
         return conversation
@@ -118,7 +123,7 @@ class ChatService:
         Raises:
             NotFoundError: The sender does not participate in the conversation.
         """
-        conversation = await self._require_conversation(conversation_id, sender_id)
+        conversation = await self._require_conversation(conversation_id, sender_id, for_update=True)
         content = self._encrypt_content(conversation_id, text)
         preview = self._encrypt_preview(conversation_id, text)
         message = await self._chat.add_message(
@@ -152,7 +157,7 @@ class ChatService:
 
     async def mark_read(self, *, conversation_id: uuid.UUID, actor_id: uuid.UUID) -> None:
         """Mark a participant's inbound messages read and clear their unread count."""
-        conversation = await self._require_conversation(conversation_id, actor_id)
+        conversation = await self._require_conversation(conversation_id, actor_id, for_update=True)
         await self._chat.mark_read(
             conversation, reader_is_customer=actor_id == conversation.customer_id
         )

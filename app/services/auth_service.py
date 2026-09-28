@@ -21,6 +21,7 @@ from app.core.exceptions import ConflictError, UnauthorizedError, ValidationDoma
 from app.core.identity import identity_fingerprint
 from app.core.jwt import (
     AccessClaims,
+    JwtError,
     create_access_token,
     create_registration_token,
     decode_registration_token,
@@ -28,7 +29,9 @@ from app.core.jwt import (
 from app.core.security import generate_session_token, sha256_hex
 from app.models.enums import UserRole, UserStatus
 from app.repositories.auth_repository import AuthRepository
+from app.repositories.city_repository import CityRepository
 from app.repositories.user_repository import UserRepository
+from app.services.city_service import CityService
 from app.services.otp_service import OtpService
 
 
@@ -138,7 +141,10 @@ class AuthService:
             ValidationDomainError: Required fields for the chosen role are missing.
             ConflictError: The phone or courier identity is already registered.
         """
-        phone = decode_registration_token(self._settings, registration_token)
+        try:
+            phone = decode_registration_token(self._settings, registration_token)
+        except JwtError as exc:
+            raise UnauthorizedError("Invalid registration token.") from exc
         if await self._users.get_by_phone(phone) is not None:
             raise ConflictError("This phone is already registered.")
 
@@ -173,6 +179,7 @@ class AuthService:
     ) -> TokenPair:
         if not city:
             raise ValidationDomainError("A courier must provide a city of residence.")
+        city = await CityService(CityRepository(self._session)).require_active_name(city)
         if not (national_id or passport_id):
             raise ValidationDomainError("A courier must provide a national id or passport.")
 

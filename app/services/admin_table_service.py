@@ -18,6 +18,7 @@ from app.repositories.admin_table_repository import AdminTableRepository, get_ta
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repository import AuthRepository
 from app.services.admin_table_fields import TableField, form_fields, parse_values
+from app.services.city_service import CityService
 
 
 @dataclass(frozen=True)
@@ -39,12 +40,14 @@ class AdminTableService:
         audit: AuditRepository,
         settings: Settings,
         auth: AuthRepository,
+        cities: CityService | None = None,
     ) -> None:
         """Bind collaborators to the same request transaction."""
         self._repo = repository
         self._audit = audit
         self._settings = settings
         self._auth = auth
+        self._cities = cities
 
     async def form(self, table_name: str, record_id: uuid.UUID | None = None) -> TableForm:
         """Load one form and its selected relationship labels in bounded queries."""
@@ -90,6 +93,14 @@ class AdminTableService:
         table = get_table(table_name)
         creating = record_id is None
         values = parse_values(table, submitted, creating=creating)
+        city_field = {
+            "orders": "delivery_city",
+            "courier_profiles": "city_of_residence",
+        }.get(table_name)
+        if city_field is not None and city_field in values:
+            if self._cities is None:
+                raise RuntimeError("City catalog is not configured.")
+            values[city_field] = await self._cities.require_active_name(str(values[city_field]))
         key = primary_key(table)
         if record_id is None:
             record_id = values.get(key.name, uuid.uuid4())

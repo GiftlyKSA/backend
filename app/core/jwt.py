@@ -145,9 +145,13 @@ def decode_registration_token(settings: Settings, token: str) -> str:
             algorithms=[settings.JWT_ALGORITHM],
             issuer=settings.JWT_ISSUER,
             audience=settings.JWT_AUDIENCE,
+            options={"require": ["exp", "iat", "iss", "aud", "sub"]},
         )
     except jwt.PyJWTError as exc:
         raise JwtError(str(exc)) from exc
     if payload.get("purpose") != "registration":
         raise JwtError("Not a registration token.")
-    return str(payload["sub"])
+    phone = payload.get("sub")
+    if not isinstance(phone, str) or not phone:
+        raise JwtError("Invalid registration subject.")
+    return phone

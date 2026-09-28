@@ -1,7 +1,8 @@
-# Giftly backend review — 2026-09-27
+# Giftly backend review — 2026-09-29 update
 
 This report supersedes the earlier review at this filename. Audited application revision:
-`2f1b0c6` on `master`. This update records findings; it does not implement the proposed fixes.
+`2f1b0c6` on `master`. The original findings below remain as the evidence and impact record;
+the 2026-09-29 fix status is recorded separately below.
 It follows [AGENTS.md](../AGENTS.md) and the
 [OWASP Top 10:2025](https://top10.owasp.org/2025/) baseline (source checked 2026-09-27).
 It covers security, performance, optimization, SQL, quality, improvements, and scalability.
@@ -28,30 +29,51 @@ No Docker was started or run. No real environment secrets were inspected.
 
 ## Global priority index
 
+### Fix status — 2026-09-29
+
+The index and detailed findings below preserve the 2026-09-27 assessment and severity.
+The following findings have source fixes and offline regression tests in this change; live
+PostgreSQL/Redis and deployment verification remains pending where applicable.
+
+| IDs | Change | Verification still needed |
+| --- | --- | --- |
+| SEC-10, SEC-11 | Reject weak explicit OTP signing keys and non-HTTPS production provider URLs at startup | Check actual deployed configuration without exposing secrets |
+| QUAL-01, QUAL-02 | Return client errors for invalid status/cursors and registration tokens | Client contract smoke test in deployment |
+| QUAL-03 | Include safe exception type and source location in JSON logs | Verify log ingestion fields |
+| PERF-05 | Bound refresh-token expiry cleanup and index its expiry | PostgreSQL query plan and worker backlog under load |
+| PERF-07 | Close worker-owned receipt integration clients | Worker lifecycle smoke test |
+| REL-07 | Lock chat conversation rows before unread/latest-message mutations | Two-session PostgreSQL race test |
+
+The OTP default is 60 seconds and the new city catalog is seeded with 20 active Saudi
+cities. Customer orders, courier profiles, and admin mutations validate active city names;
+database foreign keys protect persisted references. The city migration and seed script need
+a disposable PostgreSQL/PostGIS run in CI or another authorized environment. No Docker was
+run locally. All other findings below remain open or unverified as originally classified.
+
 | Priority | ID | Category | Severity / score | Status | Finding |
 | --- | --- | --- | --- | --- | --- |
 | 1 | PERF-02 | Performance | High 8 | Confirmed design defect | City push fan-out precedes order commit |
 | 2 | INT-01 | Improvements / release verification | High 8 | UNCONFIRMED vendor compatibility | Production SMS/email contracts need verification |
 | 3 | SEC-07 | Security | Mid 7 | Confirmed missing control | No per-account concurrent chat connection cap |
 | 4 | SEC-08 | Security | Mid 6 | Confirmed missing control | No cumulative upload quota/abandoned-object cleanup |
-| 5 | SEC-10 | Security | Mid 6 | Confirmed, conditional | Empty/weak dedicated OTP HMAC key accepted |
-| 6 | SEC-11 | Security | Mid 6 | Confirmed, conditional | Production provider URLs need not use HTTPS |
+| 5 | SEC-10 | Security | Mid 6 | Fixed offline; deployment check pending | Empty/weak dedicated OTP HMAC key accepted |
+| 6 | SEC-11 | Security | Mid 6 | Fixed offline; deployment check pending | Production provider URLs need not use HTTPS |
 | 7 | REL-06 | Scalability / reliability | Mid 6 | Confirmed, latent | Order cancellation leaves invoice/hold pending |
 | 8 | REL-05 | Scalability / reliability | Mid 6 | Confirmed design defect | Receipt sends retain locks; sweep can outlive lease |
-| 9 | REL-07 | Scalability / reliability | Mid 6 | Source race; DB proof pending | Concurrent chat updates can lose unread counts |
+| 9 | REL-07 | Scalability / reliability | Mid 6 | Fixed offline; DB race proof pending | Concurrent chat updates can lose unread counts |
 | 10 | REL-08 | Scalability / reliability | Mid 6 | Confirmed default; outage untested | Redis lacks an explicit operation timeout budget |
 | 11 | PERF-04 | Optimization | Mid 6 | Confirmed, scale-dependent | Key rotation buffers whole tables in one transaction |
 | 12 | CI-02 | Improvements / verification | Mid 6 | Missing run evidence | No master CI runs returned by workflow query |
-| 13 | PERF-05 | SQL optimization | Mid 5 | Confirmed, scale-dependent | Refresh purge is unbounded and lacks expiry index |
+| 13 | PERF-05 | SQL optimization | Mid 5 | Fixed offline; DB plan pending | Refresh purge is unbounded and lacks expiry index |
 | 14 | PERF-03 | SQL optimization | Mid 5 | Confirmed, scale-dependent | Admin browser supports very deep OFFSET scans |
-| 15 | QUAL-01 | Quality | Mid 5 | Reproduced offline | Invalid status/cursor input produces HTTP 500 |
-| 16 | QUAL-02 | Quality / authentication | Mid 5 | Reproduced offline | Invalid registration token produces HTTP 500 |
-| 17 | QUAL-03 | Quality / observability | Mid 5 | Reproduced offline | JSON logger discards exception diagnostics |
+| 15 | QUAL-01 | Quality | Mid 5 | Fixed offline | Invalid status/cursor input produces HTTP 500 |
+| 16 | QUAL-02 | Quality / authentication | Mid 5 | Fixed offline | Invalid registration token produces HTTP 500 |
+| 17 | QUAL-03 | Quality / observability | Mid 5 | Fixed offline | JSON logger discards exception diagnostics |
 | 18 | TEST-01 | Improvements / verification | Mid 5 | UNCONFIRMED table failures | Generic admin writes lack complete DB coverage |
 | 19 | QUAL-04 | Quality / reliability | Mid 4 | Source race; DB proof pending | Device-token upsert can race into unique failure |
 | 20 | OPT-01 | Optimization | Low 3 | Setup confirmed; cost unmeasured | S3 client setup repeats per operation |
 | 21 | PERF-06 | Performance | Low 3 | Confirmed | Admin reads repeatedly update the session row |
-| 22 | PERF-07 | Optimization | Low 3 | Confirmed | Receipt worker does not close owned clients |
+| 22 | PERF-07 | Optimization | Low 3 | Fixed offline | Receipt worker does not close owned clients |
 | 23 | SQL-01 | SQL optimization | Low 3 | Suggestion; plans needed | Measure sort/index alignment and reconciliation |
 | 24 | MAINT-02 | Code quality suggestions | Low 3 | Preventive improvement | Mobile OpenAPI has no reproducible CI drift check |
 | 25 | MAINT-03 | Security / quality suggestions | Low 3 | Preventive improvement | Independent audit trail for unrestricted admin CRUD |
@@ -486,15 +508,14 @@ caching, indexes, abstractions, or broad refactors just to fill a category.
 
 ## OTP storage and authentication behavior
 
-**The default is 180 seconds (three minutes), not 60 seconds.** See
-`app/core/config.py:130–133` and `app/services/otp_service.py`. Actual deployment overrides
-were not inspected. To require 60 seconds, set `OTP_TTL_SECONDS=60` and restart; this audit
-does not change the TTL.
+**The default is now 60 seconds.** `OTP_TTL_SECONDS` can still be overridden by deployment
+configuration; actual deployment overrides were not inspected. The code stored in Redis is
+an HMAC digest, not plaintext. The attempt counter uses the same 60-second expiry.
 
 | Aspect | Current implementation |
 | --- | --- |
 | Storage | Redis `otp:code:{normalized_phone}` holds an HMAC digest, not plaintext OTP |
-| Expiry | Issuance Lua uses SET EX with `OTP_TTL_SECONDS`, default 180 |
+| Expiry | Issuance Lua uses SET EX with `OTP_TTL_SECONDS`, default 60 |
 | Resend | Replaces the previous code and resets its verification-attempt counter |
 | Verification | Atomic Lua compares supplied HMAC and consumes a successful code |
 | Success cleanup | Deletes code, attempts, and request-rate keys; does not delete a block key |
@@ -507,12 +528,12 @@ does not change the TTL.
 
 The single-use/attempt rules are implemented atomically, but this audit did not execute
 Lua on live Redis. Unit fakes/mocks do not prove actual TTL or multi-client behavior.
-The dedicated-key issue is SEC-10. Phone numbers are present in Redis key names; Redis
+The dedicated-key issue SEC-10 is fixed in settings validation. Phone numbers are present in Redis key names; Redis
 access, TLS, backups, and retention remain deployment controls even with hashed codes.
 
 Authentication source controls retained: access algorithm/issuer/audience validation, live
 account/role/version checks, serialized refresh rotation and replay revocation, all-device
-logout, WS membership rechecks, admin authentication/CSRF/step-up. QUAL-02 remains open.
+logout, WS membership rechecks, admin authentication/CSRF/step-up. QUAL-02 is fixed offline.
 No new cross-account access bypass was established in inspected paths; that does not prove
 universal authorization correctness.
 
@@ -536,7 +557,19 @@ universal authorization correctness.
   keep authentication, authorization, CSRF, and attributable events.
 - Prior clean-migration authorization does not authorize resetting a current database.
 
-## Verification record — 2026-09-27
+## Verification update — 2026-09-29
+
+| Check | Result / limitation |
+| --- | --- |
+| `uv run --locked pytest tests/unit -q` | Passed all 282 unit tests; one upstream Starlette/httpx deprecation warning |
+| `uv run --locked pytest tests/integration/test_app.py -q` | 7 passed |
+| `uv run --locked pytest tests/integration/test_city_catalog.py -q -rs` | Skipped: no local PostgreSQL service |
+| Full `pytest -q` | Attempted; stopped after slow database-dependent skips with no PostgreSQL/Redis services. No Docker was run |
+| Pre-commit and pre-push all-file hooks | Passed Ruff, format, mypy, YAML/TOML/JSON, merge markers, private-key checks |
+| Alembic offline `upgrade head --sql` | Rendered through the city/refresh-index migration; no live schema apply or downgrade tested |
+| Mobile OpenAPI | 44 non-admin operations, including public `GET /api/cities` |
+
+## Historical verification record — 2026-09-27
 
 | Check | Result / limitation |
 | --- | --- |

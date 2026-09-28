@@ -47,6 +47,37 @@ def test_short_jwt_secret_refuses_boot() -> None:
         Settings(_env_file=None, **_base_env(JWT_SECRET="short"))  # type: ignore[call-arg]
 
 
+@pytest.mark.parametrize("key", ["", "short", "é" * 16])
+def test_short_dedicated_otp_key_refuses_boot(key: str) -> None:
+    with pytest.raises(ValueError, match="OTP_HMAC_KEY"):
+        Settings(_env_file=None, **_base_env(OTP_HMAC_KEY=key))  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("name", ["SUPABASE_URL", "SNDR_BASE_URL"])
+def test_production_provider_urls_require_https(name: str) -> None:
+    production = _base_env(
+        ENVIRONMENT="production",
+        AWS_REGION="test-region",
+        AWS_ACCESS_KEY_ID="test-key",
+        AWS_SECRET_ACCESS_KEY="test-secret",
+        S3_BUCKET_NAME="test-bucket",
+        CLOUDFRONT_DOMAIN="media.example.test",
+        CLOUDFRONT_KEY_PAIR_ID="test-id",
+        CLOUDFRONT_PRIVATE_KEY="test-key",
+        SMS_PROVIDER_KEY="test-key",
+        SUPABASE_URL="https://api.example.test",
+        SUPABASE_SERVICE_KEY="test-key",
+        SNDR_API_KEY="test-key",
+        SNDR_BASE_URL="https://mail.example.test",
+        SNDR_FROM_EMAIL="test@example.test",
+        SNDR_FROM_NAME="Giftly",
+        SNDR_INVOICE_PAID_TEMPLATE_KEY="test-template",
+    )
+    production[name] = "http://insecure.example.test"
+    with pytest.raises(ValueError, match=name):
+        Settings(_env_file=None, **production)  # type: ignore[call-arg]
+
+
 def test_pepper_equal_to_key_refuses_boot() -> None:
     pepper = base64.b64decode(_ZERO_KEY_B64).decode("latin-1")
     with pytest.raises(ValueError):

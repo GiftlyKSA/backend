@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.tables import (
     AdminSession,
     AuditLog,
+    City,
     Conversation,
     CourierPortfolio,
     CourierProfile,
@@ -37,6 +38,7 @@ __all__ = [
     "AdminSession",
     "AuditLog",
     "Base",
+    "City",
     "Conversation",
     "CourierPortfolio",
     "CourierProfile",

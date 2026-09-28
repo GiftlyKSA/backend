@@ -146,7 +146,7 @@ async def request_withdrawal(
 async def list_my_transactions(
     db: DbDep,
     actor: Annotated[Actor, Depends(_eligible_customer_or_courier)],
-    cursor: Annotated[str | None, Query()] = None,
+    cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> TransactionPage:
     """Return the authenticated user's ledger entries, newest first (keyset paged)."""
@@ -154,7 +154,7 @@ async def list_my_transactions(
     wallet = await repo.get_by_user(actor.id)
     if wallet is None:
         raise NotFoundError("Wallet not found.")
-    before = uuid.UUID(cursor) if cursor else None
+    before = cursor
     rows = await repo.list_transactions(wallet.id, limit=limit, before_id=before)
     items = [
         TransactionResponse(

@@ -17,6 +17,7 @@ from app.core.deps import Actor, get_db, require_auth
 from app.models import CourierProfile, User
 from app.models.enums import UserStatus
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.users import (
@@ -25,6 +26,7 @@ from app.schemas.users import (
     UserMeResponse,
     UserUpdateRequest,
 )
+from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.user_service import ParticipantView, UserService
 
@@ -37,6 +39,7 @@ def _service(db: AsyncSession) -> UserService:
     return UserService(
         users=UserRepository(db),
         audit=AuditRepository(db),
+        cities=CityService(CityRepository(db)),
         eligibility=CourierEligibilityService(
             users=UserRepository(db), couriers=CourierRepository(db)
         ),

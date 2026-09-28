@@ -49,7 +49,7 @@ class SendOtpRequest(BaseModel):
 class SendOtpResponse(BaseModel):
     """OTP request accepted."""
 
-    expires_in: int = Field(..., description="Seconds until the OTP expires.", examples=[180])
+    expires_in: int = Field(..., description="Seconds until the OTP expires.", examples=[60])
     otp_dev: int | None = Field(
         None,
         ge=10_000,

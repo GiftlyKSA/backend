@@ -12,6 +12,7 @@ from app.models import CourierProfile, User
 from app.models.enums import UserRole, UserStatus
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.user_repository import ParticipantProjection, UserRepository
+from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
 
 
@@ -38,11 +39,13 @@ class UserService:
         users: UserRepository,
         audit: AuditRepository,
         eligibility: CourierEligibilityService,
+        cities: CityService | None = None,
     ) -> None:
         """Wire persistence collaborators."""
         self._users = users
         self._audit = audit
         self._eligibility = eligibility
+        self._cities = cities
 
     async def get_me(self, actor_id: uuid.UUID) -> tuple[User, CourierProfile | None]:
         """Return only the authenticated actor's own profile."""
@@ -75,7 +78,9 @@ class UserService:
             raise ForbiddenError("Courier profile fields require a courier account.")
         if courier is not None:
             if "courier_city" in supplied and courier_city is not None:
-                courier.city_of_residence = courier_city
+                if self._cities is None:
+                    raise RuntimeError("City catalog is not configured.")
+                courier.city_of_residence = await self._cities.require_active_name(courier_city)
             if "courier_bio" in supplied:
                 courier.bio = courier_bio
         await self._users.flush()

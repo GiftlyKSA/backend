@@ -43,7 +43,10 @@ async def send_pending_receipts(
     the environment's email client (a Fake outside production).
     """
     settings = settings or get_settings()
-    email = email or build_clients(settings).email
+    owned_clients = build_clients(settings) if email is None else None
+    if owned_clients is not None:
+        email = owned_clients.email
+    assert email is not None
     own_engine = None
     if factory is None:
         own_engine = build_engine(settings)
@@ -72,8 +75,21 @@ async def send_pending_receipts(
                     await session.rollback()
                     _logger.exception("receipt send failed for invoice %s", invoice_id)
     finally:
-        if own_engine is not None:
-            await own_engine.dispose()
+        try:
+            if owned_clients is not None:
+                for client in (
+                    owned_clients.gateway,
+                    owned_clients.email,
+                    owned_clients.sms,
+                    owned_clients.push,
+                    owned_clients.storage,
+                ):
+                    aclose = getattr(client, "aclose", None)
+                    if aclose is not None:
+                        await aclose()
+        finally:
+            if own_engine is not None:
+                await own_engine.dispose()
 
     _logger.info("receipt sweep sent %d receipt(s)", sent)
     return sent

@@ -112,7 +112,7 @@ async def list_messages(
     db: DbDep,
     conversation_id: uuid.UUID,
     actor: Annotated[Actor, Depends(_Participant)],
-    cursor: Annotated[str | None, Query()] = None,
+    cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
 ) -> MessagePage:
     """Return decrypted messages the caller can see (participant only)."""
@@ -120,7 +120,7 @@ async def list_messages(
         conversation_id=conversation_id,
         actor_id=actor.id,
         limit=limit,
-        before_id=uuid.UUID(cursor) if cursor else None,
+        before_id=cursor,
     )
     next_cursor = items[-1].id if len(items) == limit else None
     return MessagePage(items=[_message(m) for m in items], next_cursor=next_cursor)

@@ -24,7 +24,7 @@ async def test_maintenance_tasks_registered_with_label_schedule_source() -> None
     expected = {
         "app.workers.auto_approve:run_auto_approve": "*/15 * * * *",
         "app.workers.expiry:run_expire_stale": "*/10 * * * *",
-        "app.workers.expiry:run_purge_refresh_tokens": "0 4 * * *",
+        "app.workers.expiry:run_purge_refresh_tokens": "0 * * * *",
         "app.workers.receipts:deliver_pending_receipts": "*/5 * * * *",
         "app.workers.reconciliation:reconcile_ledger": "0 3 * * *",
     }

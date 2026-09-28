@@ -26,7 +26,9 @@ def setup_service(role="ADMIN", status="ACTIVE", deleted_at=None):
     )
     audit = Mock(spec=AuditRepository)
     settings = make_test_settings()
-    return AdminTableService(repo, audit, settings, AsyncMock()), repo, audit, settings
+    cities = AsyncMock()
+    cities.require_active_name.side_effect = lambda name: name
+    return AdminTableService(repo, audit, settings, AsyncMock(), cities), repo, audit, settings
 
 
 @pytest.mark.parametrize(
@@ -58,6 +60,28 @@ async def test_write_is_audited_without_values_and_scope_is_cleared():
     assert audit.record.call_args.kwargs["metadata"] == {"fields": ["phone", "role"]}
     assert "test-private-phone" not in str(audit.record.call_args)
     repo.clear_maintenance.assert_awaited_once()
+
+
+async def test_generic_order_write_rejects_inactive_city(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import admin_table_service
+
+    monkeypatch.setattr(
+        admin_table_service,
+        "parse_values",
+        lambda *args, **kwargs: {"delivery_city": "Inactive City"},
+    )
+    service, repo, _, _ = setup_service()
+    city_choices = AsyncMock()
+    city_choices.require_active_name.side_effect = ValidationDomainError("Inactive city.")
+    service._cities = city_choices
+    with pytest.raises(ValidationDomainError, match="Inactive city"):
+        await service.save(
+            "orders",
+            {"customer_id": str(uuid4()), "delivery_city": "Inactive City"},
+            admin_id=uuid4(),
+            session_id=uuid4(),
+        )
+    repo.save.assert_not_awaited()
 
 
 async def test_stale_edit_is_rejected_before_write():

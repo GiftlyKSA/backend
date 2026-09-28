@@ -18,6 +18,7 @@ from tests.conftest import make_test_settings
 @pytest.mark.asyncio
 async def test_development_otp_is_five_digits_and_verifies() -> None:
     settings = make_test_settings(ENVIRONMENT="development")
+    assert settings.OTP_TTL_SECONDS == 60
     redis = AsyncMock()
     redis.eval.return_value = 1
     sms = AsyncMock()
@@ -28,6 +29,7 @@ async def test_development_otp_is_five_digits_and_verifies() -> None:
     assert code is not None and code.isdigit() and len(code) == 5
     assert 10000 <= int(code) <= 99999
     sms.send_otp.assert_awaited_once_with("+966501234567", code)
+    assert redis.eval.await_args_list[0].args[7] == 60
     assert await service.verify_otp("+966501234567", code)
 
 
@@ -47,8 +49,8 @@ async def test_non_development_otp_stays_six_digits_and_is_not_returned() -> Non
 @pytest.mark.parametrize(
     ("environment", "code", "expected"),
     [
-        ("development", "12345", {"expires_in": 180, "otp_dev": 12345}),
-        ("test", None, {"expires_in": 180}),
+        ("development", "12345", {"expires_in": 60, "otp_dev": 12345}),
+        ("test", None, {"expires_in": 60}),
     ],
 )
 def test_send_otp_http_response_shape(
@@ -59,7 +61,7 @@ def test_send_otp_http_response_shape(
 ) -> None:
     app = create_app(make_test_settings(ENVIRONMENT=environment))
     app.dependency_overrides[get_db] = lambda: None
-    send_otp = AsyncMock(return_value=(180, code))
+    send_otp = AsyncMock(return_value=(60, code))
     monkeypatch.setattr(auth, "_service", lambda request, db: SimpleNamespace(send_otp=send_otp))
 
     with TestClient(app) as client:

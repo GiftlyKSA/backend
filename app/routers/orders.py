@@ -179,19 +179,18 @@ async def list_orders(
     request: Request,
     db: DbDep,
     actor: Annotated[Actor, Depends(_eligible_participant)],
-    status: Annotated[str | None, Query()] = None,
-    cursor: Annotated[str | None, Query()] = None,
+    status: Annotated[OrderStatus | None, Query()] = None,
+    cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
     """List customer-owned or courier-assigned orders, newest first."""
-    status_enum = OrderStatus(status) if status else None
     service = _service(request, db)
     views = await service.list_views_for_actor(
         actor_id=actor.id,
         role=actor.role,
-        status=status_enum,
+        status=status,
         limit=limit,
-        before_id=uuid.UUID(cursor) if cursor else None,
+        before_id=cursor,
     )
     return _page(views, limit)
 
@@ -201,7 +200,7 @@ async def available_orders(
     request: Request,
     db: DbDep,
     actor: Annotated[Actor, Depends(_active_courier)],
-    cursor: Annotated[str | None, Query()] = None,
+    cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
     """List NEW orders in the courier's city (the radar). No exact coordinates."""
@@ -209,7 +208,7 @@ async def available_orders(
     views = await service.list_available_views_for_courier(
         courier_id=actor.id,
         limit=limit,
-        before_id=uuid.UUID(cursor) if cursor else None,
+        before_id=cursor,
     )
     return _page(views, limit)
 

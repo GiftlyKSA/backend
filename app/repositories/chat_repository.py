@@ -26,15 +26,16 @@ class ChatRepository:
         self._session = session
 
     async def get_for_actor(
-        self, conversation_id: uuid.UUID, actor_id: uuid.UUID
+        self, conversation_id: uuid.UUID, actor_id: uuid.UUID, *, for_update: bool = False
     ) -> Conversation | None:
         """Return a conversation only if the actor is its customer or courier."""
-        result: Conversation | None = await self._session.scalar(
-            select(Conversation).where(
-                Conversation.id == conversation_id,
-                (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
-            )
+        query = select(Conversation).where(
+            Conversation.id == conversation_id,
+            (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
         )
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        result: Conversation | None = await self._session.scalar(query)
         return result
 
     async def list_for_user(

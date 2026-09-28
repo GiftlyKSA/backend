@@ -162,14 +162,21 @@ class AuthRepository:
         )
         await self._session.flush()
 
-    async def purge_expired(self, *, before: datetime) -> int:
+    async def purge_expired(self, *, before: datetime, limit: int = 1000) -> int:
         """Delete refresh tokens whose expiry predates ``before`` (audit PERF-3).
 
         Returns:
             The number of rows deleted.
         """
+        candidates = (
+            select(RefreshToken.id)
+            .where(RefreshToken.expires_at < before)
+            .order_by(RefreshToken.expires_at, RefreshToken.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
         result = await self._session.execute(
-            delete(RefreshToken).where(RefreshToken.expires_at < before)
+            delete(RefreshToken).where(RefreshToken.id.in_(candidates))
         )
         await self._session.flush()
         return int(getattr(result, "rowcount", 0) or 0)

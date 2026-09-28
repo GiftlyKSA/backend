@@ -85,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         admin_api,
         auth,
         chat,
+        cities,
         devices,
         invoices,
         media,
@@ -97,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(auth.router)
+    app.include_router(cities.router)
     app.include_router(users.router)
     app.include_router(wallets.router)
     app.include_router(media.router)

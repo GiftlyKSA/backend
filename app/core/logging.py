@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import traceback
+from pathlib import Path
 from typing import Any
 
 # Key names whose values must never be logged (case-insensitive substring match).
@@ -90,6 +92,14 @@ class ScrubbingJsonFormatter(logging.Formatter):
         extra = getattr(record, "extra_fields", None)
         if isinstance(extra, dict):
             payload["fields"] = scrub_value(extra)
+        if record.exc_info is not None and record.exc_info[0] is not None:
+            payload["exception_type"] = record.exc_info[0].__name__
+            frames = traceback.extract_tb(record.exc_info[2]) if record.exc_info[2] else []
+            if frames:
+                last = frames[-1]
+                payload["exception_location"] = scrub_text(
+                    f"{Path(last.filename).name}:{last.lineno}:{last.name}"
+                )
         return json.dumps(payload, default=str)
 
 

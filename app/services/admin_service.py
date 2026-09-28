@@ -34,6 +34,7 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
+from app.services.city_service import CityService
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class AdminService:
         redis: Redis,
         settings: Settings,
         tables: AdminTableRepository | None = None,
+        cities: CityService | None = None,
     ) -> None:
         """Wire the repositories, Redis, and settings the admin operations need."""
         self._reads = reads
@@ -74,6 +76,12 @@ class AdminService:
         self._redis = redis
         self._settings = settings
         self._tables = tables
+        self._cities = cities
+
+    async def _active_city(self, name: str) -> str:
+        if self._cities is None:
+            raise RuntimeError("City catalog is not configured.")
+        return await self._cities.require_active_name(name)
 
     async def relationship_choices(
         self,
@@ -416,6 +424,7 @@ class AdminService:
             raise NotFoundError("Courier not found.")
         if not city_of_residence:
             raise ValidationDomainError("City is required.")
+        city_of_residence = await self._active_city(city_of_residence)
         await self._couriers.update_admin_profile(
             profile, city_of_residence=city_of_residence, bio=bio
         )
@@ -446,6 +455,7 @@ class AdminService:
             raise ConflictError("That courier already has a profile.")
         if not city_of_residence:
             raise ValidationDomainError("City is required.")
+        city_of_residence = await self._active_city(city_of_residence)
         if not identity_document:
             raise ValidationDomainError("A national ID or passport is required.")
         if identity_type not in {"national_id", "passport_id"}:
@@ -519,6 +529,7 @@ class AdminService:
             raise ValidationDomainError("Orders require an active customer user.")
         if not delivery_city:
             raise ValidationDomainError("Delivery city is required.")
+        delivery_city = await self._active_city(delivery_city)
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
@@ -579,6 +590,7 @@ class AdminService:
             raise ConflictError("Only NEW or ASSIGNED orders may have delivery details edited.")
         if not delivery_city:
             raise ValidationDomainError("Delivery city is required.")
+        delivery_city = await self._active_city(delivery_city)
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")

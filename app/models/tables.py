@@ -64,6 +64,19 @@ _MONEY = Numeric(12, 2)
 _RATE = Numeric(6, 4)
 
 
+class City(UUIDPrimaryKeyMixin, Base):
+    """An available Saudi delivery/residence city."""
+
+    __tablename__ = "cities"
+
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    shortcut: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
 class RefreshToken(UUIDPrimaryKeyMixin, Base):
     """A rotating refresh token, stored only as a SHA-256 hash (SPEC SECTION 17.2 A07).
 
@@ -96,6 +109,7 @@ class RefreshToken(UUIDPrimaryKeyMixin, Base):
         UniqueConstraint("token_hash", name="uq_refresh_tokens_hash"),
         Index("idx_refresh_tokens_family", "family_id"),
         Index("idx_refresh_tokens_user", "user_id"),
+        Index("idx_refresh_tokens_expiry", "expires_at", "id"),
     )
 
 
@@ -164,7 +178,9 @@ class CourierProfile(TimestampMixin, Base):
     passport_id_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     national_id_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     identity_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    city_of_residence: Mapped[str] = mapped_column(String(100), nullable=False)
+    city_of_residence: Mapped[str] = mapped_column(
+        String(100), ForeignKey("cities.name"), nullable=False
+    )
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -328,7 +344,9 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    delivery_city: Mapped[str] = mapped_column(String(100), nullable=False)
+    delivery_city: Mapped[str] = mapped_column(
+        String(100), ForeignKey("cities.name"), nullable=False
+    )
     delivery_location: Mapped[object] = mapped_column(
         # spatial_index=False: the explicit idx_orders_location_gist below is the one
         # GIST index we want; GeoAlchemy2's auto-index would duplicate it.

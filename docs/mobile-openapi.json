@@ -64,6 +64,38 @@
         "security": []
       }
     },
+    "/api/cities": {
+      "get": {
+        "tags": [
+          "cities"
+        ],
+        "summary": "List Cities",
+        "description": "Fetch active cities to populate registration, profile, and delivery selectors. Send the selected name in the existing city, courier_city, or delivery_city request field; other city text and inactive choices are rejected. Keep the returned id and shortcut for display or local selection state only. The catalog may change, so refresh it before a new city choice rather than hard-coding the seed list.",
+        "operationId": "list_cities_api_cities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CityResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Cities Api Cities Get"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer order creation /request; courier onboarding/profile editing",
+        "x-audience": "Customer, courier, or signed-out visitor; no bearer token",
+        "x-before": "None; load before showing city selector",
+        "x-dependent-api": "POST /api/auth/register; PATCH /api/users/me; POST /api/orders",
+        "x-availability": "configured environments",
+        "security": []
+      }
+    },
     "/api/auth/send-otp": {
       "post": {
         "tags": [
@@ -3639,7 +3671,7 @@
             "title": "Expires In",
             "description": "Seconds until the OTP expires.",
             "examples": [
-              180
+              60
             ]
           },
           "otp_dev": {
@@ -4317,6 +4349,31 @@
         ],
         "title": "WithdrawalResponse",
         "description": "A masked courier withdrawal record."
+      },
+      "CityResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "shortcut": {
+            "type": "string",
+            "title": "Shortcut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "shortcut"
+        ],
+        "title": "CityResponse",
+        "description": "One currently active Saudi city choice."
       }
     },
     "securitySchemes": {

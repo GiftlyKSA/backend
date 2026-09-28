@@ -144,18 +144,23 @@ async def purge_refresh_tokens(
         factory = build_session_factory(own_engine)
     cutoff = datetime.now(UTC) - timedelta(days=settings.REFRESH_TOKEN_RETENTION_DAYS)
     try:
-        async with factory() as session:
-            deleted = await AuthRepository(session).purge_expired(before=cutoff)
-            await session.commit()
-        if deleted:
-            _logger.info("purged %d expired refresh tokens", deleted)
-        return deleted
+        total = 0
+        for _ in range(10):
+            async with factory() as session:
+                deleted = await AuthRepository(session).purge_expired(before=cutoff, limit=1000)
+                await session.commit()
+            total += deleted
+            if deleted < 1000:
+                break
+        if total:
+            _logger.info("purged %d expired refresh tokens", total)
+        return total
     finally:
         if own_engine is not None:
             await own_engine.dispose()
 
 
-@broker.task(schedule=[{"cron": "0 4 * * *"}])
+@broker.task(schedule=[{"cron": "0 * * * *"}])
 async def run_purge_refresh_tokens() -> None:
     """Nightly task: acquire a lock and purge long-expired refresh tokens."""
     settings = get_settings()

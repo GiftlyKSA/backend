@@ -27,9 +27,11 @@ from app.core.exceptions import (
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.models import Order
 from app.models.enums import MediaType, MessageType, OrderStatus, UserRole
+from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
+from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.media_service import MediaService
 from app.services.order_state import assert_transition
@@ -91,6 +93,7 @@ class OrderService:
         self._ratings = ratings
         self._redis = redis
         self._settings = settings
+        self._cities = CityService(CityRepository(session))
 
     async def create_order(self, *, customer_id: uuid.UUID, data: NewOrderInput) -> Order:
         """Create a NEW order after validating limits, coordinates, and media.
@@ -106,6 +109,7 @@ class OrderService:
             raise ValidationDomainError("Longitude is outside the service area.")
         if len(data.request_media_keys) > _MAX_REQUEST_MEDIA:
             raise ValidationDomainError("At most 3 request photos are allowed.")
+        city = await self._cities.require_active_name(data.delivery_city)
         await self._orders.lock_actor(customer_id)
         if await self._orders.count_customer_active(customer_id) >= _MAX_CUSTOMER_ACTIVE:
             raise ConflictError("You have reached the maximum number of active orders.")
@@ -116,7 +120,7 @@ class OrderService:
         order = await self._orders.create(
             customer_id=customer_id,
             description=data.description,
-            delivery_city=data.delivery_city,
+            delivery_city=city,
             longitude=data.longitude,
             latitude=data.latitude,
             delivery_date=data.delivery_date,

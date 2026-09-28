@@ -14,6 +14,7 @@ from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -127,7 +128,7 @@ class Settings(BaseSettings):
     AUTO_APPROVE_HOURS: int = 72
     PAYMENT_EXPIRY_HOURS: int = 48
     MAX_UPLOAD_BYTES: int = 10_485_760
-    OTP_TTL_SECONDS: int = 180
+    OTP_TTL_SECONDS: int = 60
     OTP_MAX_PER_WINDOW: int = 3
     OTP_WINDOW_SECONDS: int = 300
     OTP_BLOCK_SECONDS: int = 1800
@@ -161,6 +162,7 @@ class Settings(BaseSettings):
         """Refuse to boot on any configuration or production-safety violation."""
         self._validate_encryption_keys()
         self._validate_jwt()
+        self._validate_otp_key()
         self._validate_rates()
         self._validate_admin()
         if self.is_production:
@@ -194,6 +196,13 @@ class Settings(BaseSettings):
         else:  # RS256
             if self.JWT_PRIVATE_KEY is None or self.JWT_PUBLIC_KEY is None:
                 raise ValueError("JWT_PRIVATE_KEY and JWT_PUBLIC_KEY are required for RS256.")
+
+    def _validate_otp_key(self) -> None:
+        if self.OTP_HMAC_KEY is None:
+            return
+        key = self.OTP_HMAC_KEY.get_secret_value()
+        if len(key) < 32 or not key.isascii():
+            raise ValueError("OTP_HMAC_KEY must be at least 32 ASCII characters.")
 
     def _validate_rates(self) -> None:
         for name in ("SERVICE_FEE_RATE", "DEFAULT_VAT_RATE", "PLATFORM_COMMISSION_RATE"):
@@ -253,6 +262,17 @@ class Settings(BaseSettings):
             "SNDR_FROM_NAME",
             "SNDR_INVOICE_PAID_TEMPLATE_KEY",
         )
+        for name in ("SUPABASE_URL", "SNDR_BASE_URL"):
+            parsed = urlsplit(getattr(self, name))
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(f"{name} must be an HTTPS base URL without credentials.")
 
     def _require_production_fields(self, *names: str) -> None:
         """Reject an empty production integration setting."""

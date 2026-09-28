@@ -23,6 +23,7 @@ from app.repositories.admin_session_repository import AdminSessionRepository
 from app.repositories.admin_table_repository import AdminTableRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repository import AuthRepository
+from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
@@ -30,6 +31,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_service import AdminService
 from app.services.admin_table_service import AdminTableService
+from app.services.city_service import CityService
 
 SESSION_COOKIE = "admin_session"
 
@@ -93,6 +95,7 @@ def build_auth_service(db: AsyncSession, redis: Redis, settings: Settings) -> Ad
 def build_admin_service(db: AsyncSession, settings: Settings, redis: Redis) -> AdminService:
     """Assemble the admin operations service for a request."""
     return AdminService(
+        cities=CityService(CityRepository(db)),
         reads=AdminReadRepository(db),
         tables=AdminTableRepository(db),
         users=UserRepository(db),
@@ -138,7 +141,11 @@ async def require_admin(request: Request, db: AsyncSession) -> AdminContext:
         service=build_admin_service(db, settings, redis),
         csrf_token=auth.csrf_token_for(session_row.session_token_hash),
         tables=AdminTableService(
-            AdminTableRepository(db), AuditRepository(db), settings, AuthRepository(db)
+            AdminTableRepository(db),
+            AuditRepository(db),
+            settings,
+            AuthRepository(db),
+            CityService(CityRepository(db)),
         ),
     )
 

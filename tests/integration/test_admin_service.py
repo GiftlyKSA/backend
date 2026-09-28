@@ -26,12 +26,14 @@ from app.repositories.admin_read_repository import AdminReadRepository
 from app.repositories.admin_session_repository import AdminSessionRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repository import AuthRepository
+from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_service import AdminService
+from app.services.city_service import CityService
 from app.services.otp_service import OtpService
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +55,7 @@ def _settings(**extra_overrides: object) -> Settings:
 
 def _admin_service(db: AsyncSession, settings: Settings, redis: Redis) -> AdminService:
     return AdminService(
+        cities=CityService(CityRepository(db)),
         reads=AdminReadRepository(db),
         users=UserRepository(db),
         couriers=CourierRepository(db),

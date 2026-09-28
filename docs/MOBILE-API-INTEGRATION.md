@@ -1,8 +1,8 @@
 # Giftly mobile API integration catalog
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 43 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat WebSocket contract, and unsupported-screen gaps.
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 44 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat WebSocket contract, and unsupported-screen gaps.
 
-**Verified against backend source and offline development OpenAPI on 2026-09-27.** This catalogs every implemented non-admin HTTP endpoint (43) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+**Verified against backend source and offline development OpenAPI on 2026-09-28.** This catalogs every implemented non-admin HTTP endpoint (44) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
 ## Integration conventions
 
@@ -43,6 +43,19 @@
 **When/how (58 words):** Use this for deployment readiness checks rather than a customer-facing screen. The handler probes both PostgreSQL and Redis and returns a dependency status map, with HTTP 503 when either is down. A phone app should surface normal request failures through its usual error states instead of polling this endpoint. Do not confuse readiness with the static liveness route.
 
 ## Authentication and session
+
+### GET /api/cities
+
+- **API name:** List active Saudi cities.
+- **Screens:** Customer order creation `/request`; courier registration/onboarding; courier profile editing.
+- **Who / authorization:** Customer, courier, or signed-out visitor; no bearer token.
+- **Path, query, headers:** None.
+- **Request body:** None.
+- **Response:** HTTP 200; array of `{id: UUID string, name: string, shortcut: string}`.
+- **Before:** None; load before showing a city selector.
+- **Then / dependent API:** `POST /api/auth/register` for couriers; `PATCH /api/users/me` for courier city; `POST /api/orders` for delivery city.
+
+**When/how (60 words):** Fetch active cities to populate registration, profile, and delivery selectors. Send the selected `name` in the existing `city`, `courier_city`, or `delivery_city` request field; other city text and inactive choices are rejected. Keep the returned `id` and `shortcut` for display or local selection state only. The catalog may change, so refresh it before a new city choice rather than hard-coding the seed list.
 
 ### POST /api/auth/send-otp
 
@@ -697,7 +710,7 @@ The prototype's labels and local-device data are not server contracts. The table
 | Customer registration `/register-customer` | `register`, `users/me` | Backend supports courier registration too, but mobile has no courier onboarding flow. Name length/age-16 rules from prototype are not enforced here. |
 | Help `/help` | None | Static app content; no help/contact API. |
 | Customer Home `/home` | `users/me`, `wallets/me`, `orders`, `conversations` | No occasions, notification-feed, or aggregated home endpoint. |
-| Create order `/request` | `media/upload-urls`, signed PUT, `media/confirm`, `orders` | Backend allows **0–3** photos, not prototype's four; no morning/evening period, recipient phone, city-choices endpoint, or returned image URLs. |
+| Create order `/request` | `media/upload-urls`, signed PUT, `media/confirm`, `orders` | Backend allows **0–3** photos, not prototype's four; no morning/evening period, recipient phone, or returned image URLs. |
 | Waiting `/waiting/[id]` | `orders/{id}` | No separate push/poll status stream; refresh the order. |
 | Customer/Courier Orders `/orders` | `orders`; courier `orders/available` | No customer text/order-number search; no order number in responses. Courier should not show a search box. |
 | Order detail `/order/[id]` | `orders/{id}`, active invoice, participant, ratings, chat | No timeline events or media/proof download/list API in the returned contract. |
