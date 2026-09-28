@@ -364,12 +364,12 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         """Expose the related city name to existing read contracts."""
         return self.city.name
 
-    delivery_location: Mapped[object] = mapped_column(
-        # spatial_index=False: the explicit idx_orders_location_gist below is the one
-        # GIST index we want; GeoAlchemy2's auto-index would duplicate it.
-        Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
-        nullable=False,
-    )
+    # delivery_location: Mapped[object] = mapped_column(
+    #     # spatial_index=False: the explicit idx_orders_location_gist below is the one
+    #     # GIST index we want; GeoAlchemy2's auto-index would duplicate it.
+    #     Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
+    #     nullable=False,
+    # )
     delivery_address_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[enums.OrderStatus] = mapped_column(
@@ -416,7 +416,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "delivered_at",
             postgresql_where=text("status = 'DELIVERED'"),
         ),
-        Index("idx_orders_location_gist", "delivery_location", postgresql_using="gist"),
+        #Index("idx_orders_location_gist", "delivery_location", postgresql_using="gist"),
     )
 
 
