@@ -34,6 +34,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.integration.conftest import city_by_name
 
 
 def _settings() -> Settings:
@@ -69,7 +70,7 @@ async def _assigned_order(db: AsyncSession) -> Order:
     db.add(
         CourierProfile(
             user_id=courier.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db, "Jeddah"),
             national_id_encrypted="test-ciphertext",
             is_verified=True,
         )
@@ -78,7 +79,7 @@ async def _assigned_order(db: AsyncSession) -> Order:
     order = Order(
         customer_id=customer.id,
         courier_id=courier.id,
-        delivery_city="Jeddah",
+        city=await city_by_name(db, "Jeddah"),
         delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
         delivery_date=date.today() + timedelta(days=20),
         status=OrderStatus.ASSIGNED,
@@ -165,7 +166,7 @@ async def test_cancel_rejects_unknown_invoice(db_session: AsyncSession) -> None:
     db_session.add(
         CourierProfile(
             user_id=courier.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db_session, "Jeddah"),
             national_id_encrypted="test-ciphertext",
             is_verified=True,
         )

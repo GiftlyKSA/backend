@@ -210,7 +210,9 @@ async def table_browser(
 async def courier_new(request: Request, db: DbDep) -> HTMLResponse:
     """Show the courier-profile creation form."""
     ctx = await _ctx(request, db)
-    return _render(request, "courier_new.html", ctx=ctx)
+    return _render(
+        request, "courier_new.html", ctx=ctx, cities=await ctx.service.list_active_cities()
+    )
 
 
 @router.post("/couriers")
@@ -260,6 +262,7 @@ async def courier_detail(request: Request, db: DbDep, courier_id: uuid.UUID) -> 
         profile=profile,
         user=user,
         revealed=None,
+        cities=await ctx.service.list_active_cities(),
     )
 
 
@@ -306,6 +309,7 @@ async def courier_reveal(
         profile=profile,
         user=user,
         revealed=revealed,
+        cities=await ctx.service.list_active_cities(),
     )
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -356,7 +360,13 @@ async def courier_delete(
 async def order_new(request: Request, db: DbDep) -> HTMLResponse:
     """Show the form for an administrator-created NEW order."""
     ctx = await _ctx(request, db)
-    return _render(request, "order_new.html", ctx=ctx, today=date.today().isoformat())
+    return _render(
+        request,
+        "order_new.html",
+        ctx=ctx,
+        today=date.today().isoformat(),
+        cities=await ctx.service.list_active_cities(),
+    )
 
 
 @router.post("/orders")
@@ -408,6 +418,7 @@ async def order_detail(request: Request, db: DbDep, order_id: uuid.UUID) -> HTML
         ctx=ctx,
         order=order,
         can_edit=await ctx.auth.has_step_up(ctx.session_row.session_token_hash),
+        cities=await ctx.service.list_active_cities(),
     )
 
 

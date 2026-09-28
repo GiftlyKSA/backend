@@ -133,6 +133,7 @@ class AuthService:
         city: str | None,
         national_id: str | None,
         passport_id: str | None,
+        city_id: uuid.UUID | None = None,
     ) -> TokenPair:
         """Create the account authorised by a registration token and issue tokens.
 
@@ -161,6 +162,7 @@ class AuthService:
                 email=email,
                 dob=dob,
                 city=city,
+                city_id=city_id,
                 national_id=national_id,
                 passport_id=passport_id,
             )
@@ -176,10 +178,16 @@ class AuthService:
         city: str | None,
         national_id: str | None,
         passport_id: str | None,
+        city_id: uuid.UUID | None = None,
     ) -> TokenPair:
-        if not city:
+        if (city is None) == (city_id is None):
             raise ValidationDomainError("A courier must provide a city of residence.")
-        city = await CityService(CityRepository(self._session)).require_active_name(city)
+        cities = CityService(CityRepository(self._session))
+        city_record = (
+            await cities.require_active_id(city_id)
+            if city_id is not None
+            else await cities.require_active_city(city or "")
+        )
         if not (national_id or passport_id):
             raise ValidationDomainError("A courier must provide a national id or passport.")
 
@@ -213,7 +221,7 @@ class AuthService:
         )
         await self._repo.add_courier_wallet_and_profile(
             user_id=user.id,
-            city=city,
+            city=city_record,
             national_id_encrypted=national_enc,
             passport_id_encrypted=passport_enc,
             identity_fingerprint=fingerprint,

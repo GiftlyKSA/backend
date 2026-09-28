@@ -39,6 +39,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.integration.conftest import city_by_name
 
 
 def _settings(**extra_overrides: object) -> Settings:
@@ -129,7 +130,11 @@ async def test_verify_courier_and_reveal_identity(
         "1122334455", build_aad("courier_profiles", "national_id", str(courier.id))
     )
     db_session.add(
-        CourierProfile(user_id=courier.id, city_of_residence="Jeddah", national_id_encrypted=enc)
+        CourierProfile(
+            user_id=courier.id,
+            city=await city_by_name(db_session, "Jeddah"),
+            national_id_encrypted=enc,
+        )
     )
     await db_session.flush()
 
@@ -174,7 +179,7 @@ async def test_reject_courier_records_private_reason_and_rejected_status(
     db_session.add(
         CourierProfile(
             user_id=courier.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db_session, "Jeddah"),
             national_id_encrypted="test-ciphertext",
         )
     )
@@ -246,7 +251,7 @@ async def test_ban_and_controlled_table_edits(
     order = await OrderRepository(db_session).create(
         customer_id=target.id,
         description="Original",
-        delivery_city="Jeddah",
+        delivery_city=await city_by_name(db_session, "Jeddah"),
         longitude=39.2,
         latitude=21.5,
         delivery_date=date.today() + timedelta(days=2),

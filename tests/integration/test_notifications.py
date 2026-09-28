@@ -13,6 +13,8 @@ from app.repositories.device_token_repository import DeviceTokenRepository
 from app.services.notification_service import NotificationService
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.integration.conftest import city_by_name
+
 
 async def _user(db: AsyncSession, role: UserRole, status: UserStatus = UserStatus.ACTIVE) -> User:
     user = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=role, status=status)
@@ -69,7 +71,7 @@ async def test_notify_city_couriers_targets_verified_active(db_session: AsyncSes
     db_session.add(
         CourierProfile(
             user_id=verified.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db_session, "Jeddah"),
             is_verified=True,
             national_id_encrypted="x",
         )
@@ -78,7 +80,7 @@ async def test_notify_city_couriers_targets_verified_active(db_session: AsyncSes
     db_session.add(
         CourierProfile(
             user_id=unverified.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db_session, "Jeddah"),
             is_verified=False,
             national_id_encrypted="x",
         )

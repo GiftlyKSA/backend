@@ -70,7 +70,7 @@
           "cities"
         ],
         "summary": "List Cities",
-        "description": "Fetch active cities to populate registration, profile, and delivery selectors. Send the selected name in the existing city, courier_city, or delivery_city request field; other city text and inactive choices are rejected. Keep the returned id and shortcut for display or local selection state only. The catalog may change, so refresh it before a new city choice rather than hard-coding the seed list.",
+        "description": "Fetch active cities to populate registration, profile, and delivery selectors. Submit the selected id as city_id for courier registration, courier_city_id for profile editing, or delivery_city_id for order creation. These are UUID relationships to cities.id and inactive choices are rejected. Existing name-based request fields remain for older clients, but provide only one city field per request. Responses include the city ID and display name. Refresh choices before selection instead of hard-coding the seed list.",
         "operationId": "list_cities_api_cities_get",
         "responses": {
           "200": {
@@ -646,7 +646,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
@@ -872,7 +873,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/components/schemas/OrderStatus"
                 },
                 {
                   "type": "null"
@@ -888,7 +889,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
@@ -960,7 +962,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
@@ -1972,7 +1975,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
@@ -2378,6 +2382,11 @@
             "type": "string",
             "title": "City Of Residence"
           },
+          "city_of_residence_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "City Of Residence Id"
+          },
           "bio": {
             "anyOf": [
               {
@@ -2419,6 +2428,7 @@
         "type": "object",
         "required": [
           "city_of_residence",
+          "city_of_residence_id",
           "verification_status"
         ],
         "title": "CourierProfileResponse",
@@ -2480,21 +2490,41 @@
             "title": "Description"
           },
           "delivery_city": {
-            "type": "string",
-            "maxLength": 100,
-            "title": "Delivery City"
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery City",
+            "description": "Legacy city name; select delivery_city_id from GET /api/cities."
+          },
+          "delivery_city_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery City Id"
           },
           "latitude": {
             "type": "number",
-            "maximum": 90,
-            "minimum": -90,
+            "maximum": 90.0,
+            "minimum": -90.0,
             "title": "Latitude",
             "description": "Drop-off latitude."
           },
           "longitude": {
             "type": "number",
-            "maximum": 180,
-            "minimum": -180,
+            "maximum": 180.0,
+            "minimum": -180.0,
             "title": "Longitude",
             "description": "Drop-off longitude."
           },
@@ -2517,7 +2547,6 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "delivery_city",
           "latitude",
           "longitude",
           "delivery_date"
@@ -2529,15 +2558,15 @@
         "properties": {
           "latitude": {
             "type": "number",
-            "maximum": 90,
-            "minimum": -90,
+            "maximum": 90.0,
+            "minimum": -90.0,
             "title": "Latitude",
             "description": "Courier's current latitude."
           },
           "longitude": {
             "type": "number",
-            "maximum": 180,
-            "minimum": -180,
+            "maximum": 180.0,
+            "minimum": -180.0,
             "title": "Longitude",
             "description": "Courier's current longitude."
           },
@@ -2838,8 +2867,8 @@
           },
           "quantity": {
             "type": "integer",
-            "maximum": 999,
-            "minimum": 1,
+            "maximum": 999.0,
+            "minimum": 1.0,
             "title": "Quantity"
           },
           "tax_rate": {
@@ -3070,6 +3099,11 @@
             "type": "string",
             "title": "Delivery City"
           },
+          "delivery_city_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Delivery City Id"
+          },
           "delivery_date": {
             "type": "string",
             "title": "Delivery Date"
@@ -3140,6 +3174,7 @@
           "customer_id",
           "courier_id",
           "delivery_city",
+          "delivery_city_id",
           "delivery_date",
           "description",
           "total_amount",
@@ -3192,6 +3227,11 @@
             "type": "string",
             "title": "Delivery City"
           },
+          "delivery_city_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Delivery City Id"
+          },
           "delivery_date": {
             "type": "string",
             "title": "Delivery Date"
@@ -3222,6 +3262,7 @@
           "id",
           "status",
           "delivery_city",
+          "delivery_city_id",
           "delivery_date",
           "description",
           "created_at",
@@ -3398,8 +3439,8 @@
         "properties": {
           "score": {
             "type": "integer",
-            "maximum": 5,
-            "minimum": 1,
+            "maximum": 5.0,
+            "minimum": 1.0,
             "title": "Score"
           },
           "comment": {
@@ -3590,7 +3631,19 @@
               }
             ],
             "title": "City",
-            "description": "Required for couriers."
+            "description": "Legacy city name for couriers; prefer city_id from GET /api/cities."
+          },
+          "city_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City Id"
           },
           "national_id": {
             "anyOf": [
@@ -3678,8 +3731,8 @@
             "anyOf": [
               {
                 "type": "integer",
-                "maximum": 99999,
-                "minimum": 10000
+                "maximum": 99999.0,
+                "minimum": 10000.0
               },
               {
                 "type": "null"
@@ -3909,7 +3962,7 @@
           },
           "byte_size": {
             "type": "integer",
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Byte Size",
             "description": "Declared size in bytes; must be within the cap."
           }
@@ -4082,6 +4135,18 @@
               }
             ],
             "title": "Courier City"
+          },
+          "courier_city_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier City Id"
           },
           "courier_bio": {
             "anyOf": [
@@ -4374,6 +4439,22 @@
         ],
         "title": "CityResponse",
         "description": "One currently active Saudi city choice."
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "NEW",
+          "ASSIGNED",
+          "WAITING_PAYMENT",
+          "IN_PROGRESS",
+          "DELIVERED",
+          "COMPLETED",
+          "CANCELLED",
+          "DISPUTED",
+          "REFUNDED"
+        ],
+        "title": "OrderStatus",
+        "description": "Order lifecycle status (see the state machine in SPEC SECTION 9)."
       }
     },
     "securitySchemes": {

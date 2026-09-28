@@ -12,7 +12,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, CourierProfile, Order, User
+from app.models import City, Conversation, CourierProfile, Order, User
 from app.models.enums import UserRole, UserStatus
 
 _DASHBOARD_ADMIN_NAMESPACE = uuid.UUID("48c72a54-78e4-4a0e-a20f-54378ed7f950")
@@ -99,10 +99,11 @@ class UserRepository:
                     User.role,
                     User.rating,
                     User.rating_count,
-                    CourierProfile.city_of_residence,
+                    City.name.label("city_of_residence"),
                     CourierProfile.bio,
                 )
                 .outerjoin(CourierProfile, CourierProfile.user_id == User.id)
+                .outerjoin(City, City.id == CourierProfile.city_of_residence_id)
                 .where(User.id == participant_id, relationship)
             )
         ).one_or_none()

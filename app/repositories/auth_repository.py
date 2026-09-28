@@ -8,7 +8,7 @@ from datetime import date, datetime
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AdminSession, CourierProfile, RefreshToken, User, Wallet
+from app.models import AdminSession, City, CourierProfile, RefreshToken, User, Wallet
 from app.models.enums import UserRole, UserStatus, WalletType
 
 
@@ -61,7 +61,7 @@ class AuthRepository:
         self,
         *,
         user_id: uuid.UUID,
-        city: str,
+        city: City,
         national_id_encrypted: str | None,
         passport_id_encrypted: str | None,
         identity_fingerprint: str,
@@ -71,7 +71,7 @@ class AuthRepository:
         self._session.add(
             CourierProfile(
                 user_id=user_id,
-                city_of_residence=city,
+                city=city,
                 national_id_encrypted=national_id_encrypted,
                 passport_id_encrypted=passport_id_encrypted,
                 identity_fingerprint=identity_fingerprint,

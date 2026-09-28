@@ -55,7 +55,7 @@
 - **Before:** None; load before showing a city selector.
 - **Then / dependent API:** `POST /api/auth/register` for couriers; `PATCH /api/users/me` for courier city; `POST /api/orders` for delivery city.
 
-**When/how (60 words):** Fetch active cities to populate registration, profile, and delivery selectors. Send the selected `name` in the existing `city`, `courier_city`, or `delivery_city` request field; other city text and inactive choices are rejected. Keep the returned `id` and `shortcut` for display or local selection state only. The catalog may change, so refresh it before a new city choice rather than hard-coding the seed list.
+**When/how:** Fetch active cities to populate registration, profile, and delivery selectors. Submit the selected `id` as `city_id` during courier registration, `courier_city_id` during profile editing, or `delivery_city_id` during order creation. The backend stores these as UUID relationships to `cities.id` and rejects inactive IDs. Existing name-based request fields remain for older clients, but send only one city field per request. Responses include the ID and display name. Refresh choices before a new selection rather than hard-coding the seed list.
 
 ### POST /api/auth/send-otp
 
@@ -89,7 +89,7 @@
 - **Screens:** Customer registration `/register-customer`; courier onboarding when built.
 - **Who / authorization:** Signed-out with registration token; no bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `RegisterRequest` — `registration_token: string`; `role: string [CUSTOMER, COURIER]`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `city?: string | null`; `national_id?: string | null`; `passport_id?: string | null`
+- **Request body:** `RegisterRequest` — `registration_token: string`; `role: string [CUSTOMER, COURIER]`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `city_id?: UUID string | null` (preferred) or `city?: string | null` (legacy); `national_id?: string | null`; `passport_id?: string | null`
 - **Response:** HTTP 201; `TokenResponse` — `access_token: string`; `refresh_token: string`; `role: string`
 - **Before:** `POST /api/auth/verify-otp` returning `is_new_user=true`.
 - **Then / dependent API:** `GET /api/users/me`; courier verification review before courier operations.
@@ -143,7 +143,7 @@
 - **Screens:** Profile `/profile`.
 - **Who / authorization:** Authenticated customer or courier; bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `UserUpdateRequest` — `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `courier_city?: string | null`; `courier_bio?: string | null`
+- **Request body:** `UserUpdateRequest` — `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `courier_city_id?: UUID string | null` (preferred) or `courier_city?: string | null` (legacy); `courier_bio?: string | null`
 - **Response:** HTTP 200; `UserMeResponse` — `id: string`; `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `rating: string`; `rating_count: integer`; `courier_profile?: CourierProfileResponse | null`
 - **Before:** `GET /api/users/me`.
 - **Then / dependent API:** Refresh `GET /api/users/me` or update local profile from response.
@@ -266,8 +266,8 @@
 - **Screens:** Customer Create order `/request`.
 - **Who / authorization:** Authenticated customer; bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `CreateOrderRequest` — `description?: string | null`; `delivery_city: string`; `latitude: number`; `longitude: number`; `delivery_date: date (YYYY-MM-DD)`; `request_media_keys?: string[]`
-- **Response:** HTTP 201; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Request body:** `CreateOrderRequest` — `description?: string | null`; exactly one of `delivery_city_id: UUID string` (preferred) or `delivery_city: string` (legacy); `latitude: number`; `longitude: number`; `delivery_date: date (YYYY-MM-DD)`; `request_media_keys?: string[]`
+- **Response:** HTTP 201; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Optional `POST /api/media/upload-urls` → direct PUT → confirm for 0–3 photos.
 - **Then / dependent API:** `GET /api/orders/{order_id}` and `/waiting/[id]`; courier `GET /api/orders/available`.
 
@@ -306,7 +306,7 @@
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order UUID from create, owned list, or accepted order.
 - **Then / dependent API:** Active invoice, participant profile, chat, rating, or state transition.
 
@@ -319,7 +319,7 @@
 - **Who / authorization:** Authenticated active verified courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** `GET /api/orders/available` supplies a `NEW` order UUID.
 - **Then / dependent API:** `GET /api/orders/{order_id}`, chat, then invoice creation.
 
@@ -332,7 +332,7 @@
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `CancelOrderRequest` — `reason?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Participant order still in a cancellable pre-progress state.
 - **Then / dependent API:** Refresh `GET /api/orders/{order_id}` and owned list.
 
@@ -345,7 +345,7 @@
 - **Who / authorization:** Authenticated active verified assigned courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `DeliverRequest` — `latitude: number`; `longitude: number`; `proof_media_keys: string[]`; `note?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order `IN_PROGRESS`; 1–5 confirmed `DELIVERY_PROOF` image keys.
 - **Then / dependent API:** Customer `POST /api/orders/{order_id}/approve` or dispute.
 
@@ -358,7 +358,7 @@
 - **Who / authorization:** Authenticated customer who owns the order; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order is `DELIVERED` and proof reviewed.
 - **Then / dependent API:** `POST /api/orders/{order_id}/ratings`; refresh wallet/order.
 
@@ -634,6 +634,7 @@ These types appear inside the request/response shapes above. Field names marked 
 ### CourierProfileResponse
 
 - `city_of_residence`: `string`.
+- `city_of_residence_id`: `UUID string`.
 - `bio?`: `string | null`.
 - `verification_status`: `string`.
 - `rejection_reason?`: `string | null`.
@@ -644,6 +645,7 @@ These types appear inside the request/response shapes above. Field names marked 
 - `id`: `string`.
 - `status`: `string`.
 - `delivery_city`: `string`.
+- `delivery_city_id`: `UUID string`.
 - `delivery_date`: `string`.
 - `description`: `string | null`.
 - `created_at`: `string`.

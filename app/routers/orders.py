@@ -114,6 +114,7 @@ def _summary(view: OrderView) -> OrderSummary:
         id=str(order.id),
         status=str(order.status),
         delivery_city=order.delivery_city,
+        delivery_city_id=order.delivery_city_id,
         delivery_date=order.delivery_date.isoformat(),
         description=order.description,
         created_at=order.created_at.isoformat(),
@@ -156,6 +157,7 @@ async def create_order(
         data=NewOrderInput(
             description=body.description,
             delivery_city=body.delivery_city,
+            delivery_city_id=body.delivery_city_id,
             latitude=body.latitude,
             longitude=body.longitude,
             delivery_date=body.delivery_date,
@@ -333,6 +335,7 @@ def _detail(view: OrderView) -> OrderDetail:
         customer_id=str(order.customer_id),
         courier_id=str(order.courier_id) if order.courier_id else None,
         delivery_city=order.delivery_city,
+        delivery_city_id=order.delivery_city_id,
         delivery_date=order.delivery_date.isoformat(),
         description=order.description,
         latitude=lat,

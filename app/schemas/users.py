@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -12,6 +13,7 @@ class CourierProfileResponse(BaseModel):
     """Safe courier details visible only through an authorized profile response."""
 
     city_of_residence: str
+    city_of_residence_id: UUID
     bio: str | None = None
     verification_status: str
     rejection_reason: str | None = None
@@ -59,4 +61,5 @@ class UserUpdateRequest(BaseModel):
     ) = None
     dob: date | None = None
     courier_city: Annotated[str, StringConstraints(min_length=1, max_length=100)] | None = None
+    courier_city_id: UUID | None = None
     courier_bio: Annotated[str, StringConstraints(max_length=1000)] | None = None

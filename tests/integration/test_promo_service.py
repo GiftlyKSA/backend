@@ -42,6 +42,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import make_test_settings
+from tests.integration.conftest import city_by_name
 
 
 def _settings() -> Settings:
@@ -64,7 +65,7 @@ async def _order_and_invoice(db: AsyncSession, customer_id: uuid.UUID) -> tuple[
     order = Order(
         customer_id=customer_id,
         courier_id=customer_id,  # a self-reference is fine for these promo tests
-        delivery_city="Jeddah",
+        city=await city_by_name(db, "Jeddah"),
         delivery_location=WKTElement("POINT(39.1728 21.5433)", srid=4326),
         delivery_date=date.today() + timedelta(days=30),
         status=OrderStatus.ASSIGNED,

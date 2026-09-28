@@ -16,6 +16,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.integration.conftest import city_by_name
 
 _KEY_V1 = base64.b64encode(b"\x00" * 32).decode()
 _KEY_V2 = base64.b64encode(b"\x11" * 32).decode()
@@ -42,7 +43,7 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
     await db_session.flush()
     profile = CourierProfile(
         user_id=courier.id,
-        city_of_residence="Jeddah",
+        city=await city_by_name(db_session, "Jeddah"),
         is_verified=True,
         national_id_encrypted=v1_cipher.encrypt(
             "1234567890", build_aad("courier_profiles", "national_id", str(courier.id))
@@ -56,7 +57,7 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
     order = Order(
         customer_id=customer.id,
         courier_id=courier.id,
-        delivery_city="Jeddah",
+        city=await city_by_name(db_session, "Jeddah"),
         delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
         delivery_date=date.today(),
         status=OrderStatus.IN_PROGRESS,

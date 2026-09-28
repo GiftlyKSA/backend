@@ -18,7 +18,7 @@
   <h2>Edit courier profile</h2>
   <form method="post" action="/admin/couriers/{{ profile.user_id }}/edit">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <label>City<input name="city_of_residence" value="{{ profile.city_of_residence }}" maxlength="100" required></label>
+    <label>City<select name="city_of_residence" required>{% for city in cities %}<option value="{{ city.name }}" {% if city.id == profile.city_of_residence_id %}selected{% endif %}>{{ city.name }}</option>{% endfor %}</select></label>
     <label>Bio<textarea name="bio" maxlength="1000">{{ profile.bio or "" }}</textarea></label>
     <button type="submit">Save profile</button>
   </form>

@@ -313,7 +313,7 @@ async def test_fulfillment_revalidates_current_participation(method):
 )
 async def test_admin_profile_creation_derives_identity(national, passport, expected):
     service, repo, _, settings = setup_service()
-    submitted = {"user_id": str(uuid4()), "city_of_residence": "Jeddah"}
+    submitted = {"user_id": str(uuid4()), "city_of_residence_id": str(uuid4())}
     if national:
         submitted["national_id_encrypted"] = national
     if passport:

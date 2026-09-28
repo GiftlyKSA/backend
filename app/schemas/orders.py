@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 class CreateOrderRequest(BaseModel):
@@ -13,13 +14,23 @@ class CreateOrderRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     description: Annotated[str, StringConstraints(max_length=2000)] | None = None
-    delivery_city: Annotated[str, StringConstraints(max_length=100)] = Field(...)
+    delivery_city: Annotated[str, StringConstraints(max_length=100)] | None = Field(
+        None, description="Legacy city name; select delivery_city_id from GET /api/cities."
+    )
+    delivery_city_id: UUID | None = None
     latitude: float = Field(..., ge=-90, le=90, description="Drop-off latitude.")
     longitude: float = Field(..., ge=-180, le=180, description="Drop-off longitude.")
     delivery_date: date = Field(..., description="Requested delivery date (<= 6 months out).")
     request_media_keys: list[str] = Field(
         default_factory=list, max_length=3, description="Confirmed request-photo keys (0–3)."
     )
+
+    @model_validator(mode="after")
+    def validate_city_choice(self) -> CreateOrderRequest:
+        """Require one city selection without ambiguous dual inputs."""
+        if (self.delivery_city is None) == (self.delivery_city_id is None):
+            raise ValueError("Provide exactly one city name or city ID.")
+        return self
 
 
 class CancelOrderRequest(BaseModel):
@@ -35,6 +46,7 @@ class OrderSummary(BaseModel):
     id: str
     status: str
     delivery_city: str
+    delivery_city_id: UUID
     delivery_date: str
     description: str | None
     created_at: str
@@ -51,6 +63,7 @@ class OrderDetail(BaseModel):
     customer_id: str
     courier_id: str | None
     delivery_city: str
+    delivery_city_id: UUID
     delivery_date: str
     description: str | None
     latitude: float | None = Field(None, description="Shown to a courier only once assigned.")

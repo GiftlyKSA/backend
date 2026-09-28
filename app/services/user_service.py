@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationDomainError
 from app.models import CourierProfile, User
 from app.models.enums import UserRole, UserStatus
 from app.repositories.audit_repository import AuditRepository
@@ -62,6 +62,7 @@ class UserService:
         email: str | None,
         dob: date | None,
         courier_city: str | None,
+        courier_city_id: uuid.UUID | None = None,
         courier_bio: str | None,
         supplied: set[str],
     ) -> tuple[User, CourierProfile | None]:
@@ -73,18 +74,33 @@ class UserService:
             user.email = email
         if "dob" in supplied:
             user.date_of_birth = dob
-        courier_fields = {"courier_city", "courier_bio"} & supplied
+        courier_fields = {"courier_city", "courier_city_id", "courier_bio"} & supplied
         if courier_fields and (user.role is not UserRole.COURIER or courier is None):
             raise ForbiddenError("Courier profile fields require a courier account.")
         if courier is not None:
-            if "courier_city" in supplied and courier_city is not None:
-                if self._cities is None:
-                    raise RuntimeError("City catalog is not configured.")
-                courier.city_of_residence = await self._cities.require_active_name(courier_city)
+            await self._update_courier_city(courier, courier_city, courier_city_id)
             if "courier_bio" in supplied:
                 courier.bio = courier_bio
         await self._users.flush()
         return user, courier
+
+    async def _update_courier_city(
+        self,
+        courier: CourierProfile,
+        name: str | None,
+        city_id: uuid.UUID | None,
+    ) -> None:
+        if name is not None and city_id is not None:
+            raise ValidationDomainError("Provide one courier city selection.")
+        if name is None and city_id is None:
+            return
+        if self._cities is None:
+            raise RuntimeError("City catalog is not configured.")
+        courier.city = (
+            await self._cities.require_active_id(city_id)
+            if city_id is not None
+            else await self._cities.require_active_city(name or "")
+        )
 
     async def get_participant(
         self, *, actor_id: uuid.UUID, participant_id: uuid.UUID

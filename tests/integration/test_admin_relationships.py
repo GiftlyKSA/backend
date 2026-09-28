@@ -4,6 +4,16 @@ from app.models import CourierProfile, User
 from app.models.enums import UserRole
 from app.repositories.admin_table_repository import AdminTableRepository
 
+from tests.integration.conftest import city_by_name
+
+
+async def test_city_relationship_choices_use_city_ids(db_session):
+    city = await city_by_name(db_session, "Jeddah")
+    choices, _ = await AdminTableRepository(db_session).choices(
+        "orders", "delivery_city_id", search="Jeddah"
+    )
+    assert any(choice["value"] == str(city.id) for choice in choices)
+
 
 async def test_profile_choices_hide_claimed_users_but_preserve_edit_owner(db_session):
     users = [
@@ -15,7 +25,9 @@ async def test_profile_choices_hide_claimed_users_but_preserve_edit_owner(db_ses
     await db_session.flush()
     db_session.add(
         CourierProfile(
-            user_id=users[0].id, city_of_residence="Riyadh", national_id_encrypted="test"
+            user_id=users[0].id,
+            city=await city_by_name(db_session, "Riyadh"),
+            national_id_encrypted="test",
         )
     )
     await db_session.flush()

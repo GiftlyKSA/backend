@@ -31,7 +31,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, INET, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import enums
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -178,9 +178,16 @@ class CourierProfile(TimestampMixin, Base):
     passport_id_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     national_id_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     identity_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    city_of_residence: Mapped[str] = mapped_column(
-        String(100), ForeignKey("cities.name"), nullable=False
+    city_of_residence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cities.id"), nullable=False
     )
+    city: Mapped[City] = relationship(lazy="selectin")
+
+    @property
+    def city_of_residence(self) -> str:
+        """Expose the related city name to existing read contracts."""
+        return self.city.name
+
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -196,7 +203,7 @@ class CourierProfile(TimestampMixin, Base):
             "passport_id_encrypted IS NOT NULL OR national_id_encrypted IS NOT NULL",
             name="chk_identity_present",
         ),
-        Index("idx_courier_profiles_city_verified", "city_of_residence", "is_verified"),
+        Index("idx_courier_profiles_city_verified", "city_of_residence_id", "is_verified"),
         Index(
             "uq_courier_identity_fingerprint",
             "identity_fingerprint",
@@ -344,9 +351,16 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    delivery_city: Mapped[str] = mapped_column(
-        String(100), ForeignKey("cities.name"), nullable=False
+    delivery_city_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cities.id"), nullable=False
     )
+    city: Mapped[City] = relationship(lazy="selectin")
+
+    @property
+    def delivery_city(self) -> str:
+        """Expose the related city name to existing read contracts."""
+        return self.city.name
+
     delivery_location: Mapped[object] = mapped_column(
         # spatial_index=False: the explicit idx_orders_location_gist below is the one
         # GIST index we want; GeoAlchemy2's auto-index would duplicate it.
@@ -385,7 +399,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status IN ('NEW','CANCELLED') OR courier_id IS NOT NULL",
             name="chk_courier_required_after_assignment",
         ),
-        Index("idx_orders_city_status", "delivery_city", "status"),
+        Index("idx_orders_city_status", "delivery_city_id", "status"),
         Index("idx_orders_customer_created", "customer_id", text("created_at DESC")),
         Index(
             "idx_orders_courier_created",

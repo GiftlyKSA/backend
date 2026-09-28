@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -104,8 +105,9 @@ class RegisterRequest(BaseModel):
     ) = None
     dob: date | None = None
     city: Annotated[str, StringConstraints(max_length=100)] | None = Field(
-        None, description="Required for couriers."
+        None, description="Legacy city name for couriers; prefer city_id from GET /api/cities."
     )
+    city_id: UUID | None = None
     national_id: Annotated[str, StringConstraints(max_length=64)] | None = Field(
         None, description="Courier identity (national id or passport required)."
     )

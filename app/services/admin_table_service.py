@@ -94,13 +94,14 @@ class AdminTableService:
         creating = record_id is None
         values = parse_values(table, submitted, creating=creating)
         city_field = {
-            "orders": "delivery_city",
-            "courier_profiles": "city_of_residence",
+            "orders": "delivery_city_id",
+            "courier_profiles": "city_of_residence_id",
         }.get(table_name)
         if city_field is not None and city_field in values:
             if self._cities is None:
                 raise RuntimeError("City catalog is not configured.")
-            values[city_field] = await self._cities.require_active_name(str(values[city_field]))
+            city = await self._cities.require_active_id(values[city_field])
+            values[city_field] = city.id
         key = primary_key(table)
         if record_id is None:
             record_id = values.get(key.name, uuid.uuid4())

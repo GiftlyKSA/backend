@@ -36,6 +36,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.integration.conftest import city_by_name
 
 _LNG, _LAT = 39.2000, 21.5000
 
@@ -79,7 +80,7 @@ async def _paid_order(
     order = Order(
         customer_id=customer.id,
         courier_id=courier.id,
-        delivery_city="Jeddah",
+        city=await city_by_name(db, "Jeddah"),
         delivery_location=WKTElement(f"POINT({_LNG} {_LAT})", srid=4326),
         delivery_date=datetime.now(UTC).date() + timedelta(days=10),
         status=status,

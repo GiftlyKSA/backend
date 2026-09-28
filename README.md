@@ -60,8 +60,10 @@ uv run uvicorn app.main:create_app --factory --reload   # http://localhost:8000
 
 The city migration creates 20 active Saudi city choices; `app.seed_cities` is an
 idempotent safety net for an empty catalog. `GET /api/cities` lists active choices
-without authentication. Order and courier city fields still send the selected `name`;
-the database requires a catalog name, and API services reject inactive names. The
+without authentication. Orders and courier profiles store UUID foreign keys to `cities.id`.
+New clients can submit the selected `id` as `delivery_city_id`, `city_id`, or
+`courier_city_id`; the former city-name request fields remain accepted for existing clients.
+Responses include both the city ID and display name. API services reject inactive cities. The
 `shortcut` values are application labels, not official municipality codes. The
 initial city selection follows the [Saudi National Debt Management Center map](https://ndmc.gov.sa/IssuancePrograms/Documents/KSA%20Ijarah%20Sukuk%20Establishment%202025.pdf).
 

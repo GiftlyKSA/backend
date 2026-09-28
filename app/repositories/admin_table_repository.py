@@ -66,6 +66,13 @@ def record_label(table: Table, row: Mapping[str, Any]) -> str:
     return " · ".join([*values, str(row[primary_key(table).name])])
 
 
+def active_city_choices(query: Select[Any], target: Column[Any]) -> Select[Any]:
+    """Hide inactive cities from new relationship selections."""
+    if target.table.name == "cities":
+        return query.where(target.table.c.is_active.is_(True))
+    return query
+
+
 def relationship_query(
     table_name: str,
     field: str,
@@ -78,7 +85,7 @@ def relationship_query(
     column = relationship_column(table_name, field)
     target = next(iter(column.foreign_keys)).column
     table = get_table(table_name)
-    query = select(target, *label_columns(target.table))
+    query = active_city_choices(select(target, *label_columns(target.table)), target)
     if target.table.name == "users":
         query = query.where(target.table.c.deleted_at.is_(None))
         role = _user_role(table_name, field)

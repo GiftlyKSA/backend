@@ -21,6 +21,8 @@ async def test_city_seed_is_idempotent_and_inactive_cities_are_rejected(
     service = CityService(CityRepository(db_session))
     assert len(await service.list_active()) == 20
     assert await service.require_active_name(" jEdDaH ") == "Jeddah"
+    jeddah_city = await service.require_active_city("Jeddah")
+    assert await service.require_active_id(jeddah_city.id) is jeddah_city
 
     jeddah = await db_session.scalar(select(City).where(City.name == "Jeddah"))
     assert jeddah is not None
@@ -29,3 +31,5 @@ async def test_city_seed_is_idempotent_and_inactive_cities_are_rejected(
     assert len(await service.list_active()) == 19
     with pytest.raises(ValidationDomainError):
         await service.require_active_name("Jeddah")
+    with pytest.raises(ValidationDomainError):
+        await service.require_active_id(jeddah_city.id)

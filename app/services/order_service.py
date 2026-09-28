@@ -51,11 +51,12 @@ class NewOrderInput:
     """Validated inputs for creating an order."""
 
     description: str | None
-    delivery_city: str
+    delivery_city: str | None
     latitude: float
     longitude: float
     delivery_date: date
     request_media_keys: list[str]
+    delivery_city_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -109,7 +110,12 @@ class OrderService:
             raise ValidationDomainError("Longitude is outside the service area.")
         if len(data.request_media_keys) > _MAX_REQUEST_MEDIA:
             raise ValidationDomainError("At most 3 request photos are allowed.")
-        city = await self._cities.require_active_name(data.delivery_city)
+        if data.delivery_city_id is not None:
+            city = await self._cities.require_active_id(data.delivery_city_id)
+        elif data.delivery_city is not None:
+            city = await self._cities.require_active_city(data.delivery_city)
+        else:
+            raise ValidationDomainError("Select an active city from the city list.")
         await self._orders.lock_actor(customer_id)
         if await self._orders.count_customer_active(customer_id) >= _MAX_CUSTOMER_ACTIVE:
             raise ConflictError("You have reached the maximum number of active orders.")
@@ -242,7 +248,7 @@ class OrderService:
         if profile is None:  # pragma: no cover - verified guard already proves this
             raise ForbiddenError("Complete your courier profile first.")
         orders = await self._orders.list_available(
-            profile.city_of_residence, limit=limit, before_id=before_id
+            profile.city_of_residence_id, limit=limit, before_id=before_id
         )
         return await self._enrich_orders(orders, actor_id=courier_id)
 

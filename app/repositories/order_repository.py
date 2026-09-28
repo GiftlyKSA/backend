@@ -17,7 +17,7 @@ from redis.asyncio import Redis
 from sqlalchemy import Select, cast, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, Order, OrderMedia, User
+from app.models import City, Conversation, Order, OrderMedia, User
 from app.models.enums import MediaType, OrderStatus
 
 # Statuses that count against a customer's concurrent-order limit.
@@ -49,7 +49,7 @@ class OrderRepository:
         *,
         customer_id: uuid.UUID,
         description: str | None,
-        delivery_city: str,
+        delivery_city: City,
         longitude: float,
         latitude: float,
         delivery_date: date,
@@ -59,7 +59,7 @@ class OrderRepository:
         order = Order(
             customer_id=customer_id,
             description=description,
-            delivery_city=delivery_city,
+            city=delivery_city,
             delivery_location=func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326),
             delivery_date=delivery_date,
             delivery_address_note=address_note,
@@ -152,13 +152,13 @@ class OrderRepository:
         order: Order,
         *,
         description: str | None,
-        delivery_city: str,
+        delivery_city: City,
         delivery_date: date,
         delivery_address_note: str | None,
     ) -> None:
         """Update non-financial, non-location order details for an administrator."""
         order.description = description
-        order.delivery_city = delivery_city
+        order.city = delivery_city
         order.delivery_date = delivery_date
         order.delivery_address_note = delivery_address_note
         await self._session.flush()
@@ -231,10 +231,12 @@ class OrderRepository:
         )
 
     async def list_available(
-        self, city: str, *, limit: int, before_id: uuid.UUID | None
+        self, city_id: uuid.UUID, *, limit: int, before_id: uuid.UUID | None
     ) -> list[Order]:
         """Return NEW orders in a city (the courier radar), newest first, keyset-paged."""
-        query = select(Order).where(Order.delivery_city == city, Order.status == OrderStatus.NEW)
+        query = select(Order).where(
+            Order.delivery_city_id == city_id, Order.status == OrderStatus.NEW
+        )
         return await self._page(query, limit, before_id)
 
     async def _page(

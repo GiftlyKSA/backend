@@ -68,16 +68,16 @@ async def test_generic_order_write_rejects_inactive_city(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         admin_table_service,
         "parse_values",
-        lambda *args, **kwargs: {"delivery_city": "Inactive City"},
+        lambda *args, **kwargs: {"delivery_city_id": uuid4()},
     )
     service, repo, _, _ = setup_service()
     city_choices = AsyncMock()
-    city_choices.require_active_name.side_effect = ValidationDomainError("Inactive city.")
+    city_choices.require_active_id.side_effect = ValidationDomainError("Inactive city.")
     service._cities = city_choices
     with pytest.raises(ValidationDomainError, match="Inactive city"):
         await service.save(
             "orders",
-            {"customer_id": str(uuid4()), "delivery_city": "Inactive City"},
+            {"customer_id": str(uuid4()), "delivery_city_id": str(uuid4())},
             admin_id=uuid4(),
             session_id=uuid4(),
         )

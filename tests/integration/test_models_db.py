@@ -27,6 +27,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.integration.conftest import city_by_name
+
 
 def _future_date() -> date:
     return date.today() + timedelta(days=30)
@@ -54,13 +56,15 @@ async def test_order_invoice_roundtrip(db_session: AsyncSession) -> None:
     customer = await _make_customer(db_session)
     order = Order(
         customer_id=customer.id,
-        delivery_city="Jeddah",
+        city=await city_by_name(db_session, "Jeddah"),
         delivery_location=WKTElement("POINT(39.1728 21.5433)", srid=4326),
         delivery_date=_future_date(),
         status=OrderStatus.NEW,
     )
     db_session.add(order)
     await db_session.flush()
+    assert order.delivery_city_id == order.city.id
+    assert order.delivery_city == "Jeddah"
 
     courier = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.COURIER)
     db_session.add(courier)
@@ -106,7 +110,7 @@ async def test_invoice_net_math_check_rejects_bad_totals(db_session: AsyncSessio
     customer = await _make_customer(db_session)
     order = Order(
         customer_id=customer.id,
-        delivery_city="Riyadh",
+        city=await city_by_name(db_session, "Riyadh"),
         delivery_location=WKTElement("POINT(46.6753 24.7136)", srid=4326),
         delivery_date=_future_date(),
     )
@@ -169,7 +173,7 @@ async def test_geography_distance_query(db_session: AsyncSession) -> None:
     customer = await _make_customer(db_session)
     order = Order(
         customer_id=customer.id,
-        delivery_city="Jeddah",
+        city=await city_by_name(db_session, "Jeddah"),
         delivery_location=WKTElement("POINT(39.17290 21.54340)", srid=4326),
         delivery_date=_future_date(),
     )

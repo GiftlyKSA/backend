@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CourierProfile, DeviceToken, User
+from app.models import City, CourierProfile, DeviceToken, User
 from app.models.enums import DeviceOs, UserRole, UserStatus
 
 
@@ -62,7 +62,8 @@ class DeviceTokenRepository:
                 User.role == UserRole.COURIER,
                 User.status == UserStatus.ACTIVE,
                 CourierProfile.is_verified.is_(True),
-                CourierProfile.city_of_residence == city,
+                CourierProfile.city_of_residence_id
+                == select(City.id).where(City.name == city).scalar_subquery(),
             )
         )
         return list(rows)

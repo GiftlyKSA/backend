@@ -66,6 +66,7 @@ async def update_me(
         email=body.email,
         dob=body.dob,
         courier_city=body.courier_city,
+        courier_city_id=body.courier_city_id,
         courier_bio=body.courier_bio,
         supplied=body.model_fields_set,
     )
@@ -105,6 +106,7 @@ def _to_response(user: User, courier: CourierProfile | None) -> UserMeResponse:
         courier_profile=(
             CourierProfileResponse(
                 city_of_residence=courier.city_of_residence,
+                city_of_residence_id=courier.city_of_residence_id,
                 bio=courier.bio,
                 verification_status=str(user.status),
                 rejection_reason=(

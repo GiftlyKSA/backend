@@ -20,6 +20,7 @@ from app.services.withdrawal_service import WithdrawalService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.integration.conftest import city_by_name
 
 _IBAN = "SA0380000000608010167519"
 
@@ -36,7 +37,7 @@ async def _service(db: AsyncSession) -> tuple[WithdrawalService, User, User, Wal
     db.add(
         CourierProfile(
             user_id=courier.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db, "Jeddah"),
             national_id_encrypted="test-ciphertext",
             is_verified=True,
         )

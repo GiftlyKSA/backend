@@ -13,9 +13,18 @@ from collections.abc import AsyncIterator
 import pytest
 import pytest_asyncio
 from app.core.db import build_engine
+from app.models import City
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from tests.conftest import make_test_settings
+
+
+async def city_by_name(session: AsyncSession, name: str) -> City:
+    """Return an existing seeded city for relationship-backed test records."""
+    city = await session.scalar(select(City).where(City.name == name))
+    assert city is not None
+    return city
 
 
 @pytest_asyncio.fixture

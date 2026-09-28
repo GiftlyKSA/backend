@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CourierProfile
+from app.models import City, CourierProfile
 
 
 class CourierRepository:
@@ -49,10 +49,10 @@ class CourierRepository:
         await self._session.flush()
 
     async def update_admin_profile(
-        self, profile: CourierProfile, *, city_of_residence: str, bio: str | None
+        self, profile: CourierProfile, *, city_of_residence: City, bio: str | None
     ) -> None:
         """Update the courier-profile fields explicitly exposed to dashboard operators."""
-        profile.city_of_residence = city_of_residence
+        profile.city = city_of_residence
         profile.bio = bio
         await self._session.flush()
 
@@ -60,7 +60,7 @@ class CourierRepository:
         self,
         *,
         user_id: uuid.UUID,
-        city_of_residence: str,
+        city_of_residence: City,
         bio: str | None,
         national_id_encrypted: str | None,
         passport_id_encrypted: str | None,
@@ -69,7 +69,7 @@ class CourierRepository:
         """Create a courier profile with encrypted identity data."""
         profile = CourierProfile(
             user_id=user_id,
-            city_of_residence=city_of_residence,
+            city=city_of_residence,
             bio=bio,
             national_id_encrypted=national_id_encrypted,
             passport_id_encrypted=passport_id_encrypted,

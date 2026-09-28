@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
 from tests.integration.availability import raise_or_skip_redis_unavailable
+from tests.integration.conftest import city_by_name
 
 
 def _settings() -> Settings:
@@ -141,7 +142,7 @@ async def test_accept_requires_verified_active_courier(
     db_session.add(
         CourierProfile(
             user_id=courier.id,
-            city_of_residence="Jeddah",
+            city=await city_by_name(db_session, "Jeddah"),
             is_verified=False,
             national_id_encrypted="ciphertext-placeholder",
         )

@@ -45,10 +45,15 @@ PostgreSQL/Redis and deployment verification remains pending where applicable.
 | REL-07 | Lock chat conversation rows before unread/latest-message mutations | Two-session PostgreSQL race test |
 
 The OTP default is 60 seconds and the new city catalog is seeded with 20 active Saudi
-cities. Customer orders, courier profiles, and admin mutations validate active city names;
-database foreign keys protect persisted references. The city migration and seed script need
+cities. Customer orders and courier profiles now store UUID foreign keys to `cities.id`;
+admin and API mutations validate active selections. The city migrations and seed script need
 a disposable PostgreSQL/PostGIS run in CI or another authorized environment. No Docker was
 run locally. All other findings below remain open or unverified as originally classified.
+
+The UUID relationship is a 2026-09-29 follow-up correction to the original name-keyed
+city migration. Its additive/backfill/drop migration is rendered offline, but has not
+been applied to a live database. Existing name-based API request fields remain accepted
+to avoid breaking older clients; new clients can submit city IDs.
 
 | Priority | ID | Category | Severity / score | Status | Finding |
 | --- | --- | --- | --- | --- | --- |
@@ -568,6 +573,12 @@ universal authorization correctness.
 | Pre-commit and pre-push all-file hooks | Passed Ruff, format, mypy, YAML/TOML/JSON, merge markers, private-key checks |
 | Alembic offline `upgrade head --sql` | Rendered through the city/refresh-index migration; no live schema apply or downgrade tested |
 | Mobile OpenAPI | 44 non-admin operations, including public `GET /api/cities` |
+
+The UUID city-relationship correction passed `pytest tests/unit tests/integration/test_app.py`
+and the full Ruff/mypy gates. The new migration's forward and downgrade SQL rendered
+offline. Four city/admin relationship integration cases skipped because no PostgreSQL
+service was listening. The mobile OpenAPI retained 44 non-admin operations, valid
+schema references, UUID city fields, and bearer-auth declarations.
 
 ## Historical verification record — 2026-09-27
 

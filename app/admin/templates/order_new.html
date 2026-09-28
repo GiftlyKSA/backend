@@ -7,7 +7,7 @@
   <form method="post" action="/admin/orders">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     {{ relationship_field('orders', 'customer_id', 'Customer') }}
-    <label>City<input name="delivery_city" maxlength="100" required></label>
+    <label>City<select name="delivery_city" required><option value="">Select a city</option>{% for city in cities %}<option value="{{ city.name }}">{{ city.name }}</option>{% endfor %}</select></label>
     <label>Delivery date<input name="delivery_date" type="date" min="{{ today }}" required></label>
     <label>Longitude<input name="longitude" type="number" step="any" required></label>
     <label>Latitude<input name="latitude" type="number" step="any" required></label>

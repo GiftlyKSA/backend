@@ -7,7 +7,7 @@
   <form method="post" action="/admin/couriers">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     {{ relationship_field('courier_profiles', 'user_id', 'Courier') }}
-    <label>City<input name="city_of_residence" maxlength="100" required></label>
+    <label>City<select name="city_of_residence" required><option value="">Select a city</option>{% for city in cities %}<option value="{{ city.name }}">{{ city.name }}</option>{% endfor %}</select></label>
     <label>Identity document type<select name="identity_type"><option value="national_id">National ID</option><option value="passport_id">Passport</option></select></label>
     <label>Identity document<input name="identity_document" type="password" maxlength="100" required></label>
     <label>Bio<textarea name="bio" maxlength="1000"></textarea></label>

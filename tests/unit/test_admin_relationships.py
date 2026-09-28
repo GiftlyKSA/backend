@@ -28,6 +28,11 @@ def test_many_to_one_choices_remain_reusable():
     assert "EXISTS" not in sql_for("orders", "customer_id")
 
 
+def test_city_relationship_choices_only_show_active_cities():
+    sql = sql_for("orders", "delivery_city_id")
+    assert "cities.is_active IS true" in sql
+
+
 def test_partial_unique_index_limits_only_active_invoice_owners():
     sql = sql_for("invoices", "order_id")
     assert "status IN ('DRAFT','ISSUED','PAID')" in sql

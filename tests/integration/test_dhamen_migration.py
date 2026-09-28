@@ -30,6 +30,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 
+from tests.integration.conftest import city_by_name
+
 _PRIOR_REVISION = "b7c8d9e0f1a2"
 _MIGRATION_DATABASE_ENV = "MIGRATION_TEST_DATABASE_URL"
 
@@ -429,7 +431,7 @@ async def test_repository_queries_keep_mobile_resources_actor_scoped(
     order = models.Order(
         customer_id=owner.id,
         description="A gift",
-        delivery_city="Jeddah",
+        city=await city_by_name(db_session, "Jeddah"),
         delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
         delivery_date=date.today() + timedelta(days=2),
     )
@@ -466,7 +468,7 @@ async def test_attachment_insert_is_authorized_in_the_repository_query(
         customer_id=customer.id,
         courier_id=courier.id,
         description="A gift",
-        delivery_city="Jeddah",
+        city=await city_by_name(db_session, "Jeddah"),
         delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
         delivery_date=date.today() + timedelta(days=2),
         status=models.enums.OrderStatus.ASSIGNED,
