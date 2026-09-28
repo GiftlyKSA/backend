@@ -135,9 +135,9 @@ class AdminService:
         """Return a user by id."""
         return await self._users.get(user_id)
 
-    async def list_orders(self) -> list[object]:
+    async def list_orders(self, limit: int = 50) -> list[object]:
         """Return recent orders."""
-        return list(await self._reads.list_orders())
+        return list(await self._reads.list_orders(limit=limit))
 
     async def get_order(self, order_id: uuid.UUID) -> object | None:
         """Return an order by id."""

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from "relationship_field.html" import relationship_field %}
 {% block content %}
-<p><a href="/admin/tables/{{ form.table_name }}">Back to {{ form.table_name|replace('_', ' ') }}</a></p>
+<p><a href="/v1/admin/admin/tables/{{ form.table_name }}">Back to {{ form.table_name|replace('_', ' ') }}</a></p>
 <h1>{{ 'Edit' if form.record_id else 'Add' }} {{ form.table_name|replace('_', ' ') }}</h1>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <p class="note">Blank fields keep existing values when editing or use defaults when adding. Use “Clear” to remove an optional value. Database relationship, uniqueness, and protected-record rules still apply.</p>
-<form method="post" action="/admin/step-up/request">
+<form method="post" action="/v1/admin/admin/step-up/request">
   <input type="hidden" name="next" value="{{ request.url.path }}">
   <button type="submit" class="secondary">Confirm password to authorize changes</button>
 </form>
@@ -45,7 +45,7 @@
 {% if form.record_id %}
 <section class="card edit-card">
   <h2>Delete record</h2>
-  <form method="post" action="/admin/tables/{{ form.table_name }}/{{ form.record_id }}/delete">
+  <form method="post" action="/v1/admin/admin/tables/{{ form.table_name }}/{{ form.record_id }}/delete">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <input type="hidden" name="revision" value="{{ form.revision }}">
     <label class="clear-field"><input type="checkbox" name="confirm_delete" value="yes" required> Permanently delete this record and any dependent records configured to cascade.</label>

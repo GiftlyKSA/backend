@@ -54,7 +54,9 @@ async def test_every_mutation_rejects_forged_csrf(monkeypatch, operation):
     app, ctx = make_app(monkeypatch)
     suffix = "new" if operation == "new" else f"{uuid4()}/{operation}"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(f"/admin/tables/users/{suffix}", data={"csrf_token": "forged"})
+        response = await client.post(
+            f"/v1/admin/admin/tables/users/{suffix}", data={"csrf_token": "forged"}
+        )
     assert response.status_code == 403
     ctx.tables.save.assert_not_awaited()
     ctx.tables.delete.assert_not_awaited()
@@ -71,16 +73,45 @@ async def test_logout_requires_the_current_session_csrf(monkeypatch, valid):
         cookies={"admin_session": "test-cookie"},
     ) as client:
         response = await client.post(
-            "/admin/logout", data={"csrf_token": ctx.csrf_token if valid else "forged"}
+            "/v1/admin/admin/logout", data={"csrf_token": ctx.csrf_token if valid else "forged"}
         )
     assert response.status_code == (303 if valid else 403)
     assert ctx.auth.logout.await_count == int(valid)
 
 
+async def test_overview_renders_at_new_admin_path_with_live_summary(monkeypatch):
+    app, ctx = make_app(monkeypatch)
+    ctx.service = SimpleNamespace(
+        overview=AsyncMock(
+            return_value=SimpleNamespace(
+                order_counts={"NEW": 2, "COMPLETED": 3},
+                open_disputes=1,
+                pending_withdrawals=4,
+                system_balances={"SYSTEM_ESCROW": 100},
+            )
+        ),
+        list_orders=AsyncMock(return_value=[]),
+        list_audit_logs=AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        old = await client.get("/admin")
+        response = await client.get("/v1/admin/admin")
+    assert old.status_code == 404
+    assert response.status_code == 200
+    assert 'class="sidebar"' in response.text
+    assert "Recent orders" in response.text
+    assert "SAR 100.00" in response.text
+    ctx.service.list_orders.assert_awaited_once_with(limit=5)
+    ctx.service.list_audit_logs.assert_awaited_once_with(limit=5)
+
+
 async def test_mutations_require_recent_password_confirmation(monkeypatch):
     app, ctx = make_app(monkeypatch, step_up=False)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/admin/tables/users/new", data={"csrf_token": ctx.csrf_token})
+        response = await client.post(
+            "/v1/admin/admin/tables/users/new", data={"csrf_token": ctx.csrf_token}
+        )
     assert response.status_code == 403
     ctx.tables.save.assert_not_awaited()
 
@@ -89,7 +120,7 @@ async def test_authenticated_create_passes_trusted_actor_and_session(monkeypatch
     app, ctx = make_app(monkeypatch)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            "/admin/tables/users/new",
+            "/v1/admin/admin/tables/users/new",
             data={"csrf_token": ctx.csrf_token, "phone": "123", "role": "CUSTOMER"},
         )
     assert response.status_code == 303
@@ -106,13 +137,13 @@ async def test_all_table_forms_render_relationship_widgets_and_secret_fields(mon
     ctx.tables.form = form
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for table in Base.metadata.tables.values():
-            response = await client.get(f"/admin/tables/{table.name}/new")
+            response = await client.get(f"/v1/admin/admin/tables/{table.name}/new")
             assert response.status_code == 200, table.name
             assert response.headers["cache-control"] == "no-store"
             for column in table.c:
                 if column.foreign_keys:
                     assert (
-                        f'data-url="/admin/relationships/{table.name}/{column.name}"'
+                        f'data-url="/v1/admin/admin/relationships/{table.name}/{column.name}"'
                         in response.text
                     )
 
@@ -132,7 +163,7 @@ async def test_stale_write_response_shows_current_values_not_stale_submission(mo
     ctx.tables.save.side_effect = ConflictError("Reload the record.")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            f"/admin/tables/featured_gifts/{identifier}/edit",
+            f"/v1/admin/admin/tables/featured_gifts/{identifier}/edit",
             data={"csrf_token": ctx.csrf_token, "title": "Stale value", "revision": "old-revision"},
         )
     assert response.status_code == 409
@@ -144,7 +175,7 @@ async def test_oversized_form_rejected_before_service_write(monkeypatch):
     app, ctx = make_app(monkeypatch)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            "/admin/tables/users/new",
+            "/v1/admin/admin/tables/users/new",
             content=b"x=" + b"x" * 262_144,
             headers={"content-type": "application/x-www-form-urlencoded"},
         )

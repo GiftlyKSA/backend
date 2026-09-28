@@ -16,7 +16,7 @@
 </section>
 <section class="card edit-card">
   <h2>Edit courier profile</h2>
-  <form method="post" action="/admin/couriers/{{ profile.user_id }}/edit">
+  <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/edit">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <label>City<select name="city_of_residence" required>{% for city in cities %}<option value="{{ city.name }}" {% if city.id == profile.city_of_residence_id %}selected{% endif %}>{{ city.name }}</option>{% endfor %}</select></label>
     <label>Bio<textarea name="bio" maxlength="1000">{{ profile.bio or "" }}</textarea></label>
@@ -24,27 +24,27 @@
   </form>
 </section>
 <div class="actions">
-  <form method="post" action="/admin/couriers/{{ profile.user_id }}/verify">
+  <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/verify">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <input type="hidden" name="decision" value="approve">
     <input name="note" placeholder="note (optional)">
     <button type="submit">Approve</button>
   </form>
-  <form method="post" action="/admin/couriers/{{ profile.user_id }}/verify">
+  <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/verify">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <input type="hidden" name="decision" value="reject">
     <button type="submit" class="danger">Reject</button>
   </form>
-  <form method="post" action="/admin/couriers/{{ profile.user_id }}/reveal-identity">
+  <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/reveal-identity">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <button type="submit">Reveal identity</button>
   </form>
-  <form method="post" action="/admin/couriers/{{ profile.user_id }}/delete">
+  <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/delete">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <button type="submit" class="danger">Delete profile</button>
   </form>
-  <form method="post" action="/admin/step-up/request">
-    <input type="hidden" name="next" value="/admin/couriers/{{ profile.user_id }}">
+  <form method="post" action="/v1/admin/admin/step-up/request">
+    <input type="hidden" name="next" value="/v1/admin/admin/couriers/{{ profile.user_id }}">
     <button type="submit">Step-up</button>
   </form>
 </div>

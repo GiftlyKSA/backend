@@ -227,11 +227,11 @@ payments require a separately reviewed Dhamen implementation before activation.
 
 ## Admin dashboard
 
-Server-rendered (Jinja2), mounted at `/admin`, gated by `ADMIN_DASHBOARD_ENABLED`. It
+Server-rendered (Jinja2), mounted at `/v1/admin/admin`, gated by `ADMIN_DASHBOARD_ENABLED`. It
 authenticates with environment-backed username/password into server-side sessions and
 calls backend services — it never queries the DB directly.
 
-`/admin/tables` provides paginated views and add/edit/delete forms for all 30 application
+`/v1/admin/admin/tables` provides paginated views and add/edit/delete forms for all 30 application
 tables in every environment, including production. Every write requires an active admin
 session, CSRF verification, and recent password confirmation. Each successful operation
 records the actor, table, record, and changed field names without logging field values.

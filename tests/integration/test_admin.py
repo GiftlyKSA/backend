@@ -59,14 +59,14 @@ async def test_admin_table_browser_and_controlled_edit_flow() -> None:
         async with AsyncClient(transport=transport, base_url="http://t") as client:
             # 1. Invalid credentials fail generically and create no session.
             denied = await client.post(
-                "/admin/login", data={"username": _ADMIN_USERNAME, "password": "wrong"}
+                "/v1/admin/admin/login", data={"username": _ADMIN_USERNAME, "password": "wrong"}
             )
             assert denied.status_code == 401
             assert client.cookies.get("admin_session") is None
 
             # 2. Valid environment credentials create the session and DB audit actor.
             response = await client.post(
-                "/admin/login",
+                "/v1/admin/admin/login",
                 data={"username": _ADMIN_USERNAME, "password": _ADMIN_PASSWORD},
             )
             assert response.status_code == 303
@@ -75,16 +75,16 @@ async def test_admin_table_browser_and_controlled_edit_flow() -> None:
             csrf = make_csrf_token(sha256_hex(cookie), _ADMIN_SECRET)
 
             # 3. Every application table is browsable; users expose admin-visible contacts.
-            catalog = await client.get("/admin/tables")
+            catalog = await client.get("/v1/admin/admin/tables")
             assert catalog.status_code == 200
             assert "Data tables" in catalog.text
             assert "Admin Sessions" in catalog.text
-            users = await client.get("/admin/tables/users")
+            users = await client.get("/v1/admin/admin/tables/users")
             assert users.status_code == 200
             assert internal_phone in users.text
 
             # 4. Promo writes have no dashboard route; the table is read-only.
-            assert (await client.post("/admin/promos", data={})).status_code == 405
+            assert (await client.post("/v1/admin/admin/promos", data={})).status_code == 405
 
             async with factory() as session:
                 admin = await session.scalar(select(User).where(User.phone == internal_phone))
@@ -92,7 +92,7 @@ async def test_admin_table_browser_and_controlled_edit_flow() -> None:
 
             # 5. An authenticated admin may update the allowed user profile with CSRF.
             updated = await client.post(
-                f"/admin/users/{admin.id}/edit",
+                f"/v1/admin/admin/users/{admin.id}/edit",
                 data={
                     "csrf_token": csrf,
                     "full_name": "Dashboard operator",

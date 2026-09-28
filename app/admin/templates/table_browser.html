@@ -2,7 +2,7 @@
 {% block content %}
 {% if not data %}
 <h1>Table not found</h1>
-<p class="note">Choose a table from the <a href="/admin/tables">data catalog</a>.</p>
+<p class="note">Choose a table from the <a href="/v1/admin/admin/tables">data catalog</a>.</p>
 {% else %}
 <div class="page-heading">
   <div>
@@ -13,7 +13,7 @@
     Full admin access
   </span>
 </div>
-<p><a class="btn" href="/admin/tables/{{ data.table.name }}/new">Add record</a></p>
+<p><a class="btn" href="/v1/admin/admin/tables/{{ data.table.name }}/new">Add record</a></p>
 <p class="note">
   Showing up to 50 records per page. Encrypted, credential, and token fields stay masked.
   {% if data.table.name == "users" %}Signed-in dashboard admins can view user contact fields.{% else %}Personal-contact fields stay masked.{% endif %}
@@ -28,9 +28,9 @@
   </table>
 </div>
 <div class="pager">
-  {% if data.page > 1 %}<a class="btn secondary" href="/admin/tables/{{ data.table.name }}?page={{ data.page - 1 }}">Previous</a>{% endif %}
+  {% if data.page > 1 %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?page={{ data.page - 1 }}">Previous</a>{% endif %}
   <span>Page {{ data.page }}</span>
-  {% if data.has_next %}<a class="btn secondary" href="/admin/tables/{{ data.table.name }}?page={{ data.page + 1 }}">Next</a>{% endif %}
+  {% if data.has_next %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?page={{ data.page + 1 }}">Next</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

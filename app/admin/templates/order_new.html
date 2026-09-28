@@ -4,7 +4,7 @@
 <h1>Add order</h1>
 <p class="note">Orders are created as NEW for an existing active customer. Coordinates are longitude first, then latitude.</p>
 <section class="card edit-card">
-  <form method="post" action="/admin/orders">
+  <form method="post" action="/v1/admin/admin/orders">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     {{ relationship_field('orders', 'customer_id', 'Customer') }}
     <label>City<select name="delivery_city" required><option value="">Select a city</option>{% for city in cities %}<option value="{{ city.name }}">{{ city.name }}</option>{% endfor %}</select></label>

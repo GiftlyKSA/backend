@@ -118,7 +118,7 @@ async def _mutate(
                 revision=revision,
                 ip=client_ip(request),
             )
-            target = f"/admin/tables/{table_name}"
+            target = f"/v1/admin/admin/tables/{table_name}"
         else:
             saved_id = await ctx.tables.save(
                 table_name,
@@ -129,7 +129,7 @@ async def _mutate(
                 revision=revision,
                 ip=client_ip(request),
             )
-            target = f"/admin/tables/{table_name}/{saved_id}/edit"
+            target = f"/v1/admin/admin/tables/{table_name}/{saved_id}/edit"
     except DomainError as exc:
         return await _form_response(
             request, ctx, table_name, record_id, error=exc, submitted=submitted

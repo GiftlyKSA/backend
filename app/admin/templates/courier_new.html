@@ -4,7 +4,7 @@
 <h1>Add courier profile</h1>
 <p class="note">Choose a courier who does not yet have a profile. The identity document is encrypted immediately and remains masked after creation.</p>
 <section class="card edit-card">
-  <form method="post" action="/admin/couriers">
+  <form method="post" action="/v1/admin/admin/couriers">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     {{ relationship_field('courier_profiles', 'user_id', 'Courier') }}
     <label>City<select name="city_of_residence" required><option value="">Select a city</option>{% for city in cities %}<option value="{{ city.name }}">{{ city.name }}</option>{% endfor %}</select></label>

@@ -4,32 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Giftly Admin{% endblock %}</title>
-  <link rel="stylesheet" href="/admin/static/admin.css">
-  <script src="/admin/static/relationships.js" defer></script>
+  <link rel="stylesheet" href="/v1/admin/admin/static/admin.css">
+  <script src="/v1/admin/admin/static/relationships.js" defer></script>
 </head>
-<body>
+<body class="{% if ctx %}admin-app{% else %}auth-page{% endif %}">
 {% if ctx %}
-<header class="topbar">
-  <span class="brand">Giftly admin</span>
-  <nav>
-    <a href="/admin">Overview</a>
-    <a href="/admin/tables">Data tables</a>
-    <a href="/admin/couriers">Couriers</a>
-    <a href="/admin/orders">Orders</a>
-    <a href="/admin/invoices">Invoices</a>
-    <a href="/admin/promos">Promos</a>
-    <a href="/admin/disputes">Disputes</a>
-    <a href="/admin/withdrawals">Withdrawals</a>
-    <a href="/admin/wallets">Wallets</a>
-    <a href="/admin/topups">Top-ups</a>
-    <a href="/admin/audit-logs">Audit</a>
+<aside class="sidebar">
+  <a class="brand" href="/v1/admin/admin" aria-label="Giftly admin overview">Giftly <span>Admin</span></a>
+  <nav aria-label="Admin sections">
+    {% set path = request.url.path %}
+    <a class="{{ 'active' if path == '/v1/admin/admin' else '' }}" href="/v1/admin/admin"><span class="nav-icon">⌂</span>Overview</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/tables') else '' }}" href="/v1/admin/admin/tables"><span class="nav-icon">▤</span>Data tables</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/couriers') else '' }}" href="/v1/admin/admin/couriers"><span class="nav-icon">▣</span>Couriers</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/orders') else '' }}" href="/v1/admin/admin/orders"><span class="nav-icon">▢</span>Orders</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/invoices') else '' }}" href="/v1/admin/admin/invoices"><span class="nav-icon">≡</span>Invoices</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/promos') else '' }}" href="/v1/admin/admin/promos"><span class="nav-icon">◇</span>Promos</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/disputes') else '' }}" href="/v1/admin/admin/disputes"><span class="nav-icon">⬡</span>Disputes</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/withdrawals') else '' }}" href="/v1/admin/admin/withdrawals"><span class="nav-icon">⇥</span>Withdrawals</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/wallets') else '' }}" href="/v1/admin/admin/wallets"><span class="nav-icon">▭</span>Wallets</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/topups') else '' }}" href="/v1/admin/admin/topups"><span class="nav-icon">⊕</span>Top-ups</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs') else '' }}" href="/v1/admin/admin/audit-logs"><span class="nav-icon">▤</span>Audit</a>
   </nav>
-  <form method="post" action="/admin/logout" class="logout">
+  <form method="post" action="/v1/admin/admin/logout" class="logout">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <button type="submit">Sign out</button>
+    <button type="submit" class="secondary">Sign out</button>
   </form>
-</header>
+</aside>
+<div class="workspace">
+  <header class="workspace-header"><span>Giftly operations</span><span class="account-badge" aria-label="Admin account">Admin</span></header>
 {% endif %}
 <main>{% block content %}{% endblock %}</main>
+{% if ctx %}</div>{% endif %}
 </body>
 </html>

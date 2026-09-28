@@ -27,9 +27,9 @@ async def test_relationship_endpoint_requires_admin(monkeypatch):
     app.dependency_overrides[get_db] = no_database
     monkeypatch.setattr(module, "_ctx", denied)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/admin/relationships/orders/customer_id")
+        response = await client.get("/v1/admin/admin/relationships/orders/customer_id")
     assert response.status_code == 307
-    assert response.headers["location"] == "/admin/login"
+    assert response.headers["location"] == "/v1/admin/admin/login"
 
 
 async def test_lookup_is_private_and_query_length_is_bounded(monkeypatch):
@@ -47,9 +47,9 @@ async def test_lookup_is_private_and_query_length_is_bounded(monkeypatch):
     monkeypatch.setattr(module, "_ctx", AsyncMock(return_value=SimpleNamespace(service=service)))
     app.dependency_overrides[get_db] = no_database
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/admin/relationships/orders/customer_id")
+        response = await client.get("/v1/admin/admin/relationships/orders/customer_id")
         oversized = await client.get(
-            "/admin/relationships/orders/customer_id", params={"search": "x" * 101}
+            "/v1/admin/admin/relationships/orders/customer_id", params={"search": "x" * 101}
         )
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"

@@ -9,7 +9,7 @@
 </div>
 <section class="table-catalog">
   {% for table in tables %}
-  <a class="table-card" href="/admin/tables/{{ table.name }}">
+  <a class="table-card" href="/v1/admin/admin/tables/{{ table.name }}">
     <span class="table-card__name">{{ table.label }}</span>
     <span class="table-card__mode {% if table.editable %}is-editable{% endif %}">
       View / Add / Edit / Delete

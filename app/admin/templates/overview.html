@@ -1,20 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Overview</h1>
-<div class="grid">
-  <section class="card"><h2>Orders by status</h2>
-    <table>{% for status, count in overview.order_counts.items() %}
-      <tr><td>{{ status }}</td><td class="num">{{ count }}</td></tr>{% endfor %}</table>
+<header class="overview-heading"><div><p class="eyebrow">Admin</p><h1>Overview</h1><p class="note">A current view of orders, attention items, and system balances.</p></div></header>
+{% set counts = overview.order_counts %}
+<section class="metrics" aria-label="Order summary">
+  <article class="card metric"><span class="metric-icon indigo">▣</span><span>Total orders</span><strong>{{ counts.values()|sum }}</strong><small>All order statuses</small></article>
+  <article class="card metric"><span class="metric-icon amber">◷</span><span>Pending</span><strong>{{ counts.get('NEW', 0) + counts.get('ASSIGNED', 0) + counts.get('WAITING_PAYMENT', 0) }}</strong><small>New, assigned, or awaiting payment</small></article>
+  <article class="card metric"><span class="metric-icon blue">▰</span><span>In progress</span><strong>{{ counts.get('IN_PROGRESS', 0) + counts.get('DELIVERED', 0) }}</strong><small>In progress or delivered</small></article>
+  <article class="card metric"><span class="metric-icon green">✓</span><span>Completed</span><strong>{{ counts.get('COMPLETED', 0) }}</strong><small>Completed orders</small></article>
+  <article class="card metric"><span class="metric-icon red">×</span><span>Cancelled</span><strong>{{ counts.get('CANCELLED', 0) }}</strong><small>Cancelled orders</small></article>
+</section>
+<div class="overview-row">
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon red">▲</span>Attention</h2></div>
+    <div class="attention-grid">
+      <a class="attention-item dispute" href="/v1/admin/admin/disputes"><span>Open disputes</span><strong>{{ overview.open_disputes }}</strong><small>Review disputes →</small></a>
+      <a class="attention-item withdrawal" href="/v1/admin/admin/withdrawals"><span>Pending withdrawals</span><strong>{{ overview.pending_withdrawals }}</strong><small>Review withdrawals →</small></a>
+    </div>
   </section>
-  <section class="card"><h2>Attention</h2>
-    <table>
-      <tr><td>Open disputes</td><td class="num">{{ overview.open_disputes }}</td></tr>
-      <tr><td>Pending withdrawals</td><td class="num">{{ overview.pending_withdrawals }}</td></tr>
-    </table>
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">◉</span>System balances (SAR)</h2><a href="/v1/admin/admin/wallets">View wallets</a></div>
+    <div class="balance-grid">{% for wtype, balance in overview.system_balances.items() %}
+      <div class="balance-item"><span>{{ wtype|replace('_', ' ')|title }}</span><strong>SAR {{ '%.2f'|format(balance) }}</strong></div>
+    {% else %}<p class="note">No system wallets are available.</p>{% endfor %}</div>
   </section>
-  <section class="card"><h2>System balances (SAR)</h2>
-    <table>{% for wtype, bal in overview.system_balances.items() %}
-      <tr><td>{{ wtype }}</td><td class="num">{{ bal }}</td></tr>{% endfor %}</table>
+</div>
+<div class="overview-row lower">
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▣</span>Recent orders</h2><a href="/v1/admin/admin/orders">View all orders</a></div>
+    <div class="table-scroll"><table class="list"><thead><tr><th>Order</th><th>City</th><th class="num">Amount (SAR)</th><th>Status</th><th>Created</th></tr></thead><tbody>
+    {% for order in recent_orders %}<tr><td><a href="/v1/admin/admin/orders/{{ order.id }}">{{ order.id|string|truncate(13, True, '…') }}</a></td><td>{{ order.delivery_city }}</td><td class="num">{{ order.total_amount }}</td><td><span class="status-pill">{{ order.status|replace('_', ' ')|title }}</span></td><td>{{ order.created_at.strftime('%d %b %Y') }}</td></tr>
+    {% else %}<tr><td colspan="5" class="note">No orders yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▤</span>Recent audit activity</h2><a href="/v1/admin/admin/audit-logs">View audit</a></div>
+    <ol class="activity-list">{% for log in recent_activity %}<li><strong>{{ log.action|replace('_', ' ')|title }}</strong><span>{{ log.entity_type|replace('_', ' ')|title }} · {{ log.created_at.strftime('%d %b %Y %H:%M') }}</span></li>
+    {% else %}<li class="empty-activity">No recent activity.</li>{% endfor %}</ol>
   </section>
 </div>
 {% endblock %}

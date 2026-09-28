@@ -1,6 +1,6 @@
 """Admin dashboard routes (SPEC SECTION 18.3).
 
-Server-rendered Jinja pages mounted at ``/admin``. Every route calls the admin
+Server-rendered Jinja pages mounted at ``/v1/admin/admin``. Every route calls the admin
 services and never queries the DB directly. Reads are open to any authenticated
 admin; every mutating action requires CSRF, writes an audit row, and — for revealing
 Restricted data — a fresh step-up grant. Money-moving resolutions (disputes,
@@ -35,7 +35,7 @@ from app.admin.table_router import router as table_router
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.models.enums import UserRole
 
-router = APIRouter(prefix="/admin", tags=["admin"], include_in_schema=False)
+router = APIRouter(prefix="/v1/admin/admin", tags=["admin"], include_in_schema=False)
 router.include_router(table_router)
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -108,14 +108,14 @@ async def login(
             username=username,
             error=exc.message,
         )
-    response = RedirectResponse("/admin", status_code=303)
+    response = RedirectResponse("/v1/admin/admin", status_code=303)
     response.set_cookie(
         SESSION_COOKIE,
         result.raw_session_token,
         httponly=True,
         secure=settings.is_production,
         samesite="strict",
-        path="/admin",
+        path="/v1/admin/admin",
         max_age=settings.ADMIN_SESSION_TTL_MINUTES * 60,
     )
     return response
@@ -131,8 +131,8 @@ async def logout(
         ctx = await _ctx(request, db)
         verify_csrf(ctx, csrf_token, get_settings_from(request))
         await ctx.auth.logout(raw)
-    response = RedirectResponse("/admin/login", status_code=303)
-    response.delete_cookie(SESSION_COOKIE, path="/admin")
+    response = RedirectResponse("/v1/admin/admin/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/v1/admin/admin")
     return response
 
 
@@ -164,7 +164,10 @@ async def step_up_verify(
         session_token_hash=ctx.session_row.session_token_hash,
         ip=client_ip(request),
     )
-    target = next_url if next_url.startswith("/admin") else "/admin"
+    admin_root = "/v1/admin/admin"
+    target = (
+        next_url if next_url == admin_root or next_url.startswith(f"{admin_root}/") else admin_root
+    )
     return RedirectResponse(target, status_code=303)
 
 
@@ -176,7 +179,14 @@ async def overview(request: Request, db: DbDep) -> HTMLResponse:
     """Show the dashboard overview."""
     ctx = await _ctx(request, db)
     data = await ctx.service.overview()
-    return _render(request, "overview.html", ctx=ctx, overview=data)
+    return _render(
+        request,
+        "overview.html",
+        ctx=ctx,
+        overview=data,
+        recent_orders=await ctx.service.list_orders(limit=5),
+        recent_activity=await ctx.service.list_audit_logs(limit=5),
+    )
 
 
 # --- Application data tables -------------------------------------------------
@@ -238,7 +248,7 @@ async def courier_create(
         identity_document=identity_document.strip(),
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/couriers/{profile.user_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/couriers/{profile.user_id}", status_code=303)
 
 
 @router.get("/couriers", response_class=HTMLResponse)
@@ -286,7 +296,7 @@ async def courier_verify(
         note=note or None,
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/couriers/{courier_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/couriers/{courier_id}", status_code=303)
 
 
 @router.post("/couriers/{courier_id}/reveal-identity", response_class=HTMLResponse)
@@ -334,7 +344,7 @@ async def courier_edit(
         bio=bio.strip() or None,
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/couriers/{courier_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/couriers/{courier_id}", status_code=303)
 
 
 @router.post("/couriers/{courier_id}/delete")
@@ -350,7 +360,7 @@ async def courier_delete(
     await ctx.service.delete_courier_profile(
         admin_id=ctx.admin.id, user_id=courier_id, ip=client_ip(request)
     )
-    return RedirectResponse("/admin/tables/courier_profiles", status_code=303)
+    return RedirectResponse("/v1/admin/admin/tables/courier_profiles", status_code=303)
 
 
 # --- Orders / invoices -------------------------------------------------------
@@ -396,7 +406,7 @@ async def order_create(
         delivery_address_note=delivery_address_note.strip() or None,
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/orders/{order_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/orders/{order_id}", status_code=303)
 
 
 @router.get("/orders", response_class=HTMLResponse)
@@ -446,7 +456,7 @@ async def order_edit(
         delivery_address_note=delivery_address_note.strip() or None,
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/orders/{order_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/orders/{order_id}", status_code=303)
 
 
 @router.post("/orders/{order_id}/delete")
@@ -460,7 +470,7 @@ async def order_delete(
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
     await ctx.service.delete_order(admin_id=ctx.admin.id, order_id=order_id, ip=client_ip(request))
-    return RedirectResponse("/admin/tables/orders", status_code=303)
+    return RedirectResponse("/v1/admin/admin/tables/orders", status_code=303)
 
 
 @router.get("/invoices", response_class=HTMLResponse)
@@ -590,7 +600,7 @@ async def user_create(
         role=role,
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/users/{user.id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/users/{user.id}", status_code=303)
 
 
 @router.get("/users/{user_id}", response_class=HTMLResponse)
@@ -617,7 +627,7 @@ async def user_ban(
     await ctx.service.set_user_banned(
         admin_id=ctx.admin.id, user_id=user_id, banned=True, ip=client_ip(request)
     )
-    return RedirectResponse(f"/admin/users/{user_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/users/{user_id}", status_code=303)
 
 
 @router.post("/users/{user_id}/unban")
@@ -631,7 +641,7 @@ async def user_unban(
     await ctx.service.set_user_banned(
         admin_id=ctx.admin.id, user_id=user_id, banned=False, ip=client_ip(request)
     )
-    return RedirectResponse(f"/admin/users/{user_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/users/{user_id}", status_code=303)
 
 
 @router.post("/users/{user_id}/edit")
@@ -655,7 +665,7 @@ async def user_edit(
         phone=phone.strip() or None,
         ip=client_ip(request),
     )
-    return RedirectResponse(f"/admin/users/{user_id}", status_code=303)
+    return RedirectResponse(f"/v1/admin/admin/users/{user_id}", status_code=303)
 
 
 @router.post("/users/{user_id}/delete")
@@ -669,7 +679,7 @@ async def user_delete(
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
     await ctx.service.delete_user(admin_id=ctx.admin.id, user_id=user_id, ip=client_ip(request))
-    return RedirectResponse("/admin/tables/users", status_code=303)
+    return RedirectResponse("/v1/admin/admin/tables/users", status_code=303)
 
 
 # --- Audit logs --------------------------------------------------------------

@@ -39,7 +39,7 @@ SESSION_COOKIE = "admin_session"
 class AdminRedirect(Exception):  # noqa: N818 — control-flow signal, not an error
     """Raised to send an unauthenticated admin browser to the login page."""
 
-    def __init__(self, location: str = "/admin/login") -> None:
+    def __init__(self, location: str = "/v1/admin/admin/login") -> None:
         """Record the redirect target."""
         super().__init__(location)
         self.location = location

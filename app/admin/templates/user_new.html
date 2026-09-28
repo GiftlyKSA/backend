@@ -2,7 +2,7 @@
 {% block content %}
 <h1>Add user</h1>
 <section class="card edit-card">
-  <form method="post" action="/admin/users">
+  <form method="post" action="/v1/admin/admin/users">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <label>Phone<input name="phone" maxlength="20" required></label>
     <label>Full name<input name="full_name" maxlength="120"></label>

@@ -142,7 +142,7 @@ class AdminReadRepository:
     def _edit_url(table_name: str, row: Any) -> str | None:
         """Return the generic record editor URL for an application table."""
         key = next(iter(Base.metadata.tables[table_name].primary_key.columns)).name
-        return f"/admin/tables/{table_name}/{row[key]}/edit"
+        return f"/v1/admin/admin/tables/{table_name}/{row[key]}/edit"
 
     @staticmethod
     def _display_value(table_name: str, column: str, value: object) -> str:

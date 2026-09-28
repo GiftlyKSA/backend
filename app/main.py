@@ -241,7 +241,7 @@ def _install_security_headers(app: FastAPI) -> None:
         for key, value in _SECURITY_HEADERS.items():
             response.headers[key] = value
         # The admin surface gets a strict CSP on top of the shared headers.
-        if request.url.path.startswith("/admin"):
+        if request.url.path.startswith("/v1/admin/admin"):
             response.headers["Content-Security-Policy"] = _ADMIN_CSP
         # Strip fingerprinting headers (SPEC SECTION 17.2 A05).
         for header in ("Server", "X-Powered-By"):
@@ -265,7 +265,7 @@ def _register_admin(app: FastAPI) -> None:
 
     app.include_router(admin_router)
     static_dir = Path(__file__).parent / "admin" / "static"
-    app.mount("/admin/static", StaticFiles(directory=str(static_dir)), name="admin-static")
+    app.mount("/v1/admin/admin/static", StaticFiles(directory=str(static_dir)), name="admin-static")
 
 
 def _register_dev_routes(app: FastAPI) -> None:
