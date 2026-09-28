@@ -37,7 +37,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 USER appuser
-EXPOSE 8000
+EXPOSE 3000
 
 # Liveness only — a readiness probe here would restart on a transient Redis blip.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
@@ -46,6 +46,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 # Workers and timeouts come from the environment; no `uv run` at runtime.
 CMD ["gunicorn", "app.main:create_app()", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
+     "--bind", "0.0.0.0:3000", \
      "--workers", "4", \
      "--timeout", "60"]
