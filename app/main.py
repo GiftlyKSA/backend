@@ -14,16 +14,39 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from sqlalchemy import text
 
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.jwt import JwtError, decode_access_token
 from app.core.logging import configure_logging
-from app.core.middleware import RequestIdMiddleware, error_response, register_exception_handlers
+from app.core.middleware import (
+    RequestIdMiddleware,
+    error_response,
+    register_exception_handlers,
+)
 from app.core.ratelimit import RateLimiter
 from app.core.redis import build_redis
 from app.integrations.factory import build_clients
+from app.models.base import Base
 from app.routers import health
+
+
+# ---------------------------------------------------------------------------
+# Database startup lock
+# ---------------------------------------------------------------------------
+
+# Arbitrary PostgreSQL advisory-lock ID.
+#
+# All Gunicorn workers use the same ID.
+# Worker 1 gets the lock and creates any missing tables.
+# Workers 2-4 wait.
+#
+# After worker 1 finishes and commits:
+# workers 2-4 acquire the lock one at a time, but create_all(checkfirst=True)
+# finds that the tables already exist and performs no CREATE TABLE statements.
+_DATABASE_SCHEMA_LOCK_ID = 749283746
+
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -31,6 +54,7 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 }
+
 
 # A restrictive CSP for the admin surface (SPEC SECTION 18.4): no inline scripts,
 # no framing, self-only sources.
@@ -42,22 +66,76 @@ _ADMIN_CSP = (
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Release shared connection pools when the application stops."""
+    """
+    Initialize the database schema on startup and release shared
+    connection pools when the application stops.
+
+    PostgreSQL advisory locking prevents multiple Gunicorn workers from
+    attempting schema creation concurrently.
+    """
+    # -----------------------------------------------------------------------
+    # CREATE MISSING DATABASE TABLES
+    # -----------------------------------------------------------------------
+    #
+    # app.state.engine is an AsyncEngine.
+    #
+    # begin() opens a PostgreSQL transaction.
+    #
+    # pg_advisory_xact_lock() ensures only one Gunicorn worker at a time
+    # can perform the schema check / creation.
+    #
+    # The lock is automatically released when this transaction commits
+    # or rolls back.
+    #
+    # create_all(checkfirst=True):
+    #
+    #   - creates tables that do NOT exist
+    #   - leaves existing tables untouched
+    #   - does NOT drop tables
+    #   - does NOT recreate tables
+    #
+    # IMPORTANT:
+    # create_all() does NOT migrate existing tables. If you add/remove
+    # columns later, use Alembic migrations.
+    # -----------------------------------------------------------------------
+
+    async with app.state.engine.begin() as conn:
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_id)"),
+            {"lock_id": _DATABASE_SCHEMA_LOCK_ID},
+        )
+
+        await conn.run_sync(
+            Base.metadata.create_all,
+            checkfirst=True,
+        )
+
     try:
         yield
+
     finally:
         clients = app.state.clients
-        for client in (clients.gateway, clients.email, clients.sms, clients.push):
+
+        for client in (
+            clients.gateway,
+            clients.email,
+            clients.sms,
+            clients.push,
+        ):
             aclose = getattr(client, "aclose", None)
+
             if aclose is not None:
                 await aclose()
+
         await app.state.redis.aclose()
         await app.state.engine.dispose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and return the configured FastAPI application."""
+
     settings = settings or get_settings()
+
     configure_logging(settings.LOG_LEVEL)
 
     app = FastAPI(
@@ -68,19 +146,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc" if settings.docs_enabled else None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
+
     app.state.settings = settings
-    # Constructing clients at boot triggers the §5.2 interlock (raises on violation).
+
+    # Constructing clients at boot triggers the §5.2 interlock
+    # (raises on violation).
     app.state.clients = build_clients(settings)
-    # Shared async engine/session factory and Redis client, built once per app.
+
+    # Shared async engine/session factory and Redis client,
+    # built once per app.
     engine = build_engine(settings)
+
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
     app.state.redis = build_redis(settings)
 
     _install_middleware(app, settings)
+
     register_exception_handlers(app)
+
     app.include_router(health.router)
 
+    # Import routers before FastAPI begins its lifespan.
+    #
+    # These imports also ensure the application modules/models used by
+    # the routers are loaded before Base.metadata.create_all() executes.
     from app.routers import (
         admin_api,
         auth,
@@ -105,8 +195,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(orders.router)
     app.include_router(invoices.router)
     app.include_router(promos.router)
+
     if not settings.is_production:
         app.include_router(webhooks.router)
+
     app.include_router(ratings.router)
     app.include_router(admin_api.router)
     app.include_router(chat.router)
@@ -127,16 +219,23 @@ def _client_identity(request: Request, settings: Settings) -> str:
     A best-effort token decode (no denylist check — that is auth's job) lets an
     authenticated caller be limited by identity rather than a shared NAT address.
     """
+
     header = request.headers.get("Authorization", "")
+
     if header.startswith("Bearer "):
         token = header[len("Bearer ") :].strip()
+
         try:
             claims = decode_access_token(settings, token)
+
         except JwtError:
             pass
+
         else:
             return f"user:{claims.sub}"
+
     host = request.client.host if request.client else "unknown"
+
     return f"ip:{host}"
 
 
@@ -149,13 +248,20 @@ def _install_middleware(app: FastAPI, settings: Settings) -> None:
     (bound before any envelope is built), then the rate limiter and body-size guard,
     which short-circuit before a route or the database is ever touched.
     """
+
     _install_request_guards(app, settings)
+
     app.add_middleware(RequestIdMiddleware)
+
     _install_cors(app, settings)
+
     _install_security_headers(app)
 
 
-def _guard_body_size(request: Request, settings: Settings) -> Response | None:
+def _guard_body_size(
+    request: Request,
+    settings: Settings,
+) -> Response | None:
     """Return a rejection response for an oversized or undeclared body, else None.
 
     A declared ``Content-Length`` over the cap is a 413. A body sent with chunked
@@ -163,29 +269,55 @@ def _guard_body_size(request: Request, settings: Settings) -> Response | None:
     (audit SEC-7) — the JSON API never needs chunked uploads (media bytes go straight
     to S3), so those requests are rejected with 411 Length Required.
     """
+
     content_length = request.headers.get("content-length")
+
     if content_length is not None:
         try:
             length = int(content_length)
+
         except ValueError:
             length = 0
+
         if length > settings.MAX_REQUEST_BODY_BYTES:
-            return error_response(413, "PAYLOAD_TOO_LARGE", "The request body is too large.")
-    elif "chunked" in request.headers.get("transfer-encoding", "").lower():
-        return error_response(411, "LENGTH_REQUIRED", "Requests must declare a Content-Length.")
+            return error_response(
+                413,
+                "PAYLOAD_TOO_LARGE",
+                "The request body is too large.",
+            )
+
+    elif (
+        "chunked"
+        in request.headers.get(
+            "transfer-encoding",
+            "",
+        ).lower()
+    ):
+        return error_response(
+            411,
+            "LENGTH_REQUIRED",
+            "Requests must declare a Content-Length.",
+        )
+
     return None
 
 
-def _install_request_guards(app: FastAPI, settings: Settings) -> None:
+def _install_request_guards(
+    app: FastAPI,
+    settings: Settings,
+) -> None:
     """One middleware for both request guards (audit PERF-4): body size, then throttle."""
 
     @app.middleware("http")
     async def _request_guards(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         rejected = _guard_body_size(request, settings)
+
         if rejected is not None:
             return rejected
+
         # Health probes and CORS preflight are never throttled.
         if (
             not settings.RATE_LIMIT_ENABLED
@@ -193,12 +325,15 @@ def _install_request_guards(app: FastAPI, settings: Settings) -> None:
             or request.url.path.startswith("/api/health")
         ):
             return await call_next(request)
+
         limiter = RateLimiter(
             request.app.state.redis,
             max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
             window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
         )
+
         decision = await limiter.check(_client_identity(request, settings))
+
         if not decision.allowed:
             return error_response(
                 429,
@@ -206,17 +341,26 @@ def _install_request_guards(app: FastAPI, settings: Settings) -> None:
                 "Too many requests. Please try again later.",
                 headers={"Retry-After": str(decision.retry_after_seconds)},
             )
+
         return await call_next(request)
 
 
-def _install_cors(app: FastAPI, settings: Settings) -> None:
+def _install_cors(
+    app: FastAPI,
+    settings: Settings,
+) -> None:
     """Add CORS: wildcard without credentials in development, the allow-list in production."""
+
     if settings.ENVIRONMENT.value == "development":
         origins = ["*"]
-        allow_credentials = False  # never wildcard origins with credentials.
+
+        # Never wildcard origins with credentials.
+        allow_credentials = False
+
     else:
         origins = settings.cors_origins
         allow_credentials = True
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -235,23 +379,33 @@ def _install_security_headers(app: FastAPI) -> None:
 
     @app.middleware("http")
     async def _security_headers(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         response = await call_next(request)
+
         for key, value in _SECURITY_HEADERS.items():
             response.headers[key] = value
-        # The admin surface gets a strict CSP on top of the shared headers.
+
+        # The admin surface gets a strict CSP on top
+        # of the shared headers.
         if request.url.path.startswith("/v1/admin/admin"):
             response.headers["Content-Security-Policy"] = _ADMIN_CSP
+
         # Strip fingerprinting headers (SPEC SECTION 17.2 A05).
-        for header in ("Server", "X-Powered-By"):
+        for header in (
+            "Server",
+            "X-Powered-By",
+        ):
             if header in response.headers:
                 del response.headers[header]
+
         return response
 
 
 def _register_admin(app: FastAPI) -> None:
     """Mount the server-rendered admin dashboard, its static files, and redirect handler."""
+
     from pathlib import Path
 
     from fastapi.staticfiles import StaticFiles
@@ -260,16 +414,29 @@ def _register_admin(app: FastAPI) -> None:
     from app.admin.router import router as admin_router
 
     @app.exception_handler(AdminRedirect)
-    async def _handle_admin_redirect(request: Request, exc: AdminRedirect) -> RedirectResponse:
-        return RedirectResponse(exc.location, status_code=303)
+    async def _handle_admin_redirect(
+        request: Request,
+        exc: AdminRedirect,
+    ) -> RedirectResponse:
+        return RedirectResponse(
+            exc.location,
+            status_code=303,
+        )
 
     app.include_router(admin_router)
+
     static_dir = Path(__file__).parent / "admin" / "static"
-    app.mount("/v1/admin/admin/static", StaticFiles(directory=str(static_dir)), name="admin-static")
+
+    app.mount(
+        "/v1/admin/admin/static",
+        StaticFiles(directory=str(static_dir)),
+        name="admin-static",
+    )
 
 
 def _register_dev_routes(app: FastAPI) -> None:
     """Register development-only routes (interlock layer 4)."""
+
     from app.routers import dev
 
     app.include_router(dev.router)
