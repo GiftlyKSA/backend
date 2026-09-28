@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminSession
@@ -53,10 +53,19 @@ class AdminSessionRepository:
         result: AdminSession | None = await self._session.scalar(query)
         return result
 
-    async def touch(self, row: AdminSession, expires_at: datetime) -> None:
+    async def touch(self, row: AdminSession, expires_at: datetime, now: datetime) -> None:
         """Extend a session's expiry (sliding window)."""
-        row.expires_at = expires_at
-        await self._session.flush()
+        await self._session.execute(
+            update(AdminSession)
+            .where(
+                AdminSession.id == row.id,
+                AdminSession.revoked_at.is_(None),
+                AdminSession.expires_at > now,
+                AdminSession.expires_at <= row.expires_at,
+            )
+            .values(expires_at=expires_at)
+            .execution_options(synchronize_session=False)
+        )
 
     async def revoke(self, row: AdminSession, now: datetime) -> None:
         """Mark a session revoked (logout)."""

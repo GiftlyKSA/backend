@@ -44,6 +44,7 @@ PostgreSQL/Redis and deployment verification remains pending where applicable.
 | PERF-07 | Close worker-owned receipt integration clients | Worker lifecycle smoke test |
 | REL-07 | Lock chat conversation rows before unread/latest-message mutations | Two-session PostgreSQL race test |
 | QUAL-04 | Register device tokens with one PostgreSQL conflict upsert | Disposable PostgreSQL concurrency test |
+| PERF-06 | Refresh admin sessions only near expiry with a conditional update | Database-backed concurrent read test |
 
 The OTP default is 60 seconds and the new city catalog is seeded with 20 active Saudi
 cities. Customer orders and courier profiles now store UUID foreign keys to `cities.id`;
@@ -78,7 +79,7 @@ to avoid breaking older clients; new clients can submit city IDs.
 | 18 | TEST-01 | Improvements / verification | Mid 5 | UNCONFIRMED table failures | Generic admin writes lack complete DB coverage |
 | 19 | QUAL-04 | Quality / reliability | Mid 4 | Fixed offline; DB race proof pending | Device-token upsert can race into unique failure |
 | 20 | OPT-01 | Optimization | Low 3 | Setup confirmed; cost unmeasured | S3 client setup repeats per operation |
-| 21 | PERF-06 | Performance | Low 3 | Confirmed | Admin reads repeatedly update the session row |
+| 21 | PERF-06 | Performance | Low 3 | Fixed offline; DB concurrency proof pending | Admin reads repeatedly update the session row |
 | 22 | PERF-07 | Optimization | Low 3 | Fixed offline | Receipt worker does not close owned clients |
 | 23 | SQL-01 | SQL optimization | Low 3 | Suggestion; plans needed | Measure sort/index alignment and reconciliation |
 | 24 | MAINT-02 | Code quality suggestions | Low 3 | Preventive improvement | Mobile OpenAPI has no reproducible CI drift check |
@@ -204,6 +205,8 @@ Related Mid costs are recorded once under SQL, optimization, and reliability bel
 - **Minimal fix / system effect:** refresh near a defined expiry threshold using a conditional
   update. Still validate expiry, revocation, and credential version on every request.
 - **Verification:** fixed-clock expiry/revocation tests and concurrent request UPDATE counts.
+  Unit regressions now cover the no-write path and conditional SQL; concurrent database
+  requests and write counts remain unverified without PostgreSQL.
 
 ## Optimization and resource lifecycle
 

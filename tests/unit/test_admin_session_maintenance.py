@@ -6,7 +6,9 @@ import pytest
 from app.admin import deps
 from app.core.exceptions import UnauthorizedError
 from app.models.enums import UserRole, UserStatus
+from app.repositories.admin_session_repository import AdminSessionRepository
 from app.services.admin_auth_service import AdminAuthService
+from sqlalchemy.dialects import postgresql
 from starlette.requests import Request
 
 from tests.conftest import make_test_settings
@@ -15,7 +17,9 @@ from tests.conftest import make_test_settings
 @pytest.mark.parametrize("extend_expiry", [True, False])
 async def test_session_maintenance_can_authenticate_without_mutating_the_target(extend_expiry):
     now = datetime.now(UTC)
-    session = SimpleNamespace(admin_user_id="admin", created_at=now)
+    session = SimpleNamespace(
+        admin_user_id="admin", created_at=now, expires_at=now + timedelta(minutes=10)
+    )
     sessions = SimpleNamespace(get_active=AsyncMock(return_value=session), touch=AsyncMock())
     users = SimpleNamespace(
         get=AsyncMock(
@@ -29,6 +33,40 @@ async def test_session_maintenance_can_authenticate_without_mutating_the_target(
     )
     await service.load_session("test-session", extend_expiry=extend_expiry)
     assert sessions.touch.await_count == int(extend_expiry)
+
+
+async def test_admin_read_does_not_touch_session_far_from_expiry():
+    now = datetime.now(UTC)
+    session = SimpleNamespace(
+        admin_user_id="admin", created_at=now, expires_at=now + timedelta(minutes=55)
+    )
+    sessions = SimpleNamespace(get_active=AsyncMock(return_value=session), touch=AsyncMock())
+    users = SimpleNamespace(
+        get=AsyncMock(
+            return_value=SimpleNamespace(
+                role=UserRole.ADMIN, status=UserStatus.ACTIVE, deleted_at=None
+            )
+        )
+    )
+    service = AdminAuthService(
+        users=users, sessions=sessions, redis=Mock(), settings=make_test_settings()
+    )
+    await service.load_session("test-session")
+    sessions.touch.assert_not_awaited()
+
+
+async def test_session_touch_is_conditional_on_current_expiry_and_revocation():
+    db = SimpleNamespace(execute=AsyncMock())
+    now = datetime.now(UTC)
+    row = SimpleNamespace(id="session-id", expires_at=now + timedelta(minutes=10))
+    await AdminSessionRepository(db).touch(  # type: ignore[arg-type]
+        row, now + timedelta(hours=1), now
+    )
+    statement = db.execute.await_args.args[0]
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "admin_sessions.revoked_at IS NULL" in sql
+    assert "admin_sessions.expires_at >" in sql
+    assert "admin_sessions.expires_at <=" in sql
 
 
 async def test_no_touch_cannot_bypass_absolute_session_expiry():

@@ -143,8 +143,10 @@ class AdminAuthService:
         if now >= cap:
             raise UnauthorizedError("Your session has expired. Please sign in again.")
         new_expiry = min(now + timedelta(minutes=self._settings.ADMIN_SESSION_TTL_MINUTES), cap)
-        if extend_expiry:
-            await self._sessions.touch(row, new_expiry)
+        if extend_expiry and row.expires_at <= now + timedelta(
+            minutes=self._settings.ADMIN_SESSION_TTL_MINUTES / 2
+        ):
+            await self._sessions.touch(row, new_expiry, now)
         return row, admin
 
     async def logout(self, raw_token: str) -> None:
