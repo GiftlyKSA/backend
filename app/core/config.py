@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: Literal["HS256", "RS256"] = "HS256"
     JWT_ACCESS_TTL_MINUTES: int = 30
     JWT_REFRESH_TTL_DAYS: int = 30
-    JWT_ISSUER: str = "safe-gift"
-    JWT_AUDIENCE: str = "safe-gift"
+    JWT_ISSUER: str = "giftly"
+    JWT_AUDIENCE: str = "giftly"
 
     # Field encryption
     FIELD_ENCRYPTION_KEYS: SecretStr

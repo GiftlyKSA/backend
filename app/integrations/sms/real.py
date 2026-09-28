@@ -25,7 +25,7 @@ class RealSmsClient(SmsClient):
         # VENDOR CONTRACT — refine against the chosen SMS provider's API.
         response = await self._client.post(
             f"{self._base_url}/send",
-            json={"to": phone, "message": f"Your SAFE-GIFT code is {code}"},
+            json={"to": phone, "message": f"Your Giftly code is {code}"},
             headers={"Authorization": f"Bearer {self._provider_key}"},
         )
         response.raise_for_status()

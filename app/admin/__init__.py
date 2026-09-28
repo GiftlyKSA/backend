@@ -1,1 +1,1 @@
-"""SAFE-GIFT admin dashboard package."""
+"""Giftly admin dashboard package."""

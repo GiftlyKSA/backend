@@ -1,1 +1,1 @@
-"""SAFE-GIFT workers package."""
+"""Giftly workers package."""

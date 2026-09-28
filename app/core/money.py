@@ -1,4 +1,4 @@
-"""Decimal money primitives for SAFE-GIFT.
+"""Decimal money primitives for Giftly.
 
 This module owns every money quantization rule in the codebase (SPEC SECTION 8.9,
 SECTION 11). Money is a ``Decimal`` parsed from strings and serialized to strings;

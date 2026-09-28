@@ -1,1 +1,1 @@
-"""SAFE-GIFT routers package."""
+"""Giftly routers package."""

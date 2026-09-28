@@ -16,7 +16,7 @@ from app.integrations.payments.base import (
     PaymentItem,
 )
 
-_DEFAULT_WEBHOOK_KEY = hashlib.sha256(b"safe-gift-local-payment-key").hexdigest()
+_DEFAULT_WEBHOOK_KEY = hashlib.sha256(b"giftly-local-payment-key").hexdigest()
 
 
 class FakePaymentClient(PaymentClient):

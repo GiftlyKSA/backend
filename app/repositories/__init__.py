@@ -1,1 +1,1 @@
-"""SAFE-GIFT repositories package."""
+"""Giftly repositories package."""

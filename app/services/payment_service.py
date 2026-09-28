@@ -175,7 +175,7 @@ class PaymentService:
             user_id=user_id,
             items=(
                 PaymentItem(
-                    name="SAFE-GIFT wallet top-up",
+                    name="Giftly wallet top-up",
                     description="Wallet credit",
                     amount=amount,
                 ),
@@ -454,7 +454,7 @@ class PaymentService:
         """Map the minimum local customer identity simulated payment needs for hosted checkout."""
         return PaymentCustomer(
             external_id=str(user.id),
-            name=user.full_name or "SAFE-GIFT customer",
+            name=user.full_name or "Giftly customer",
             phone_number=user.phone,
             email=user.email,
         )
@@ -478,7 +478,7 @@ class PaymentService:
         ):
             return (
                 PaymentItem(
-                    name=f"SAFE-GIFT invoice {invoice_id}",
+                    name=f"Giftly invoice {invoice_id}",
                     description="Outstanding invoice balance",
                     amount=payment_amount,
                 ),

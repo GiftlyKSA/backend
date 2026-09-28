@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for every SAFE-GIFT table (SPEC SECTION 10, 13).
+"""SQLAlchemy ORM models for every Giftly table (SPEC SECTION 10, 13).
 
 Models carry no business logic beyond hybrid properties. Money columns are
 ``Numeric`` (never float); spatial columns are PostGIS ``Geometry(Point, 4326)``;

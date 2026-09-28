@@ -1,6 +1,6 @@
-# SAFE-GIFT Backend
+# Giftly Backend
 
-SAFE-GIFT is a two-sided mobile marketplace for **custom** gifting: a customer posts a
+Giftly is a two-sided mobile marketplace for **custom** gifting: a customer posts a
 gift request tied to a city and a delivery date, a verified courier claims it and
 builds an itemised invoice, the customer pays into platform escrow, and funds release
 to the courier only after geofenced, photo-proven delivery is approved. This repository

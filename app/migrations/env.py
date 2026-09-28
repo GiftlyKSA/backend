@@ -1,4 +1,4 @@
-"""Alembic environment for SAFE-GIFT (async engine, URL from Settings).
+"""Alembic environment for Giftly (async engine, URL from Settings).
 
 The database URL is read from the application Settings so no secret lives in
 alembic.ini. Autogenerate compares against ``Base.metadata``; every generated

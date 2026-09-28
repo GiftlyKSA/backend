@@ -5,7 +5,7 @@ x-app-environment: &app-environment
   ENVIRONMENT: development
   DEBUG: "true"
   LOG_LEVEL: INFO
-  DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/safegift
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/giftly
   REDIS_URL: redis://:changeme@redis:6379/0
   JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-me}
   JWT_ALGORITHM: HS256
@@ -21,7 +21,7 @@ x-app-environment: &app-environment
   RATE_LIMIT_ENABLED: "true"
 
 x-app-service: &app-service
-  image: safe-gift-backend:local
+  image: giftly-backend:local
   build:
     context: .
   environment: *app-environment
@@ -34,13 +34,13 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: safegift
+      POSTGRES_DB: giftly
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d safegift"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d giftly"]
       interval: 5s
       timeout: 5s
       retries: 10

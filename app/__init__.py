@@ -1,1 +1,1 @@
-"""SAFE-GIFT application package."""
+"""Giftly application package."""

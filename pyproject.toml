@@ -1,7 +1,7 @@
 [project]
-name = "safe-gift-backend"
+name = "giftly-backend"
 version = "0.1.0"
-description = "SAFE-GIFT — peer-to-peer custom gifting marketplace backend."
+description = "Giftly — peer-to-peer custom gifting marketplace backend."
 readme = "README.md"
 # SPEC SECTION 2 mandates Python 3.13+. This build environment cannot download a
 # 3.13 interpreter (egress policy blocks python-build-standalone), so the floor is

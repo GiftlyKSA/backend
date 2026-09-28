@@ -1,4 +1,4 @@
-"""SAFE-GIFT ORM models package — re-exports the declarative Base and all tables."""
+"""Giftly ORM models package — re-exports the declarative Base and all tables."""
 
 from app.models.base import Base
 from app.models.tables import (

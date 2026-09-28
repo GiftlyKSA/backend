@@ -1,1 +1,1 @@
-"""SAFE-GIFT integrations package: gateway, email, sms, push doubles."""
+"""Giftly integrations package: gateway, email, sms, push doubles."""

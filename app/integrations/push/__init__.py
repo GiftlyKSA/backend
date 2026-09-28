@@ -1,1 +1,1 @@
-"""SAFE-GIFT push integration."""
+"""Giftly push integration."""

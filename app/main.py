@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(settings.LOG_LEVEL)
 
     app = FastAPI(
-        title="SAFE-GIFT API",
+        title="Giftly API",
         version="0.1.0",
         lifespan=_lifespan,
         docs_url="/docs" if settings.docs_enabled else None,

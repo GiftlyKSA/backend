@@ -2165,7 +2165,7 @@ wheels = [
 ]
 
 [[package]]
-name = "safe-gift-backend"
+name = "giftly-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

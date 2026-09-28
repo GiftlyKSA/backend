@@ -61,8 +61,8 @@ jobs:
       JWT_ALGORITHM: HS256
       JWT_ACCESS_TTL_MINUTES: "30"
       JWT_REFRESH_TTL_DAYS: "30"
-      JWT_ISSUER: safe-gift-test
-      JWT_AUDIENCE: safe-gift-test
+      JWT_ISSUER: giftly-test
+      JWT_AUDIENCE: giftly-test
       FIELD_ENCRYPTION_KEYS: '{"1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
       FIELD_ENCRYPTION_KEY_VERSION: "1"
       IDENTITY_FINGERPRINT_PEPPER: "test-pepper-value-not-real-0000000000000"
@@ -137,10 +137,10 @@ jobs:
       - name: Validate Compose services
         run: docker compose config --quiet
       - name: Build the deployment image
-        run: docker build -t safe-gift:ci .
+        run: docker build -t giftly:ci .
       - name: Assert the image runs as non-root
         run: |
-          uid=$(docker run --rm safe-gift:ci id -u)
+          uid=$(docker run --rm giftly:ci id -u)
           test "$uid" != "0"
       - name: Assert no secrets leak into image history
         run: |
@@ -152,7 +152,7 @@ jobs:
           base_image=$(sed -n 's/^FROM \(.*\) AS builder$/\1/p' Dockerfile)
           docker pull "$base_image" >/dev/null
           comm -23 \
-            <(docker history --no-trunc --format '{{.CreatedBy}}' safe-gift:ci | sort -u) \
+            <(docker history --no-trunc --format '{{.CreatedBy}}' giftly:ci | sort -u) \
             <(docker history --no-trunc --format '{{.CreatedBy}}' "$base_image" | sort -u) \
             > our_layers.txt
           echo "Our image's unique layers:"; cat our_layers.txt

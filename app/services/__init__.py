@@ -1,1 +1,1 @@
-"""SAFE-GIFT services package."""
+"""Giftly services package."""

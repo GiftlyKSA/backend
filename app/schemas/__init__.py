@@ -1,1 +1,1 @@
-"""SAFE-GIFT schemas package."""
+"""Giftly schemas package."""

@@ -1,1 +1,1 @@
-"""SAFE-GIFT storage integration."""
+"""Giftly storage integration."""

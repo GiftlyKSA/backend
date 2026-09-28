@@ -1,4 +1,4 @@
-# SAFE-GIFT deployment image (SPEC SECTION 22.1). There is exactly ONE Dockerfile.
+# Giftly deployment image (SPEC SECTION 22.1). There is exactly ONE Dockerfile.
 # Multi-stage, non-root, read-only-friendly, no secrets baked in.
 
 # ---- Stage 1: builder -------------------------------------------------------

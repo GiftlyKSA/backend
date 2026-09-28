@@ -209,8 +209,8 @@ def _alg_none_token(sub: str) -> str:
             "role": "CUSTOMER",
             "jti": str(uuid.uuid4()),
             "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
-            "iss": "safe-gift",
-            "aud": "safe-gift",
+            "iss": "giftly",
+            "aud": "giftly",
         }
     )
     return f"{header}.{payload}."
@@ -225,8 +225,8 @@ def _expired_token(sub: str) -> str:
             "jti": str(uuid.uuid4()),
             "iat": int((now - timedelta(hours=2)).timestamp()),
             "exp": int((now - timedelta(hours=1)).timestamp()),
-            "iss": "safe-gift",
-            "aud": "safe-gift",
+            "iss": "giftly",
+            "aud": "giftly",
         },
         _JWT_SECRET,
         algorithm="HS256",

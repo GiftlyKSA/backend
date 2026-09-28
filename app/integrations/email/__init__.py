@@ -1,1 +1,1 @@
-"""SAFE-GIFT email integration."""
+"""Giftly email integration."""

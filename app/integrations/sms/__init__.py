@@ -1,1 +1,1 @@
-"""SAFE-GIFT sms integration."""
+"""Giftly sms integration."""
