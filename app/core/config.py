@@ -227,14 +227,6 @@ class Settings(BaseSettings):
                 raise ValueError("ADMIN_SESSION_SECRET is required when the dashboard is on.")
             if len(self.ADMIN_SESSION_SECRET.get_secret_value().encode("utf-8")) < 32:
                 raise ValueError("ADMIN_SESSION_SECRET must be at least 32 bytes.")
-            uses_development_default = (
-                self.ADMIN_USERNAME == "admin" and password == self.ADMIN_USERNAME
-            )
-            if self.is_production and (uses_development_default or len(password) < 12):
-                raise ValueError(
-                    "Production admin credentials must not use defaults and the password must be "
-                    "at least 12 characters."
-                )
 
     def _validate_production_interlock(self) -> None:
         if self.DEBUG:
