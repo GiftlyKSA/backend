@@ -162,6 +162,9 @@ Docker locally.
   must change, document the compatibility transition in the API schema and OpenAPI output.
 - API and admin user creation use the same role semantics. The database trigger, rather
   than a particular repository, guarantees wallet creation.
+- Preserve the existing `delivery_map_url` field and contract unchanged. Do not add a
+  delivery-location text field, coordinates, latitude/longitude, or geometry as part of
+  this work. Courier city assignment remains the separate foreign-key relation to `cities`.
 - Courier-only data must not be accepted for customer/admin users. Courier operations must
   continue to check both `role == COURIER` and review/active state.
 - A courier profile is one-to-one with a user; profile operations and courier endpoints
