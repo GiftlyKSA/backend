@@ -1,15 +1,25 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from app.core.exceptions import ConflictError, ForbiddenError
-from app.models import AdminSession, AuditLog, Base, RefreshToken, Transaction, User, Wallet
+from app.models import (
+    AdminSession,
+    AuditLog,
+    Base,
+    FeaturedGift,
+    RefreshToken,
+    Transaction,
+    User,
+    Wallet,
+)
 from app.models.enums import TransactionType, UserRole, WalletType
+from app.repositories.admin_read_repository import AdminReadRepository
 from app.repositories.admin_table_repository import AdminTableRepository
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_repository import AuthRepository
 from app.services.admin_table_service import AdminTableService
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DBAPIError
 
 from tests.conftest import make_test_settings
@@ -63,6 +73,72 @@ async def test_every_table_has_a_form_and_generic_crud_is_audited(db_session):
         )
         == 3
     )
+
+
+async def test_browser_cursors_survive_deleted_anchor_and_duplicate_timestamps(db_session):
+    marker = uuid4().hex[:8]
+    timestamp = datetime.now(UTC)
+    rows = [
+        FeaturedGift(
+            title=f"{marker}-{number}",
+            image_storage_key=f"{marker}/{number}",
+            category="Test",
+            created_at=timestamp,
+        )
+        for number in range(105)
+    ]
+    db_session.add_all(rows)
+    await db_session.flush()
+    repo = AdminReadRepository(db_session)
+    first = await repo.list_table_page("featured_gifts")
+    assert first is not None and len(first.rows) == 50 and first.next_cursor
+    second = await repo.list_table_page("featured_gifts", after=first.next_cursor)
+    assert second is not None and len(second.rows) == 50 and second.next_cursor
+    third = await repo.list_table_page("featured_gifts", after=second.next_cursor)
+    assert third is not None and len(third.rows) >= 5
+    assert {row.edit_url for row in first.rows}.isdisjoint({row.edit_url for row in second.rows})
+    assert {row.edit_url for row in second.rows}.isdisjoint({row.edit_url for row in third.rows})
+    await db_session.execute(delete(FeaturedGift).where(FeaturedGift.id == first.next_cursor))
+    await db_session.flush()
+    previous = await repo.list_table_page("featured_gifts", before=second.previous_cursor)
+    assert previous is not None and previous.rows
+
+
+async def test_generic_relationship_edit_nullable_clear_and_delete(db_session):
+    service, auth = await admin_service(db_session)
+    customer = User(phone=f"+966{str(uuid4().int)[:9]}", role=UserRole.CUSTOMER)
+    db_session.add(customer)
+    await db_session.flush()
+    gift_id = await service.save(
+        "featured_gifts",
+        {"title": "Related gift", "image_storage_key": "test/related.png", "category": "Test"},
+        **auth,
+    )
+    occasion_id = await service.save(
+        "occasions",
+        {
+            "user_id": str(customer.id),
+            "title": "Birthday",
+            "occasion_date": date.today().isoformat(),
+            "featured_gift_id": str(gift_id),
+        },
+        **auth,
+    )
+    occasion = await service.form("occasions", occasion_id)
+    related = next(field for field in occasion.fields if field.name == "featured_gift_id")
+    assert related.selected_label and related.value == str(gift_id)
+    await service.save(
+        "occasions",
+        {"title": "Updated birthday", "null__featured_gift_id": "1"},
+        record_id=occasion_id,
+        revision=occasion.revision,
+        **auth,
+    )
+    updated = await service.form("occasions", occasion_id)
+    assert next(field.value for field in updated.fields if field.name == "featured_gift_id") == ""
+    await service.delete("occasions", occasion_id, revision=updated.revision, **auth)
+    gift = await service.form("featured_gifts", gift_id)
+    await service.delete("featured_gifts", gift_id, revision=gift.revision, **auth)
 
 
 async def test_table_phone_change_invalidates_refresh_access_and_dashboard_sessions(db_session):

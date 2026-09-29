@@ -2,9 +2,9 @@
 
 Server-rendered Jinja pages mounted at ``/v1/admin/admin``. Every route calls the admin
 services and never queries the DB directly. Reads are open to any authenticated
-admin; every mutating action requires CSRF, writes an audit row, and — for revealing
-Restricted data — a fresh step-up grant. Money-moving resolutions (disputes,
-withdrawals) are shown read-only; they belong to the ledger service.
+admin; every mutating action requires CSRF and writes an audit row. Generic table
+maintenance also requires a fresh step-up grant. Normal money-moving resolutions
+remain in the ledger service; raw table maintenance does not run those transitions.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Query, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,8 +79,8 @@ async def relationship_choices(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
-    """Show the admin username/password login form."""
-    return _render(request, "login.html")
+    """Show the admin login form."""
+    return _render(request, "login.html", require_totp=get_settings_from(request).is_production)
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -89,6 +89,7 @@ async def login(
     db: DbDep,
     username: Annotated[str, Form(min_length=1, max_length=128)],
     password: Annotated[str, Form(min_length=1, max_length=1024)],
+    totp_code: Annotated[str, Form(max_length=6)] = "",
 ) -> Response:
     """Verify environment credentials, create a session, and set its cookie."""
     settings = get_settings_from(request)
@@ -97,6 +98,7 @@ async def login(
         result = await auth.complete_login(
             username=username,
             password=password,
+            totp_code=totp_code,
             ip=client_ip(request),
             user_agent=request.headers.get("user-agent", "")[:255] or None,
         )
@@ -107,6 +109,7 @@ async def login(
             status_code=exc.status_code,
             username=username,
             error=exc.message,
+            require_totp=settings.is_production,
         )
     response = RedirectResponse("/v1/admin/admin", status_code=303)
     response.set_cookie(
@@ -205,11 +208,15 @@ async def table_browser(
     request: Request,
     db: DbDep,
     table_name: str,
-    page: Annotated[int, Query(ge=1, le=100_000)] = 1,
+    after: uuid.UUID | None = None,
+    before: uuid.UUID | None = None,
+    page: Annotated[int, Query(ge=1, le=1)] = 1,
 ) -> HTMLResponse:
     """Render one bounded, redacted page from an application table."""
     ctx = await _ctx(request, db)
-    data = await ctx.service.get_table_page(table_name, page=page)
+    if after is not None and before is not None:
+        raise HTTPException(status_code=422, detail="Choose one table cursor.")
+    data = await ctx.service.get_table_page(table_name, after=after, before=before)
     return _render(request, "table_browser.html", ctx=ctx, data=data)
 
 
@@ -475,7 +482,7 @@ async def order_delete(
 
 @router.get("/invoices", response_class=HTMLResponse)
 async def invoices(request: Request, db: DbDep) -> HTMLResponse:
-    """List recent invoices (read-only; admins never author invoices)."""
+    """List recent invoices with links to authenticated table maintenance."""
     ctx = await _ctx(request, db)
     rows = await ctx.service.list_invoices()
     return _render(request, "invoices.html", ctx=ctx, invoices=rows)
@@ -489,7 +496,7 @@ async def invoice_detail(request: Request, db: DbDep, invoice_id: uuid.UUID) -> 
     return _render(request, "invoice_detail.html", ctx=ctx, invoice=invoice)
 
 
-# --- Promos (read-only) ------------------------------------------------------
+# --- Promos -----------------------------------------------------------------
 
 
 @router.get("/promos", response_class=HTMLResponse)
@@ -516,7 +523,7 @@ async def promo_redemptions(request: Request, db: DbDep, promo_id: uuid.UUID) ->
     return _render(request, "promo_redemptions.html", ctx=ctx, redemptions=rows, promo_id=promo_id)
 
 
-# --- Disputes / withdrawals / wallets / topups (read-only) ------------------
+# --- Disputes / withdrawals / wallets / topups -------------------------------
 
 
 @router.get("/disputes", response_class=HTMLResponse)

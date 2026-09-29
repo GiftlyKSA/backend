@@ -4,10 +4,9 @@
 <table class="list">
   <thead><tr><th>Courier</th><th>Amount</th><th>IBAN</th><th>Status</th></tr></thead>
   <tbody>{% for w in withdrawals %}
-    <tr><td>{{ w.courier_id }}</td><td class="num">{{ w.amount }}</td>
+    <tr><td>{{ w.courier_id }} · <a href="/v1/admin/admin/tables/withdrawals/{{ w.id }}/edit">Edit / delete</a></td><td class="num">{{ w.amount }}</td>
         <td>••••{{ w.iban_last4 }}</td><td>{{ w.status }}</td></tr>
   {% else %}<tr><td colspan="4">No withdrawals.</td></tr>{% endfor %}</tbody>
 </table>
-<p class="note">Processing a withdrawal moves money and is performed through the ledger
-service. IBANs are masked; a full reveal requires step-up.</p>
+<p class="note">Use the settlement API for normal payout processing. Table maintenance edits records directly and does not move money through the ledger. IBANs remain masked here.</p>
 {% endblock %}

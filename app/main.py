@@ -58,6 +58,7 @@ async def _close_shared_resources(app: FastAPI) -> None:
         clients.email,
         clients.sms,
         clients.push,
+        clients.storage,
     ):
         aclose = getattr(client, "aclose", None)
 

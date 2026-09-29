@@ -9,8 +9,11 @@ short-TTL signed CloudFront URLs. A synchronous boto call would be wrapped in
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 
 import aioboto3
 from botocore.config import Config
@@ -56,14 +59,72 @@ class S3StorageClient(StorageClient):
             aws_secret_access_key=secret_access_key,
             region_name=region,
         )
+        self._condition = asyncio.Condition()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._s3: Any = None
+        self._s3_context: Any = None
+        self._active = 0
+        self._closing = False
+        self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
+
+    @asynccontextmanager
+    async def _client(self) -> AsyncIterator[Any]:
+        loop = asyncio.get_running_loop()
+        async with self._condition:
+            if self._loop is not None and self._loop is not loop:
+                raise RuntimeError("S3 storage client belongs to a different event loop")
+            if self._closing or self._closed:
+                raise RuntimeError("S3 storage client is closing or closed")
+            self._loop = loop
+            if self._s3 is None:
+                context = self._session.client(
+                    "s3", region_name=self._region, config=self._client_config
+                )
+                self._s3 = await context.__aenter__()
+                self._s3_context = context
+            self._active += 1
+            s3 = self._s3
+        try:
+            yield s3
+        finally:
+            async with self._condition:
+                self._active -= 1
+                self._condition.notify_all()
+
+    async def aclose(self) -> None:
+        """Drain active operations and close the pooled S3 connection."""
+        loop = asyncio.get_running_loop()
+        async with self._condition:
+            if self._loop is not None and self._loop is not loop:
+                raise RuntimeError("S3 storage client belongs to a different event loop")
+            if self._close_task is None:
+                self._closing = True
+                self._close_task = asyncio.create_task(self._finish_close())
+            close_task = self._close_task
+        await asyncio.shield(close_task)
+
+    async def _finish_close(self) -> None:
+        """Own shutdown even when a caller awaiting it is cancelled."""
+        try:
+            async with self._condition:
+                while self._active:
+                    await self._condition.wait()
+                context = self._s3_context
+            if context is not None:
+                await context.__aexit__(None, None, None)
+        finally:
+            async with self._condition:
+                self._s3 = None
+                self._s3_context = None
+                self._closed = True
+                self._condition.notify_all()
 
     async def create_upload_url(
         self, *, storage_key: str, content_type: str, byte_size: int, ttl_seconds: int
     ) -> str:
         """Return a create-only pre-signed PUT URL pinned to type and size."""
-        async with self._session.client(
-            "s3", region_name=self._region, config=self._client_config
-        ) as s3:
+        async with self._client() as s3:
             url: str = await s3.generate_presigned_url(
                 "put_object",
                 Params={
@@ -79,9 +140,7 @@ class S3StorageClient(StorageClient):
 
     async def head_object(self, storage_key: str) -> ObjectHead | None:
         """HEAD the object; return its size and content type, or None if missing."""
-        async with self._session.client(
-            "s3", region_name=self._region, config=self._client_config
-        ) as s3:
+        async with self._client() as s3:
             try:
                 resp = await s3.head_object(Bucket=self._bucket, Key=storage_key)
             except ClientError as exc:
@@ -97,18 +156,18 @@ class S3StorageClient(StorageClient):
 
     async def delete_object(self, storage_key: str) -> None:
         """Delete an abandoned object; S3 treats a missing key as success."""
-        async with self._session.client(
-            "s3", region_name=self._region, config=self._client_config
-        ) as s3:
+        async with self._client() as s3:
             await s3.delete_object(Bucket=self._bucket, Key=storage_key)
 
     async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
         """Read the first bytes and confirm they match the issued image type."""
-        async with self._session.client(
-            "s3", region_name=self._region, config=self._client_config
-        ) as s3:
+        async with self._client() as s3:
             resp = await s3.get_object(Bucket=self._bucket, Key=storage_key, Range="bytes=0-15")
-            head = await resp["Body"].read()
+            body = resp["Body"]
+            try:
+                head = await body.read()
+            finally:
+                body.close()
         signature = _IMAGE_MAGIC.get(content_type)
         return signature is not None and head.startswith(signature)
 

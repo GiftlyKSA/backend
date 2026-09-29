@@ -10,6 +10,11 @@
     <label>Password
       <input name="password" type="password" autocomplete="current-password" required>
     </label>
+    {% if require_totp %}
+    <label>Authenticator code
+      <input name="totp_code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+    </label>
+    {% endif %}
     <button type="submit">Sign in</button>
   </form>
 </section>

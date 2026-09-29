@@ -104,7 +104,7 @@ async def test_overview_and_reads(db_session: AsyncSession, redis_client: Redis)
     assert await service.list_wallets() is not None
     assert await service.list_topups() is not None
     assert {table.name for table in service.list_table_catalog()} == set(Base.metadata.tables)
-    page = await service.get_table_page("users", page=1)
+    page = await service.get_table_page("users")
     assert page is not None and page.table.editable is True
     assert "phone" in page.columns
     assert await service.list_audit_logs() is not None

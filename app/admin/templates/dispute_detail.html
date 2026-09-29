@@ -7,8 +7,6 @@
   <tr><td>Status</td><td>{{ dispute.status }}</td></tr>
   <tr><td>Reason</td><td>{{ dispute.reason }}</td></tr>
 </table></section>
-<p class="note">Resolving a dispute moves escrow funds and is performed through the
-ledger service (not this dashboard) so money never moves outside the double-entry
-ledger.</p>
+<p class="note">Use the settlement API for a normal escrow resolution. Table maintenance here edits records directly and does not run a settlement.</p>
 {% endif %}
 {% endblock %}

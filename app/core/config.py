@@ -9,6 +9,7 @@ the first of the four §5.2 interlock layers.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import logging
 from decimal import Decimal
@@ -92,6 +93,7 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str | None = None
     ADMIN_PASSWORD: SecretStr | None = None
     ADMIN_SESSION_SECRET: SecretStr | None = None
+    ADMIN_TOTP_SECRET: SecretStr | None = None
     ADMIN_SESSION_TTL_MINUTES: int = 60
     ADMIN_DASHBOARD_ENABLED: bool = False
 
@@ -234,6 +236,18 @@ class Settings(BaseSettings):
                 raise ValueError("ADMIN_SESSION_SECRET is required when the dashboard is on.")
             if len(self.ADMIN_SESSION_SECRET.get_secret_value().encode("utf-8")) < 32:
                 raise ValueError("ADMIN_SESSION_SECRET must be at least 32 bytes.")
+            if self.is_production:
+                raw = (
+                    self.ADMIN_TOTP_SECRET.get_secret_value()
+                    if self.ADMIN_TOTP_SECRET is not None
+                    else ""
+                )
+                try:
+                    decoded = base64.b32decode(raw, casefold=False)
+                except (ValueError, binascii.Error) as exc:
+                    raise ValueError("ADMIN_TOTP_SECRET must be valid Base32.") from exc
+                if len(decoded) < 20:
+                    raise ValueError("ADMIN_TOTP_SECRET must decode to at least 20 bytes.")
 
     def _validate_production_interlock(self) -> None:
         if self.DEBUG:

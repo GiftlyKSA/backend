@@ -3227,7 +3227,7 @@
           "current_actor_has_rated"
         ],
         "title": "OrderSummary",
-        "description": "A compact order row for lists and the radar (no exact coordinates)."
+        "description": "A compact order row for lists and the radar."
       },
       "ParticipantProfile": {
         "properties": {

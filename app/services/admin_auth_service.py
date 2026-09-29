@@ -8,10 +8,14 @@ password step-up verification.
 
 from __future__ import annotations
 
+import base64
 import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.twofactor import InvalidToken
+from cryptography.hazmat.primitives.twofactor.totp import TOTP
 from redis.asyncio import Redis
 
 from app.core.config import Settings
@@ -81,6 +85,7 @@ class AdminAuthService:
         *,
         username: str,
         password: str,
+        totp_code: str = "",
         ip: str | None,
         user_agent: str | None,
     ) -> AdminLogin:
@@ -102,6 +107,8 @@ class AdminAuthService:
             or user.deleted_at is not None
         ):
             raise generic
+        if self._settings.is_production:
+            await self._verify_totp(totp_code)
         await self._redis.delete(*keys)
 
         raw = generate_session_token()
@@ -117,6 +124,32 @@ class AdminAuthService:
         )
         csrf = make_csrf_token(token_hash, self._session_secret())
         return AdminLogin(raw_session_token=raw, csrf_token=csrf, admin=user)
+
+    async def _verify_totp(self, code: str) -> None:
+        generic = UnauthorizedError("Login failed. Check your credentials and try again.")
+        if len(code) != 6 or not code.isascii() or not code.isdecimal():
+            raise generic
+        secret = self._settings.ADMIN_TOTP_SECRET
+        if secret is None:
+            raise generic
+        key = base64.b32decode(secret.get_secret_value())
+        verifier = TOTP(key, 6, hashes.SHA1(), 30)  # noqa: S303 - authenticator TOTP uses HMAC-SHA1
+        current_step = int(self._now().timestamp()) // 30
+        for step in (current_step, current_step - 1, current_step + 1):
+            try:
+                verifier.verify(code.encode("ascii"), step * 30)
+            except InvalidToken:
+                continue
+            try:
+                unused = await self._redis.set(f"admin:totp:used:{step}", "1", nx=True, ex=90)
+            except Exception as exc:
+                raise RateLimitedError(
+                    90, "Admin authentication is temporarily unavailable."
+                ) from exc
+            if not unused:
+                raise generic
+            return
+        raise generic
 
     async def load_session(
         self, raw_token: str, *, extend_expiry: bool = True

@@ -200,9 +200,11 @@ class AdminService:
         """Return every application table available through the read-only browser."""
         return self._reads.list_table_catalog()
 
-    async def get_table_page(self, table_name: str, *, page: int) -> AdminTablePage | None:
+    async def get_table_page(
+        self, table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None
+    ) -> AdminTablePage | None:
         """Return a bounded redacted table-browser page."""
-        return await self._reads.list_table_page(table_name, page=page)
+        return await self._reads.list_table_page(table_name, after=after, before=before)
 
     # --- Courier verification (no money) --------------------------------------
 

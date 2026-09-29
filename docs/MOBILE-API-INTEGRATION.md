@@ -2,7 +2,11 @@
 
 **OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 44 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat WebSocket contract, and unsupported-screen gaps.
 
-**Verified against backend source and offline development OpenAPI on 2026-09-28.** This catalogs every implemented non-admin HTTP endpoint (44) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+**Verified against backend source and offline development OpenAPI on 2026-09-29.** This catalogs every implemented non-admin HTTP endpoint (44) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+
+The backend unit suite compares non-admin operations and their wire schemas in this file
+with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
+after API changes; update the handoff only when the contract change is intentional.
 
 ## Integration conventions
 

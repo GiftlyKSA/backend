@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
@@ -12,6 +15,7 @@ from app.integrations.factory import build_clients
 from app.integrations.push.real import RealPushClient
 from app.integrations.sms.real import RealSmsClient
 from app.integrations.storage.real import S3StorageClient
+from app.main import _close_shared_resources
 from botocore.auth import S3SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
@@ -32,22 +36,27 @@ def _private_key_pem() -> str:
 
 
 class _S3Context:
-    def __init__(self, client: object) -> None:
+    def __init__(self, client: object, session: _S3Session) -> None:
         self.client = client
+        self.session = session
 
     async def __aenter__(self) -> object:
         return self.client
 
     async def __aexit__(self, *args: object) -> None:
+        self.session.closed += 1
         return None
 
 
 class _S3Session:
     def __init__(self, client: object) -> None:
         self.client_instance = client
+        self.created = 0
+        self.closed = 0
 
     def client(self, *args: object, **kwargs: object) -> _S3Context:
-        return _S3Context(self.client_instance)
+        self.created += 1
+        return _S3Context(self.client_instance, self)
 
 
 def _mock_httpx(monkeypatch: pytest.MonkeyPatch, response: httpx.Response) -> None:
@@ -147,6 +156,7 @@ async def test_real_storage_signs_upload_length_and_cloudfront_read() -> None:
     assert read.startswith("https://cdn.example.com/orders/proof/file.jpg?")
     assert set(read_query) == {"Expires", "Signature", "Key-Pair-Id", "Hash-Algorithm"}
     assert read_query["Hash-Algorithm"] == ["SHA256"]
+    await client.aclose()
 
 
 @pytest.mark.parametrize("code,missing", [("NoSuchKey", True), ("AccessDenied", False)])
@@ -171,6 +181,133 @@ async def test_real_storage_only_treats_missing_object_as_absent(code: str, miss
     else:
         with pytest.raises(ClientError):
             await client.head_object("private.jpg")
+    await client.aclose()
+
+
+async def test_real_storage_reuses_client_and_closes_after_active_operation() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class _HeadClient:
+        async def head_object(self, **kwargs: object) -> dict[str, object]:
+            entered.set()
+            await release.wait()
+            return {"ContentLength": 12, "ContentType": "image/jpeg"}
+
+        async def delete_object(self, **kwargs: object) -> None:
+            return None
+
+    client = S3StorageClient(
+        bucket="private-bucket",
+        region="eu-west-1",
+        access_key_id="test-access-key",
+        secret_access_key="test-secret-key",
+        cloudfront_domain="cdn.example.com",
+        cloudfront_key_pair_id="K123",
+        cloudfront_private_key=_private_key_pem(),
+    )
+    session = _S3Session(_HeadClient())
+    client._session = session  # type: ignore[assignment]  # noqa: SLF001
+    head_task = asyncio.create_task(client.head_object("one.jpg"))
+    await entered.wait()
+    await client.delete_object("two.jpg")
+    close_task = asyncio.create_task(client.aclose())
+    await asyncio.sleep(0)
+    assert not close_task.done()
+    with pytest.raises(RuntimeError, match="closing or closed"):
+        await client.delete_object("three.jpg")
+    release.set()
+    assert (await head_task).byte_size == 12  # type: ignore[union-attr]
+    await close_task
+    await client.aclose()
+    assert session.created == 1
+    assert session.closed == 1
+    with pytest.raises(RuntimeError, match="closing or closed"):
+        await client.delete_object("four.jpg")
+
+
+async def test_real_storage_rejects_cross_loop_use_and_finishes_cancelled_close() -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class _HeadClient:
+        async def head_object(self, **kwargs: object) -> dict[str, object]:
+            entered.set()
+            await release.wait()
+            return {"ContentLength": 1}
+
+    client = S3StorageClient(
+        bucket="private-bucket",
+        region="eu-west-1",
+        access_key_id="test-access-key",
+        secret_access_key="test-secret-key",
+        cloudfront_domain="cdn.example.com",
+        cloudfront_key_pair_id="K123",
+        cloudfront_private_key=_private_key_pem(),
+    )
+    session = _S3Session(_HeadClient())
+    client._session = session  # type: ignore[assignment]  # noqa: SLF001
+    head_task = asyncio.create_task(client.head_object("one.jpg"))
+    await entered.wait()
+    with pytest.raises(RuntimeError, match="different event loop"):
+        await asyncio.to_thread(lambda: asyncio.run(client.head_object("two.jpg")))
+    close_task = asyncio.create_task(client.aclose())
+    await asyncio.sleep(0)
+    close_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await close_task
+    release.set()
+    await head_task
+    await client.aclose()
+    assert session.closed == 1
+
+
+async def test_app_shutdown_closes_storage_client() -> None:
+    storage = SimpleNamespace(aclose=AsyncMock())
+    clients = SimpleNamespace(
+        gateway=object(), email=object(), sms=object(), push=object(), storage=storage
+    )
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            clients=clients,
+            redis=SimpleNamespace(aclose=AsyncMock()),
+            engine=SimpleNamespace(dispose=AsyncMock()),
+        )
+    )
+    await _close_shared_resources(app)
+    storage.aclose.assert_awaited_once()
+
+
+async def test_real_storage_releases_range_response_body() -> None:
+    class _Body:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def read(self) -> bytes:
+            return b"\xff\xd8\xffimage"
+
+        def close(self) -> None:
+            self.closed = True
+
+    body = _Body()
+
+    class _GetClient:
+        async def get_object(self, **kwargs: object) -> dict[str, _Body]:
+            return {"Body": body}
+
+    client = S3StorageClient(
+        bucket="private-bucket",
+        region="eu-west-1",
+        access_key_id="test-access-key",
+        secret_access_key="test-secret-key",
+        cloudfront_domain="cdn.example.com",
+        cloudfront_key_pair_id="K123",
+        cloudfront_private_key=_private_key_pem(),
+    )
+    client._session = _S3Session(_GetClient())  # type: ignore[assignment]  # noqa: SLF001
+    assert await client.verify_image_magic_bytes("one.jpg", "image/jpeg")
+    assert body.closed
+    await client.aclose()
 
 
 def test_build_clients_returns_fakes_in_test() -> None:

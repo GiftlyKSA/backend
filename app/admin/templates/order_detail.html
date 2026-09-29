@@ -35,7 +35,7 @@
   <input type="hidden" name="next" value="/v1/admin/admin/orders/{{ order.id }}"><button type="submit" class="secondary">Step-up</button>
 </form>
 {% else %}
-<p class="note">This order is read-only after payment or fulfillment begins.</p>
+<p class="note">The delivery-details form closes after payment or fulfillment begins. Table maintenance is available through Edit or delete this record above.</p>
 {% endif %}
 {% if order.status == "NEW" %}
 <form method="post" action="/v1/admin/admin/orders/{{ order.id }}/delete" class="inline-form">

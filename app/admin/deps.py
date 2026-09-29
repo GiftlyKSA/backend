@@ -15,6 +15,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.core.db import emit_committed_audit_events
 from app.core.exceptions import ForbiddenError
 from app.core.security import sha256_hex, verify_csrf_token
 from app.models import AdminSession, User
@@ -77,8 +78,10 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
         try:
             yield session
             await session.commit()
+            emit_committed_audit_events(session)
         except Exception:
             await session.rollback()
+            session.info.pop("committed_audit_events", None)
             raise
 
 

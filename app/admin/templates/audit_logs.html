@@ -4,7 +4,7 @@
 <table class="list">
   <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th></tr></thead>
   <tbody>{% for l in logs %}
-    <tr><td>{{ l.created_at }}</td><td>{{ l.actor_user_id }}</td><td>{{ l.action }}</td>
+    <tr><td>{{ l.created_at }} · <a href="/v1/admin/admin/tables/audit_logs/{{ l.id }}/edit">Edit / delete</a></td><td>{{ l.actor_user_id }}</td><td>{{ l.action }}</td>
         <td>{{ l.entity_type }}/{{ l.entity_id }}</td></tr>
   {% else %}<tr><td colspan="4">No entries.</td></tr>{% endfor %}</tbody>
 </table>

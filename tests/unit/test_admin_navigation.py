@@ -35,4 +35,33 @@ def test_section_has_table_crud_links(section: str, table: str) -> None:
 
     assert f'/v1/admin/admin/tables/{table}"' in html
     assert f'/v1/admin/admin/tables/{table}/new"' in html
-    assert f'/v1/admin/admin/tables/{table}/{record_id}"' in html
+    assert f'/v1/admin/admin/tables/{table}/{record_id}/edit"' in html
+    assert f">Add {table.replace('_', ' ')}</a>" in html
+    assert "Edit or delete this record" in html
+
+
+@pytest.mark.parametrize("section,collection", [("invoices", "invoices"), ("promos", "promos")])
+def test_invoice_and_promo_pages_offer_crud(section: str, collection: str) -> None:
+    environment = Environment(loader=FileSystemLoader(_TEMPLATES), autoescape=True)
+    record_id = uuid4()
+    request = SimpleNamespace(url=SimpleNamespace(path=f"/v1/admin/admin/{section}"))
+    ctx = SimpleNamespace(csrf_token="test")
+    row = SimpleNamespace(
+        id=record_id,
+        status="DRAFT",
+        total_amount="1.00",
+        created_at="now",
+        code="TEST",
+        discount_type="FIXED",
+        is_active=True,
+        used_count=0,
+        max_total_usages=None,
+    )
+
+    html = environment.get_template(f"{section}.html").render(
+        request=request, ctx=ctx, **{collection: [row]}
+    )
+
+    assert f'/v1/admin/admin/tables/{section}/new"' in html
+    assert f'/v1/admin/admin/tables/{section}/{record_id}/edit"' in html
+    assert "Read-only" not in html

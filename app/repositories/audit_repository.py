@@ -42,6 +42,7 @@ class AuditRepository:
         )
         self._session.add(row)
         await self._session.flush()
+        self._session.info.setdefault("committed_audit_events", []).append(row)
         return row
 
     async def list_recent(

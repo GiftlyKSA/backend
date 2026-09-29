@@ -16,6 +16,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from app.models import (
     Dispute,
@@ -84,8 +85,22 @@ class AdminTablePage:
     columns: list[str]
     edit_column: str | None
     rows: list[AdminTableRow]
-    page: int
-    has_next: bool
+    next_cursor: uuid.UUID | None
+    previous_cursor: uuid.UUID | None
+
+
+def table_page_query(
+    table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None
+) -> Select[Any]:
+    """Page on the indexed UUID key, with a unique and stable ordering."""
+    table = Base.metadata.tables[table_name]
+    key = next(iter(table.primary_key.columns))
+    query = select(table)
+    if after is not None:
+        query = query.where(key < after)
+    if before is not None:
+        query = query.where(key > before)
+    return query.order_by(key.asc() if before is not None else key.desc()).limit(_PAGE_SIZE + 1)
 
 
 class AdminReadRepository:
@@ -99,7 +114,9 @@ class AdminReadRepository:
         """Return every application-owned table, excluding database extension tables."""
         return [AdminTableInfo(name=name, editable=True) for name in sorted(Base.metadata.tables)]
 
-    async def list_table_page(self, table_name: str, *, page: int) -> AdminTablePage | None:
+    async def list_table_page(
+        self, table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None
+    ) -> AdminTablePage | None:
         """Return a bounded, redacted page for a known application table.
 
         The table name is resolved only from SQLAlchemy metadata, never interpolated into
@@ -111,31 +128,37 @@ class AdminReadRepository:
             return None
         info = AdminTableInfo(name=table_name, editable=True)
         columns = [column.name for column in table.columns]
-        ordering = table.c.get("created_at")
-        if ordering is None:
-            ordering = next(iter(table.primary_key.columns), None)
-        query = select(table)
-        if ordering is not None:
-            query = query.order_by(ordering.desc(), next(iter(table.primary_key.columns)).desc())
+        if after is not None and before is not None:
+            raise ValueError("Choose one table cursor.")
         result = await self._session.execute(
-            query.limit(_PAGE_SIZE + 1).offset((page - 1) * _PAGE_SIZE)
+            table_page_query(table_name, after=after, before=before)
         )
         mappings = list(result.mappings())
-        has_next = len(mappings) > _PAGE_SIZE
+        has_more = len(mappings) > _PAGE_SIZE
+        visible = mappings[:_PAGE_SIZE]
+        if before is not None:
+            visible.reverse()
+        key_name = next(iter(table.primary_key.columns)).name
         rows = [
             AdminTableRow(
                 cells=[self._display_value(table_name, column, row[column]) for column in columns],
                 edit_url=self._edit_url(table_name, row),
             )
-            for row in mappings[:_PAGE_SIZE]
+            for row in visible
         ]
         return AdminTablePage(
             table=info,
             columns=columns,
             edit_column=next(iter(table.primary_key.columns)).name,
             rows=rows,
-            page=page,
-            has_next=has_next,
+            next_cursor=(
+                visible[-1][key_name] if visible and (before is not None or has_more) else None
+            ),
+            previous_cursor=(
+                visible[0][key_name]
+                if visible and (after is not None or (before is not None and has_more))
+                else None
+            ),
         )
 
     @staticmethod

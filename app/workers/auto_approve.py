@@ -17,7 +17,8 @@ from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
-from app.integrations.factory import build_clients
+from app.integrations.factory import Clients, build_clients
+from app.integrations.storage.base import StorageClient
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.media_repository import MediaRepository
@@ -33,14 +34,16 @@ _LOCK_KEY = "job:auto_approve"
 _LOCK_TTL_SECONDS = 300
 
 
-def _service(session: AsyncSession, settings: Settings) -> FulfillmentService:
+def _service(
+    session: AsyncSession, settings: Settings, storage: StorageClient
+) -> FulfillmentService:
     return FulfillmentService(
         orders=OrderRepository(session),
         invoices=InvoiceRepository(session),
         disputes=DisputeRepository(session),
         wallets=WalletRepository(session),
         money=MoneyService(WalletRepository(session)),
-        media=MediaService(build_clients(settings).storage, settings, MediaRepository(session)),
+        media=MediaService(storage, settings, MediaRepository(session)),
         settings=settings,
     )
 
@@ -59,24 +62,41 @@ async def auto_approve_delivered(
         factory = build_session_factory(own_engine)
 
     completed = 0
+    clients: Clients | None = None
     try:
+        clients = build_clients(settings)
         async with factory() as session:
-            cutoff = _service(session, settings).auto_approve_cutoff()
+            cutoff = _service(session, settings, clients.storage).auto_approve_cutoff()
             due = await OrderRepository(session).list_auto_approve_due(cutoff, limit)
             order_ids = [order.id for order in due]
 
         for order_id in order_ids:
             async with factory() as session:
                 try:
-                    if await _service(session, settings).auto_approve(order_id=order_id):
+                    if await _service(session, settings, clients.storage).auto_approve(
+                        order_id=order_id
+                    ):
                         completed += 1
                     await session.commit()
                 except Exception:  # noqa: BLE001 - one bad order must not stall the sweep
                     await session.rollback()
                     _logger.exception("auto-approve failed for order %s", order_id)
     finally:
-        if own_engine is not None:
-            await own_engine.dispose()
+        try:
+            if clients is not None:
+                for client in (
+                    clients.storage,
+                    clients.gateway,
+                    clients.email,
+                    clients.sms,
+                    clients.push,
+                ):
+                    aclose = getattr(client, "aclose", None)
+                    if aclose is not None:
+                        await aclose()
+        finally:
+            if own_engine is not None:
+                await own_engine.dispose()
 
     _logger.info("auto-approve completed %d order(s)", completed)
     return completed

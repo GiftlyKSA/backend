@@ -28,9 +28,8 @@
   </table>
 </div>
 <div class="pager">
-  {% if data.page > 1 %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?page={{ data.page - 1 }}">Previous</a>{% endif %}
-  <span>Page {{ data.page }}</span>
-  {% if data.has_next %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?page={{ data.page + 1 }}">Next</a>{% endif %}
+  {% if data.previous_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?before={{ data.previous_cursor }}">Previous</a>{% endif %}
+  {% if data.next_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?after={{ data.next_cursor }}">Next</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

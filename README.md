@@ -109,6 +109,7 @@ at runtime (task definition / compose override / systemd `EnvironmentFile`). See
 | `AWS_*`, `S3_BUCKET_NAME`, `CLOUDFRONT_*` | production | storage + signed CDN | — |
 | `ADMIN_SESSION_SECRET` | if dashboard on | >= 32 bytes | `<32+ random bytes>` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | if dashboard on | environment-backed login; production password >= 12 chars | `admin` / `admin` (development only) |
+| `ADMIN_TOTP_SECRET` | production, if dashboard on | Base32 secret of at least 20 random bytes for an authenticator app; keep it private | `<Base32 secret>` |
 
 The application **refuses to boot** if any production-safety rule is violated (DEBUG on,
 docs enabled, empty/wildcard CORS, missing required storage/messaging config, a bad encryption key, or
@@ -237,10 +238,18 @@ Server-rendered (Jinja2), mounted at `/v1/admin/admin`, gated by `ADMIN_DASHBOAR
 authenticates with environment-backed username/password into server-side sessions and
 calls backend services — it never queries the DB directly.
 
-`/v1/admin/admin/tables` provides paginated views and add/edit/delete forms for all 30 application
+In production, login also requires a six-digit authenticator code from the Base32
+`ADMIN_TOTP_SECRET` configured at deployment. Add that same secret to your authenticator
+app as a 30-second SHA-1 TOTP entry. Codes can be used only once, including across
+application workers. Development and test logins do not require this code.
+
+`/v1/admin/admin/tables` provides paginated views and add/edit/delete forms for all mapped application
 tables in every environment, including production. Every write requires an active admin
 session, CSRF verification, and recent password confirmation. Each successful operation
 records the actor, table, record, and changed field names without logging field values.
+Committed audit events also emit metadata-only `giftly.audit` log entries. Forward the
+application log stream to a restricted, independently retained sink in production; without
+that deployment control, database administrators can still alter local audit history.
 Deletion requires a confirmation checkbox and follows database cascade rules.
 
 Foreign-key inputs search related records in pages of 25 instead of asking for IDs.

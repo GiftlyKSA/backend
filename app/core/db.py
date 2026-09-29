@@ -8,8 +8,10 @@ one. Sessions never rely on session-level state across requests.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 
+from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -18,6 +20,28 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import Settings
+from app.core.middleware import current_request_id
+
+_audit_logger = logging.getLogger("giftly.audit")
+
+
+def emit_committed_audit_events(session: AsyncSession) -> None:
+    """Mirror committed audit metadata to the application log stream."""
+    for row in session.info.pop("committed_audit_events", []):
+        if not inspect(row).persistent:
+            continue
+        _audit_logger.info(
+            "audit_event_committed",
+            extra={
+                "request_id": current_request_id(),
+                "extra_fields": {
+                    "action": row.action,
+                    "actor_user_id": str(row.actor_user_id) if row.actor_user_id else None,
+                    "entity_type": row.entity_type,
+                    "entity_id": str(row.entity_id) if row.entity_id else None,
+                },
+            },
+        )
 
 
 def build_engine(settings: Settings) -> AsyncEngine:
@@ -45,6 +69,8 @@ async def session_scope(
         try:
             yield session
             await session.commit()
+            emit_committed_audit_events(session)
         except Exception:
             await session.rollback()
+            session.info.pop("committed_audit_events", None)
             raise
