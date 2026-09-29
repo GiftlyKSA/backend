@@ -177,9 +177,13 @@ authorized. On Windows, use `Copy-Item .env.example .env` in place of `cp` in se
 
 ## Migrations
 
-This fresh-database checkout currently has no Alembic revisions. Run
-`uv run --locked python -m app.bootstrap_db` for the initial schema and seeds.
-Future schema changes need reviewed forward Alembic revisions.
+The PostgreSQL database must be provisioned by the hosting platform before
+deployment; Alembic creates and upgrades tables inside that database, but does
+not create the database itself. The container entrypoint runs
+`alembic upgrade head` before starting the configured API, worker, or scheduler
+command. Docker Compose and CI run the same migration command through
+`uv run --locked python -m app.bootstrap_db`. FastAPI startup does not create
+schema objects.
 
 ```bash
 uv run alembic revision --autogenerate -m "describe change"   # DRAFT — read every line
@@ -221,11 +225,10 @@ through the normal ledger/escrow flows and return `payment_url: null`. Tests can
 `POST /api/dev/simulation/simulate` for pending simulated checkouts. The payload and
 signature are a test harness, **not a Dhamen protocol**.
 
-The migration history was cleaned for fresh databases with the owner's confirmation
-that no existing database needs the previous history. Create a fresh database and run
-`uv run --locked python -m app.bootstrap_db`; do not apply this bootstrap to an
-older deployment. Future migration testing must use a disposable database. Production
-payments require a separately reviewed Dhamen implementation before activation.
+The initial Alembic revision creates the schema and seeds the default cities and
+system wallets on an empty database. Later deployments apply only pending revisions.
+Migration testing must use a disposable database. Production payments require a
+separately reviewed Dhamen implementation before activation.
 
 ## Admin dashboard
 

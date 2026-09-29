@@ -8,7 +8,6 @@ unrestricted only in development; dev-only routes are registered only in develop
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -16,9 +15,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
@@ -31,37 +27,10 @@ from app.core.middleware import (
 )
 from app.core.ratelimit import RateLimiter
 from app.core.redis import build_redis
-from app.core.schema_guards import install_schema_guards
 from app.integrations.factory import build_clients
-from app.models.base import Base
 from app.routers import health
-from app.seed import seed_cities_in_session, seed_system_wallets_in_session
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Database startup
-# ---------------------------------------------------------------------------
-
-# All Gunicorn workers use the same PostgreSQL advisory-lock ID.
-#
-# Worker 1 acquires the lock and creates missing schema objects.
-# Other workers wait until worker 1 commits or rolls back.
-#
-# Once the first worker commits, subsequent workers acquire the lock,
-# execute create_all(checkfirst=True), discover that the tables already
-# exist, and perform no CREATE TABLE statements.
-_DATABASE_SCHEMA_LOCK_ID = 749283746
-
-# A PaaS may start the application container a little before PostgreSQL is
-# ready to accept connections. Retry connection-level failures only.
-#
-# Actual schema errors, authentication errors, invalid SQL,
-# etc. are NOT silently retried; startup fails with the original traceback.
-_DATABASE_STARTUP_ATTEMPTS = 3
-_DATABASE_RETRY_INITIAL_SECONDS = 1.0
-_DATABASE_RETRY_MAX_SECONDS = 5.0
 
 
 _SECURITY_HEADERS = {
@@ -78,109 +47,6 @@ _ADMIN_CSP = (
     "default-src 'self'; script-src 'self'; object-src 'none'; "
     "frame-ancestors 'none'; base-uri 'none'"
 )
-
-
-async def _initialize_database_schema(app: FastAPI) -> None:
-    """Connect to PostgreSQL and create any missing database schema objects.
-
-    Connection-level failures are retried because a managed PostgreSQL service may
-    not be ready at exactly the same moment as the application container.
-
-    Once connected, PostgreSQL advisory locking ensures that only one Gunicorn
-    worker performs schema creation at a time.
-    """
-    engine = app.state.engine
-
-    safe_database_url = engine.url.render_as_string(
-        hide_password=True,
-    )
-
-    retry_delay = _DATABASE_RETRY_INITIAL_SECONDS
-
-    for attempt in range(1, _DATABASE_STARTUP_ATTEMPTS + 1):
-        logger.info(
-            "database_schema_connecting attempt=%s/%s url=%s",
-            attempt,
-            _DATABASE_STARTUP_ATTEMPTS,
-            safe_database_url,
-        )
-
-        try:
-            conn = await asyncio.wait_for(engine.connect(), timeout=3)
-        except (OSError, TimeoutError) as exc:
-            if attempt >= _DATABASE_STARTUP_ATTEMPTS:
-                logger.exception(
-                    "database_connection_failed attempts=%s url=%s error=%r",
-                    _DATABASE_STARTUP_ATTEMPTS,
-                    safe_database_url,
-                    exc,
-                )
-                raise
-            logger.warning(
-                "database_connection_unavailable attempt=%s/%s retry_in_seconds=%s error=%r",
-                attempt,
-                _DATABASE_STARTUP_ATTEMPTS,
-                retry_delay,
-                exc,
-            )
-            await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, _DATABASE_RETRY_MAX_SECONDS)
-            continue
-        except OperationalError as exc:
-            logger.exception("database_connection_rejected url=%s error=%r", safe_database_url, exc)
-            raise
-
-        try:
-            async with asyncio.timeout(30), conn.begin():
-                logger.info("database_connected")
-
-                await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
-                await conn.execute(text("SET LOCAL statement_timeout = '20s'"))
-
-                # Only one Gunicorn worker may inspect/create the schema at once.
-                await conn.execute(
-                    text("SELECT pg_advisory_xact_lock(:lock_id)"),
-                    {"lock_id": _DATABASE_SCHEMA_LOCK_ID},
-                )
-
-                logger.info("database_schema_lock_acquired")
-
-                # create_all(checkfirst=True):
-                #
-                # - creates tables/sequences/types that do not exist
-                # - leaves existing tables untouched
-                # - does not drop existing tables
-                # - does not migrate existing table definitions
-                #
-                # Schema changes to existing tables should still use Alembic.
-                await conn.run_sync(
-                    Base.metadata.create_all,
-                    checkfirst=True,
-                )
-                await install_schema_guards(conn)
-
-                async with AsyncSession(bind=conn) as session:
-                    await seed_cities_in_session(session)
-                    await seed_system_wallets_in_session(session)
-
-                logger.info("database_schema_create_all_finished")
-
-            # Exiting engine.begin() successfully commits the transaction.
-            logger.info("database_schema_committed")
-            return
-
-        except Exception as exc:
-            # We successfully reached PostgreSQL but something about schema
-            # initialization itself failed. Do not hide or endlessly retry
-            # programming/configuration errors.
-            logger.exception(
-                "database_schema_initialization_failed url=%s error=%r",
-                safe_database_url,
-                exc,
-            )
-            raise
-        finally:
-            await conn.close()
 
 
 async def _close_shared_resources(app: FastAPI) -> None:
@@ -206,8 +72,6 @@ async def _close_shared_resources(app: FastAPI) -> None:
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize shared resources before serving requests and close them on shutdown."""
     try:
-        await _initialize_database_schema(app)
-
         logger.info("application_dependencies_ready")
 
         yield
@@ -252,9 +116,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
 
     # Import routers before FastAPI begins its lifespan.
-    #
-    # These imports also ensure the application modules/models used by
-    # the routers are loaded before Base.metadata.create_all() executes.
     from app.routers import (
         admin_api,
         auth,

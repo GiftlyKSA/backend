@@ -11,6 +11,8 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
@@ -23,6 +25,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+_MIGRATION_LOCK_ID = 749283746
 
 
 _settings = get_settings()
@@ -41,14 +44,28 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def _do_run_migrations(connection: object) -> None:
-    context.configure(
-        connection=connection,  # type: ignore[arg-type]
-        target_metadata=target_metadata,
-        compare_type=True,
-    )
-    with context.begin_transaction():
-        context.run_migrations()
+def _do_run_migrations(connection: Connection) -> None:
+    with connection.begin():
+        connection.execute(
+            text("SELECT pg_advisory_lock(:lock_id)"),
+            {"lock_id": _MIGRATION_LOCK_ID},
+        )
+    try:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+    finally:
+        if connection.in_transaction():
+            connection.rollback()
+        with connection.begin():
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": _MIGRATION_LOCK_ID},
+            )
 
 
 async def run_migrations_online() -> None:
@@ -58,9 +75,11 @@ async def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=NullPool,
     )
-    async with connectable.connect() as connection:
-        await connection.run_sync(_do_run_migrations)
-    await connectable.dispose()
+    try:
+        async with connectable.connect() as connection:
+            await connection.run_sync(_do_run_migrations)
+    finally:
+        await connectable.dispose()
 
 
 if context.is_offline_mode():

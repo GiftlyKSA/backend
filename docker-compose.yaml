@@ -63,7 +63,8 @@ services:
 
   migrate:
     <<: *app-service
-    command: ["python", "-m", "app.bootstrap_db"]
+    entrypoint: ["python", "-m", "app.bootstrap_db"]
+    command: []
     depends_on:
       db:
         condition: service_healthy

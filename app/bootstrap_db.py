@@ -1,16 +1,33 @@
-"""Initialize a fresh database before API workers start."""
+"""Apply pending database schema migrations before application services start."""
 
-import asyncio
+from __future__ import annotations
 
-from app.main import create_app
+import logging
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
+
+logger = logging.getLogger(__name__)
 
 
-async def bootstrap() -> None:
-    """Run the same bounded schema and seed initialization as API startup."""
-    app = create_app()
-    async with app.router.lifespan_context(app):
-        pass
+def upgrade_database() -> None:
+    """Create or upgrade the application schema to the latest revision."""
+    project_root = Path(__file__).resolve().parent.parent
+    config = Config(str(project_root / "alembic.ini"))
+    command.upgrade(config, "head")
+
+
+def main() -> None:
+    """Run pending migrations and report failures with their traceback."""
+    try:
+        upgrade_database()
+    except Exception:
+        logger.exception("Database migrations failed; the application was not started")
+        raise
+    logger.info("Database migrations are up to date")
 
 
 if __name__ == "__main__":
-    asyncio.run(bootstrap())
+    logging.basicConfig(level=logging.INFO)
+    main()
