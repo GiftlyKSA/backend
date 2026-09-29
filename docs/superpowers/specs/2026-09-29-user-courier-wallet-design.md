@@ -95,7 +95,7 @@ role `COURIER`. Represent identity as:
   profile; courier eligibility requires `APPROVED` and an active user account.
 
 Remove `identity_fingerprint`, its unique index, all generation/lookup code, the pepper
-configuration setting, and the admin clear/edit control. As requested, duplicate identity
+configuration setting, and the admin field. As requested, duplicate identity
 documents will no longer be detected or blocked. Identity numbers remain encrypted; the
 admin form accepts a write-only replacement and never pre-fills the number.
 
@@ -172,6 +172,11 @@ Docker locally.
   never grants courier privileges.
 - An admin must not be able to set encrypted fields directly to arbitrary ciphertext or
   bypass identity encryption by editing generic table fields.
+- Remove per-field `Clear ...` checkboxes from the shared admin add/edit form, including
+  nullable foreign keys. Prefilled ordinary nullable fields clear to `NULL` when submitted
+  blank; on create, blank optional fields continue to use database defaults. Blank
+  write-only secret/encrypted inputs preserve the stored value. Keep the separate delete
+  confirmation checkbox and existing CSRF, authorization, and password step-up controls.
 - Keep wallet and ledger endpoints role-authorized. The new admin wallet type is an
   internal balance container only; it does not permit administrators to spend, top up, or
   withdraw through customer/courier routes.
@@ -207,9 +212,10 @@ Docker locally.
   disabled accounts, pending/rejected courier login, and role authorization.
 - Query-count tests for representative user lists and authentication lookups to detect N+1
   behavior introduced by extension tables.
-- Admin CRUD tests verify no fingerprint/clear control exists, encrypted identity input is
-  write-only, relationships select city records, and admin role does not gain financial
-  endpoint access.
+- Admin CRUD tests verify no fingerprint field or per-field clear checkbox exists,
+  optional blank values clear correctly, blank secret inputs preserve stored values,
+  encrypted identity input is write-only, relationships select city records, delete
+  confirmation remains required, and admin role does not gain financial endpoint access.
 - Run Ruff, strict mypy, relevant pytest suites, OpenAPI export validation, and migration
   checks. Do not run Docker on the user's machine.
 
