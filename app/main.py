@@ -8,6 +8,8 @@ unrestricted only in development; dev-only routes are registered only in develop
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -15,6 +17,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
@@ -31,20 +34,31 @@ from app.integrations.factory import build_clients
 from app.models.base import Base
 from app.routers import health
 
+logger = logging.getLogger(__name__)
+
+
 # ---------------------------------------------------------------------------
-# Database startup lock
+# Database startup
 # ---------------------------------------------------------------------------
 
-# Arbitrary PostgreSQL advisory-lock ID.
+# All Gunicorn workers use the same PostgreSQL advisory-lock ID.
 #
-# All Gunicorn workers use the same ID.
-# Worker 1 gets the lock and creates any missing tables.
-# Workers 2-4 wait.
+# Worker 1 acquires the lock and creates missing schema objects.
+# Other workers wait until worker 1 commits or rolls back.
 #
-# After worker 1 finishes and commits:
-# workers 2-4 acquire the lock one at a time, but create_all(checkfirst=True)
-# finds that the tables already exist and performs no CREATE TABLE statements.
+# Once the first worker commits, subsequent workers acquire the lock,
+# execute create_all(checkfirst=True), discover that the tables already
+# exist, and perform no CREATE TABLE statements.
 _DATABASE_SCHEMA_LOCK_ID = 749283746
+
+# A PaaS may start the application container a little before PostgreSQL is
+# ready to accept connections. Retry connection-level failures only.
+#
+# Actual schema errors, authentication errors, missing PostGIS, invalid SQL,
+# etc. are NOT silently retried; startup fails with the original traceback.
+_DATABASE_STARTUP_ATTEMPTS = 8
+_DATABASE_RETRY_INITIAL_SECONDS = 1.0
+_DATABASE_RETRY_MAX_SECONDS = 5.0
 
 
 _SECURITY_HEADERS = {
@@ -63,73 +77,142 @@ _ADMIN_CSP = (
 )
 
 
+async def _initialize_database_schema(app: FastAPI) -> None:
+    """Connect to PostgreSQL and create any missing database schema objects.
+
+    Connection-level failures are retried because a managed PostgreSQL service may
+    not be ready at exactly the same moment as the application container.
+
+    Once connected, PostgreSQL advisory locking ensures that only one Gunicorn
+    worker performs schema creation at a time.
+    """
+    engine = app.state.engine
+
+    safe_database_url = engine.url.render_as_string(
+        hide_password=True,
+    )
+
+    retry_delay = _DATABASE_RETRY_INITIAL_SECONDS
+
+    for attempt in range(1, _DATABASE_STARTUP_ATTEMPTS + 1):
+        logger.info(
+            "database_schema_connecting attempt=%s/%s url=%s",
+            attempt,
+            _DATABASE_STARTUP_ATTEMPTS,
+            safe_database_url,
+        )
+
+        try:
+            async with engine.begin() as conn:
+                logger.info("database_connected")
+
+                # Only one Gunicorn worker may inspect/create the schema at once.
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                    {"lock_id": _DATABASE_SCHEMA_LOCK_ID},
+                )
+
+                logger.info("database_schema_lock_acquired")
+
+                # The application uses geometry(POINT, 4326), which requires
+                # PostgreSQL's PostGIS extension.
+                #
+                # If the managed PostgreSQL server does not provide PostGIS or
+                # this database user cannot enable extensions, startup will fail
+                # here with an explicit error instead of failing later while
+                # creating the orders table.
+                await conn.execute(
+                    text("CREATE EXTENSION IF NOT EXISTS postgis"),
+                )
+
+                logger.info("database_postgis_ready")
+
+                # create_all(checkfirst=True):
+                #
+                # - creates tables/sequences/types that do not exist
+                # - leaves existing tables untouched
+                # - does not drop existing tables
+                # - does not migrate existing table definitions
+                #
+                # Schema changes to existing tables should still use Alembic.
+                await conn.run_sync(
+                    Base.metadata.create_all,
+                    checkfirst=True,
+                )
+
+                logger.info("database_schema_create_all_finished")
+
+            # Exiting engine.begin() successfully commits the transaction.
+            logger.info("database_schema_committed")
+            return
+
+        except (ConnectionRefusedError, OperationalError, OSError) as exc:
+            if attempt >= _DATABASE_STARTUP_ATTEMPTS:
+                logger.exception(
+                    "database_connection_failed attempts=%s url=%s",
+                    _DATABASE_STARTUP_ATTEMPTS,
+                    safe_database_url,
+                )
+                raise
+
+            logger.warning(
+                "database_connection_unavailable "
+                "attempt=%s/%s retry_in_seconds=%s error=%r",
+                attempt,
+                _DATABASE_STARTUP_ATTEMPTS,
+                retry_delay,
+                exc,
+            )
+
+            await asyncio.sleep(retry_delay)
+
+            retry_delay = min(
+                retry_delay * 2,
+                _DATABASE_RETRY_MAX_SECONDS,
+            )
+
+        except Exception:
+            # We successfully reached PostgreSQL but something about schema
+            # initialization itself failed. Do not hide or endlessly retry
+            # programming/configuration errors.
+            logger.exception(
+                "database_schema_initialization_failed url=%s",
+                safe_database_url,
+            )
+            raise
+
+
+async def _close_shared_resources(app: FastAPI) -> None:
+    """Close application-level clients and shared connection pools."""
+    clients = app.state.clients
+
+    for client in (
+        clients.gateway,
+        clients.email,
+        clients.sms,
+        clients.push,
+    ):
+        aclose = getattr(client, "aclose", None)
+
+        if aclose is not None:
+            await aclose()
+
+    await app.state.redis.aclose()
+    await app.state.engine.dispose()
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Initialize the database schema on startup and release shared connection pools when
-    the application stops.
-
-    PostgreSQL advisory locking prevents multiple Gunicorn workers from
-    attempting schema creation concurrently.
-    """
-    # -----------------------------------------------------------------------
-    # CREATE MISSING DATABASE TABLES
-    # -----------------------------------------------------------------------
-    #
-    # app.state.engine is an AsyncEngine.
-    #
-    # begin() opens a PostgreSQL transaction.
-    #
-    # pg_advisory_xact_lock() ensures only one Gunicorn worker at a time
-    # can perform the schema check / creation.
-    #
-    # The lock is automatically released when this transaction commits
-    # or rolls back.
-    #
-    # create_all(checkfirst=True):
-    #
-    #   - creates tables that do NOT exist
-    #   - leaves existing tables untouched
-    #   - does NOT drop tables
-    #   - does NOT recreate tables
-    #
-    # IMPORTANT:
-    # create_all() does NOT migrate existing tables. If you add/remove
-    # columns later, use Alembic migrations.
-    # -----------------------------------------------------------------------
-
-    async with app.state.engine.begin() as conn:
-        await conn.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_id)"),
-            {"lock_id": _DATABASE_SCHEMA_LOCK_ID},
-        )
-        # await conn.execute(
-        #     text("CREATE EXTENSION IF NOT EXISTS postgis")
-        #     )
-
-        await conn.run_sync(
-            Base.metadata.create_all,
-            checkfirst=True,
-        )
-
+    """Initialize shared resources before serving requests and close them on shutdown."""
     try:
+        await _initialize_database_schema(app)
+
+        logger.info("application_dependencies_ready")
+
         yield
 
     finally:
-        clients = app.state.clients
-
-        for client in (
-            clients.gateway,
-            clients.email,
-            clients.sms,
-            clients.push,
-        ):
-            aclose = getattr(client, "aclose", None)
-
-            if aclose is not None:
-                await aclose()
-
-        await app.state.redis.aclose()
-        await app.state.engine.dispose()
+        await _close_shared_resources(app)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -329,14 +412,20 @@ def _install_request_guards(
             window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
         )
 
-        decision = await limiter.check(_client_identity(request, settings))
+        decision = await limiter.check(
+            _client_identity(request, settings),
+        )
 
         if not decision.allowed:
             return error_response(
                 429,
                 "RATE_LIMITED",
                 "Too many requests. Please try again later.",
-                headers={"Retry-After": str(decision.retry_after_seconds)},
+                headers={
+                    "Retry-After": str(
+                        decision.retry_after_seconds,
+                    ),
+                },
             )
 
         return await call_next(request)
@@ -346,7 +435,7 @@ def _install_cors(
     app: FastAPI,
     settings: Settings,
 ) -> None:
-    """Add CORS: wildcard without credentials in development, the allow-list in production."""
+    """Add CORS using a wildcard in development and the allow-list in production."""
     if settings.ENVIRONMENT.value == "development":
         origins = ["*"]
 
@@ -400,7 +489,7 @@ def _install_security_headers(app: FastAPI) -> None:
 
 
 def _register_admin(app: FastAPI) -> None:
-    """Mount the server-rendered admin dashboard, its static files, and redirect handler."""
+    """Mount the server-rendered admin dashboard, static files, and redirect handler."""
     from pathlib import Path
 
     from fastapi.staticfiles import StaticFiles
