@@ -18,7 +18,8 @@ from sqlalchemy.dialects.postgresql import ENUM, INET, JSONB, UUID
 from app.core.exceptions import ValidationDomainError
 from app.core.map_url import validate_delivery_map_url
 
-_GENERATED = {"created_at", "updated_at", "auth_version"}
+_AUDIT_TIMESTAMPS = {"created_at", "updated_at", "deleted_at"}
+_GENERATED = _AUDIT_TIMESTAMPS | {"auth_version"}
 _SECRET_MARKERS = ("encrypted", "token", "secret", "hash", "fingerprint", "password")
 MAX_FIELD_LENGTH = 16_384
 
@@ -88,7 +89,17 @@ def _format(value: object) -> str:
 def form_fields(table: Table, row: dict[str, Any] | None) -> list[TableField]:
     """Describe all form fields with defaults, nullability, and secret handling."""
     fields = []
-    for column in editable_columns(table, creating=True):
+    editable = {column.name for column in editable_columns(table, creating=True)}
+    columns = (
+        [
+            column
+            for column in table.c
+            if column.name in editable or column.primary_key or column.name in _AUDIT_TIMESTAMPS
+        ]
+        if row is not None
+        else editable_columns(table, creating=True)
+    )
+    for column in columns:
         secret = is_secret(column.name)
         value = "" if secret or row is None else _format(row.get(column.name))
         if row is not None and isinstance(column.type, JSONB) and row.get(column.name) is not None:
@@ -111,7 +122,8 @@ def form_fields(table: Table, row: dict[str, Any] | None) -> list[TableField]:
                 maxlength=min(
                     getattr(column.type, "length", None) or MAX_FIELD_LENGTH, MAX_FIELD_LENGTH
                 ),
-                readonly=row is not None and column.primary_key,
+                readonly=row is not None
+                and (column.primary_key or column.name in _AUDIT_TIMESTAMPS),
             )
         )
     return fields

@@ -35,7 +35,7 @@
         <label>{{ field.label }}<input name="{{ field.name }}" type="{{ 'date' if field.kind == 'date' else 'text' }}" value="{{ field.value }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}></label>
         {% if field.kind == 'datetime' %}<p class="note">Date and time with timezone, e.g. 2026-09-18T12:00:00+03:00.</p>{% endif %}
       {% endif %}
-      {% if field.nullable and not field.readonly %}<label class="clear-field"><input type="checkbox" name="null__{{ field.name }}" value="1"> Clear {{ field.label|lower }}</label>{% endif %}
+      {% if form.record_id and field.nullable and not field.readonly %}<label class="clear-field"><input type="checkbox" name="null__{{ field.name }}" value="1"> Clear {{ field.label|lower }}</label>{% endif %}
     </div>
     {% endfor %}
     <button type="submit">{{ 'Save changes' if form.record_id else 'Create record' }}</button>

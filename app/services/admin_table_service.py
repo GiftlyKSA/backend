@@ -120,7 +120,7 @@ class AdminTableService:
                 and old is not None
                 and any(
                     field in values and values[field] != old[field]
-                    for field in ("phone", "role", "status", "deleted_at")
+                    for field in ("phone", "role", "status")
                 )
             ):
                 await self._auth.invalidate_user_credentials(record_id, datetime.now(UTC))

@@ -138,7 +138,6 @@ async def test_audit_failure_prevents_success_and_propagates():
         ({"phone": "new-phone"}, True),
         ({"role": "COURIER"}, True),
         ({"status": "BANNED"}, True),
-        ({"deleted_at": "2026-09-23T00:00:00+00:00"}, True),
         ({"phone": "old-phone", "role": "CUSTOMER", "status": "ACTIVE"}, False),
         ({"full_name": "Updated name"}, False),
     ],

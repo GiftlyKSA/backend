@@ -255,8 +255,9 @@ Deletion requires a confirmation checkbox and follows database cascade rules.
 Foreign-key inputs search related records in pages of 25 instead of asking for IDs.
 One-to-one choices exclude already-used records and preserve the current edit selection.
 Secrets and encrypted values remain masked; replacement encrypted text is encrypted by
-the service. Blank edit inputs preserve stored values; **Clear** explicitly sets an
-optional field to NULL. Generated identifiers and timestamps are not editable. Concurrent
+the service. Blank edit inputs preserve stored values; **Clear** on edit explicitly sets an
+optional field to NULL. Generated identifiers and creation, update, and deletion timestamps
+are shown read-only on edit with both date and time. Concurrent
 edits return a conflict and show the latest record instead of overwriting it.
 
 Run `uv run --locked python -m app.bootstrap_db` before using the table editors on a fresh

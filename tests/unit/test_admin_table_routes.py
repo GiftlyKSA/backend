@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -140,12 +141,34 @@ async def test_all_table_forms_render_relationship_widgets_and_secret_fields(mon
             response = await client.get(f"/v1/admin/admin/tables/{table.name}/new")
             assert response.status_code == 200, table.name
             assert response.headers["cache-control"] == "no-store"
+            assert 'name="null__' not in response.text
             for column in table.c:
                 if column.foreign_keys:
                     assert (
                         f'data-url="/v1/admin/admin/relationships/{table.name}/{column.name}"'
                         in response.text
                     )
+
+
+async def test_edit_form_shows_generated_values_without_writable_inputs(monkeypatch):
+    app, ctx = make_app(monkeypatch)
+    record_id = uuid4()
+    now = datetime(2026, 9, 29, 12, 34, 56, tzinfo=UTC)
+    row = {"id": record_id, "created_at": now, "updated_at": now, "deleted_at": now}
+    ctx.tables.form = AsyncMock(
+        return_value=TableForm(
+            "users", form_fields(Base.metadata.tables["users"], row), record_id, "revision"
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/v1/admin/admin/tables/users/{record_id}/edit")
+
+    assert response.status_code == 200
+    assert f'value="{record_id}" readonly' in response.text
+    assert response.text.count("12:34:56+00:00") == 3
+    for name in ("id", "created_at", "updated_at", "deleted_at"):
+        assert f'name="{name}"' not in response.text
 
 
 async def test_stale_write_response_shows_current_values_not_stale_submission(monkeypatch):

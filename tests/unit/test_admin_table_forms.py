@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -48,6 +49,35 @@ def test_unknown_fields_and_generated_columns_are_rejected():
     for name in ("not_a_field", "created_at", "id"):
         with pytest.raises(ValidationDomainError):
             parse_values(table, {name: "anything"}, creating=False)
+
+
+def test_generated_id_and_audit_timestamps_are_visible_but_read_only_on_edit():
+    table = Base.metadata.tables["users"]
+    now = datetime(2026, 9, 29, 12, 34, 56, tzinfo=UTC)
+    record_id = uuid4()
+    fields = {
+        field.name: field
+        for field in form_fields(
+            table,
+            {
+                "id": record_id,
+                "created_at": now,
+                "updated_at": now,
+                "deleted_at": now,
+            },
+        )
+    }
+    assert fields["id"].readonly
+    assert fields["id"].value == str(record_id)
+    for name in ("created_at", "updated_at", "deleted_at"):
+        assert fields[name].readonly
+        assert fields[name].kind == "datetime"
+        assert "12:34:56" in fields[name].value
+        with pytest.raises(ValidationDomainError):
+            parse_values(table, {name: now.isoformat()}, creating=False)
+
+    create_fields = {field.name for field in form_fields(table, None)}
+    assert not {"id", "created_at", "updated_at", "deleted_at"} & create_fields
 
 
 def test_secrets_are_write_only_and_blank_edit_keeps_them():
