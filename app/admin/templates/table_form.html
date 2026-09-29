@@ -32,7 +32,7 @@
       {% elif field.kind in ['textarea', 'json'] %}
         <label>{{ field.label }}<textarea name="{{ field.name }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}>{{ field.value }}</textarea></label>
       {% elif field.kind == 'datetime' %}
-        <label>{{ field.label }}<input name="{{ field.name }}" type="datetime-local" step="1" data-iso="{{ field.value }}" {% if field.required %}required{% endif %}></label>
+        <label>{{ field.label }}<input type="datetime-local" step="1" data-iso="{{ field.value }}" {% if field.required %}required{% endif %}><input name="{{ field.name }}" type="hidden" data-datetime-value></label>
         <p class="note">Choose the date and time in your local timezone.</p>
       {% else %}
         <label>{{ field.label }}<input name="{{ field.name }}" type="{{ 'date' if field.kind == 'date' else 'text' }}" value="{{ field.value }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}></label>

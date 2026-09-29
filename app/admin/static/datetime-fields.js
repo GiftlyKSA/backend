@@ -12,13 +12,11 @@ document.querySelectorAll('input[type="datetime-local"][data-iso]').forEach((inp
 });
 
 document.querySelectorAll("form").forEach((form) => {
-  form.addEventListener("formdata", (event) => {
+  form.addEventListener("submit", () => {
     form.querySelectorAll('input[type="datetime-local"][data-iso]').forEach((input) => {
-      if (!input.value) return;
-      const value = input.value === input.dataset.initialLocal
-        ? input.dataset.iso
-        : new Date(input.value).toISOString();
-      event.formData.set(input.name, value);
+      const stored = input.parentElement.querySelector("[data-datetime-value]");
+      stored.value = !input.value ? "" : input.value === input.dataset.initialLocal
+        ? input.dataset.iso : new Date(input.value).toISOString();
     });
   });
 });

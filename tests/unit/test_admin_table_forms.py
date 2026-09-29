@@ -80,6 +80,19 @@ def test_generated_id_and_audit_timestamps_are_visible_but_read_only_on_edit():
     assert not {"id", "created_at", "updated_at", "deleted_at"} & create_fields
 
 
+def test_promo_datetime_picker_submits_supported_timezone_aware_format():
+    table = Base.metadata.tables["promos"]
+    values = parse_values(
+        table,
+        {"starts_at": "2026-10-01T09:30:00.000Z", "ends_at": "2026-10-02T09:30:00.000Z"},
+        creating=False,
+    )
+    assert values["starts_at"] == datetime(2026, 10, 1, 9, 30, tzinfo=UTC)
+    assert values["ends_at"] == datetime(2026, 10, 2, 9, 30, tzinfo=UTC)
+    with pytest.raises(ValidationDomainError):
+        parse_values(table, {"starts_at": "2026-10-01T12:30"}, creating=False)
+
+
 def test_secrets_are_write_only_and_blank_edit_keeps_them():
     table = Base.metadata.tables["refresh_tokens"]
     fields = form_fields(table, {"token_hash": "private", "user_id": None})

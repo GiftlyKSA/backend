@@ -192,8 +192,9 @@ async def test_datetime_fields_use_picker_and_date_only_fields_keep_date_picker(
         )
         user = await client.get("/v1/admin/admin/tables/users/new")
 
-    assert 'name="starts_at" type="datetime-local"' in promo.text
-    assert 'name="ends_at" type="datetime-local"' in promo.text
+    assert 'type="datetime-local" step="1" data-iso="2026-10-01T12:30:00+00:00"' in promo.text
+    assert 'name="starts_at" type="hidden" data-datetime-value' in promo.text
+    assert 'name="ends_at" type="hidden" data-datetime-value' in promo.text
     assert 'data-iso="2026-10-01T12:30:00+00:00"' in promo.text
     assert 'name="date_of_birth" type="date"' in user.text
     assert "/static/datetime-fields.js" in promo.text
