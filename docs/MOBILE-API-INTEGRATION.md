@@ -7,6 +7,29 @@
 The backend unit suite compares non-admin operations and their wire schemas in this file
 with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
 after API changes; update the handoff only when the contract change is intentional.
+For an implementation brief to give the mobile UI agent, use
+[UI-AGENT-API-INTEGRATION-PROMPT.md](UI-AGENT-API-INTEGRATION-PROMPT.md).
+
+### Current integration update — 2026-09-29
+
+The latest backend changes add **no new mobile HTTP route or wire field**. The 44-operation
+OpenAPI contract below remains the source for request and response types. The backend now
+delivers new-order courier pushes from a committed, retryable outbox; treat a push as a
+prompt to refresh `GET /api/orders/available` or an owned order, not as an authoritative
+status change or a guaranteed once-only event. Keep an existing order from appearing twice
+when the same notification arrives again.
+
+For login, use the returned `expires_in` (currently **60 seconds**) for the OTP countdown.
+Development may return a five-digit numeric `otp_dev`; test and production use a six-digit
+code, with production delivery through the configured SMS provider. They never expose
+`otp_dev`. Replace
+**both** tokens after every successful refresh and clear protected local state on logout,
+which revokes account sessions on all devices. Admin-dashboard TOTP applies only to
+`/v1/admin/admin`; it does not add a mobile login field or endpoint.
+
+The city UUID, HTTPS Google Maps URL, decimal-string money, three-photo order limit, and
+production `PAYMENTS_DISABLED` behavior described below remain the current contracts.
+Screens listed as gaps still need later backend work; do not build or guess routes for them.
 
 ## Integration conventions
 
@@ -741,4 +764,4 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **43 non-admin HTTP operations plus one WebSocket** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **44 non-admin HTTP operations plus one WebSocket** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.

@@ -5,6 +5,8 @@
     "version": "0.1.0",
     "description": "Generated from implemented backend routes for mobile integration. Admin routes are excluded. Screen and flow details are vendor extensions; unsupported screen features are future API work and have no route in this specification. Production payment routes currently return PAYMENTS_DISABLED until a verified Dhamen integration is available."
   },
+  "x-integration-reviewed-on": "2026-09-29",
+  "x-backend-source-commit": "c3d484e",
   "paths": {
     "/api/health": {
       "get": {
