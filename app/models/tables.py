@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from geoalchemy2 import Geometry
+# from geoalchemy2 import Geometry
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -435,11 +435,11 @@ class OrderMedia(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    capture_location: Mapped[object | None] = mapped_column(
-        # No spatial index in the spec index list for proof media; suppress the auto one.
-        Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
-        nullable=True,
-    )
+    # capture_location: Mapped[object | None] = mapped_column(
+    #     # No spatial index in the spec index list for proof media; suppress the auto one.
+    #     Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
+    #     nullable=True,
+    # )
     captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (

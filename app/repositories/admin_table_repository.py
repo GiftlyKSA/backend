@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
-from geoalchemy2 import Geometry
 from sqlalchemy import (
     Column,
     Select,
@@ -191,15 +190,7 @@ class AdminTableRepository:
     ) -> dict[str, Any]:
         """Read one record, optionally locking it for an audited write."""
         table = get_table(table_name)
-        columns = [
-            case(
-                (column.is_(None), None),
-                else_=func.concat(func.ST_X(column), ", ", func.ST_Y(column)),
-            ).label(column.name)
-            if isinstance(column.type, Geometry)
-            else column
-            for column in table.c
-        ]
+        columns = [column for column in table.c]
         query = select(*columns).where(primary_key(table) == record_id)
         if lock:
             query = query.with_for_update()

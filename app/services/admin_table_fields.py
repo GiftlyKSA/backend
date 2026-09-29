@@ -12,7 +12,6 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
 
-from geoalchemy2 import Geometry
 from sqlalchemy import Boolean, Column, Date, DateTime, Integer, Numeric, String, Table, Text
 from sqlalchemy.dialects.postgresql import ENUM, INET, JSONB, UUID
 
@@ -64,7 +63,6 @@ def _kind(column: Column[Any]) -> str:
         (DateTime, "datetime"),
         (Date, "date"),
         (JSONB, "json"),
-        (Geometry, "point"),
         (Text, "textarea"),
         (Numeric, "number"),
         (Integer, "number"),
@@ -142,8 +140,6 @@ def _structured(column: Column[Any], raw: str) -> object:
         return json.loads(
             raw, parse_constant=lambda value: _invalid_json(), parse_float=_json_float
         )
-    if isinstance(column.type, Geometry):
-        return _point(raw)
     if isinstance(column.type, INET):
         return str(ipaddress.ip_address(raw))
     if isinstance(column.type, UUID):

@@ -295,7 +295,5 @@ and verification limits. It is not a declaration of production readiness.
 
 - **App refuses to boot naming a variable** — that is the interlock working; fix that
   variable in `.env`.
-- **`alembic upgrade` fails on `type "geometry" does not exist`** — use a
-  `postgis/postgis` Postgres image; the baseline migration creates the extensions.
 - **TLS/proxy errors** — see the environment's proxy notes; never disable TLS
   verification.

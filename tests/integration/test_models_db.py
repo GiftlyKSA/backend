@@ -1,10 +1,3 @@
-"""Database-backed tests for the schema, constraints, and triggers.
-
-These run against the migrated database (``alembic upgrade head`` in CI) and exercise
-the real CHECK constraints, partial unique indexes, PostGIS geometry, and the
-append-only / freeze triggers — the things a mocked DB would test nothing of.
-"""
-
 from __future__ import annotations
 
 import uuid
