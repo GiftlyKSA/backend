@@ -121,9 +121,9 @@ async def _initialize_database_schema(app: FastAPI) -> None:
                 # this database user cannot enable extensions, startup will fail
                 # here with an explicit error instead of failing later while
                 # creating the orders table.
-                await conn.execute(
-                    text("CREATE EXTENSION IF NOT EXISTS postgis"),
-                )
+                # await conn.execute(
+                #     text("CREATE EXTENSION IF NOT EXISTS postgis"),
+                # )
 
                 logger.info("database_postgis_ready")
 
