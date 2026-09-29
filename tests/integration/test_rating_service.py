@@ -16,7 +16,6 @@ from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.rating_service import RatingService
-from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.conftest import city_by_name
@@ -41,7 +40,7 @@ async def _order(db: AsyncSession, status: OrderStatus) -> tuple[User, User, Ord
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=5),
         status=status,
     )

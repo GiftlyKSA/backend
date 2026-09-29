@@ -1,6 +1,6 @@
 """Order fulfilment: delivery, approval, and disputes (SPEC SECTION 20.G-H).
 
-The escrow lifecycle lives here. A courier submits delivery proof inside the geofence;
+The escrow lifecycle lives here. A courier submits delivery photo proof;
 the customer (or the auto-approve job) approves, which RELEASES escrow through the money
 service — the courier is paid on the pre-discount base, tax accrues, and the platform
 keeps the residue. Either party may DISPUTE, freezing escrow until an admin resolves it.
@@ -37,8 +37,6 @@ from app.services.order_state import assert_transition
 class DeliveryInput:
     """A courier's delivery submission."""
 
-    latitude: float
-    longitude: float
     proof_media_keys: list[str]
     note: str | None
 
@@ -76,12 +74,12 @@ class FulfillmentService:
     async def submit_delivery(
         self, *, order_id: uuid.UUID, courier_id: uuid.UUID, data: DeliveryInput
     ) -> Order:
-        """Mark an in-progress order DELIVERED with geofenced proof (assigned courier).
+        """Mark an in-progress order DELIVERED with photo proof (assigned courier).
 
         Raises:
             NotFoundError: Not this courier's order.
             InvalidStateTransitionError: The order is not IN_PROGRESS.
-            ValidationDomainError: Outside the delivery radius, missing/too many photos, or
+            ValidationDomainError: Missing/too many photos, or
                 a proof object that fails validation.
         """
         order = await self._orders.lock_for_actor(order_id, courier_id)
@@ -93,12 +91,6 @@ class FulfillmentService:
             raise ValidationDomainError("At least one delivery photo is required.")
         if len(data.proof_media_keys) > _MAX_PROOF_MEDIA:
             raise ValidationDomainError("At most 5 delivery photos are allowed.")
-        distance = await self._orders.distance_to_delivery(
-            order_id, longitude=data.longitude, latitude=data.latitude
-        )
-        if distance is None or distance > self._settings.MAX_DELIVERY_RADIUS_METERS:
-            raise ValidationDomainError("You are too far from the drop-off location.")
-
         media_heads = await self._media.claim_many(
             data.proof_media_keys, actor_id=courier_id, purpose="DELIVERY_PROOF"
         )
@@ -112,8 +104,6 @@ class FulfillmentService:
                 storage_key=key,
                 content_type=head.content_type,
                 byte_size=head.byte_size,
-                capture_longitude=data.longitude,
-                capture_latitude=data.latitude,
                 captured_at=captured_at,
             )
         order.status = OrderStatus.DELIVERED

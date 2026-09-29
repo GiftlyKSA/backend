@@ -15,8 +15,7 @@ from app.models.enums import (
     UserRole,
     WalletType,
 )
-from geoalchemy2.elements import WKTElement
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,7 +49,7 @@ async def test_order_invoice_roundtrip(db_session: AsyncSession) -> None:
     order = Order(
         customer_id=customer.id,
         city=await city_by_name(db_session, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.1728 21.5433)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=_future_date(),
         status=OrderStatus.NEW,
     )
@@ -104,7 +103,7 @@ async def test_invoice_net_math_check_rejects_bad_totals(db_session: AsyncSessio
     order = Order(
         customer_id=customer.id,
         city=await city_by_name(db_session, "Riyadh"),
-        delivery_location=WKTElement("POINT(46.6753 24.7136)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=_future_date(),
     )
     db_session.add(order)
@@ -162,27 +161,14 @@ async def test_second_system_gateway_wallet_rejected(db_session: AsyncSession) -
         await db_session.flush()
 
 
-async def test_geography_distance_query(db_session: AsyncSession) -> None:
+async def test_order_stores_map_link(db_session: AsyncSession) -> None:
     customer = await _make_customer(db_session)
     order = Order(
         customer_id=customer.id,
         city=await city_by_name(db_session, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.17290 21.54340)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=_future_date(),
     )
     db_session.add(order)
     await db_session.flush()
-    # ST_Distance on geography returns metres; the courier is ~19m away.
-    meters = await db_session.scalar(
-        select(
-            func.ST_Distance(
-                func.cast(Order.delivery_location, __import__("geoalchemy2").Geography),
-                func.cast(
-                    func.ST_SetSRID(func.ST_MakePoint(39.17280, 21.54325), 4326),
-                    __import__("geoalchemy2").Geography,
-                ),
-            )
-        ).where(Order.id == order.id)
-    )
-    assert meters is not None
-    assert meters < 200
+    assert order.delivery_map_url == "https://maps.app.goo.gl/Test"

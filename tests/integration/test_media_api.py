@@ -110,8 +110,7 @@ async def test_media_upload_confirm_and_order_with_photo() -> None:
 
             order_body = {
                 "delivery_city": "Jeddah",
-                "latitude": 21.5,
-                "longitude": 39.2,
+                "delivery_map_url": "https://maps.app.goo.gl/Test",
                 "delivery_date": (date.today() + timedelta(days=15)).isoformat(),
                 "request_media_keys": [key],
             }

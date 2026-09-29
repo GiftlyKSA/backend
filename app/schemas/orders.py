@@ -6,7 +6,16 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+
+from app.core.map_url import validate_delivery_map_url
 
 
 class CreateOrderRequest(BaseModel):
@@ -18,12 +27,17 @@ class CreateOrderRequest(BaseModel):
         None, description="Legacy city name; select delivery_city_id from GET /api/cities."
     )
     delivery_city_id: UUID | None = None
-    latitude: float = Field(..., ge=-90, le=90, description="Drop-off latitude.")
-    longitude: float = Field(..., ge=-180, le=180, description="Drop-off longitude.")
+    delivery_map_url: str = Field(..., max_length=2048, description="HTTPS Google Maps link.")
     delivery_date: date = Field(..., description="Requested delivery date (<= 6 months out).")
     request_media_keys: list[str] = Field(
         default_factory=list, max_length=3, description="Confirmed request-photo keys (0–3)."
     )
+
+    @field_validator("delivery_map_url")
+    @classmethod
+    def validate_map_url(cls, value: str) -> str:
+        """Keep submitted delivery links on the allowed HTTPS map hosts."""
+        return validate_delivery_map_url(value)
 
     @model_validator(mode="after")
     def validate_city_choice(self) -> CreateOrderRequest:
@@ -41,7 +55,7 @@ class CancelOrderRequest(BaseModel):
 
 
 class OrderSummary(BaseModel):
-    """A compact order row for lists and the radar (no exact coordinates)."""
+    """A compact order row for lists and the radar."""
 
     id: str
     status: str
@@ -66,8 +80,7 @@ class OrderDetail(BaseModel):
     delivery_city_id: UUID
     delivery_date: str
     description: str | None
-    latitude: float | None = Field(None, description="Shown to a courier only once assigned.")
-    longitude: float | None = None
+    delivery_map_url: str = Field(..., description="Customer-provided Google Maps link.")
     total_amount: str
     assigned_at: str | None
     created_at: str

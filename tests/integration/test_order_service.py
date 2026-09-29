@@ -93,8 +93,7 @@ def _input(**over: object) -> NewOrderInput:
     base = {
         "description": None,
         "delivery_city": "Jeddah",
-        "latitude": 21.5,
-        "longitude": 39.2,
+        "delivery_map_url": "https://maps.app.goo.gl/Test",
         "delivery_date": date.today() + timedelta(days=20),
         "request_media_keys": [],
     }
@@ -102,15 +101,15 @@ def _input(**over: object) -> NewOrderInput:
     return NewOrderInput(**base)  # type: ignore[arg-type]
 
 
-async def test_create_rejects_out_of_range_coordinates(
+async def test_create_rejects_invalid_map_link(
     db_session: AsyncSession, redis_client: Redis
 ) -> None:
     svc = _service(db_session, redis_client)
     customer = await _customer(db_session)
     with pytest.raises(ValidationDomainError):
-        await svc.create_order(customer_id=customer.id, data=_input(latitude=1.0))
-    with pytest.raises(ValidationDomainError):
-        await svc.create_order(customer_id=customer.id, data=_input(longitude=1.0))
+        await svc.create_order(
+            customer_id=customer.id, data=_input(delivery_map_url="https://evil.example/map")
+        )
 
 
 async def test_create_rejects_too_many_media_keys(

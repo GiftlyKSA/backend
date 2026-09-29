@@ -34,7 +34,6 @@ from app.repositories.wallet_repository import WalletRepository
 from app.services.expiry_service import ExpiryService
 from app.services.money_service import MoneyService
 from app.services.payment_service import build_payment_service
-from geoalchemy2 import WKTElement
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,7 +112,7 @@ async def _issued_invoice(db: AsyncSession) -> tuple[User, Order, Invoice]:
         customer_id=user.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=10),
         status=OrderStatus.WAITING_PAYMENT,
     )

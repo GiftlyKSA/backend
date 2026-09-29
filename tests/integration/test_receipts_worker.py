@@ -18,7 +18,6 @@ from app.integrations.email.fake import FakeEmailClient
 from app.models import Invoice, Order, User
 from app.models.enums import InvoiceStatus, OrderStatus, UserRole
 from app.workers.receipts import send_pending_receipts
-from geoalchemy2 import WKTElement
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
@@ -62,7 +61,7 @@ async def test_sweeper_sends_and_stamps_receipt() -> None:
                 customer_id=customer.id,
                 courier_id=courier.id,
                 city=await city_by_name(session, "Jeddah"),
-                delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+                delivery_map_url="https://maps.app.goo.gl/Test",
                 delivery_date=datetime.now(UTC).date() + timedelta(days=10),
                 status=OrderStatus.IN_PROGRESS,
             )

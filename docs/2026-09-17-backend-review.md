@@ -49,7 +49,7 @@ PostgreSQL/Redis and deployment verification remains pending where applicable.
 The OTP default is 60 seconds and the new city catalog is seeded with 20 active Saudi
 cities. Customer orders and courier profiles now store UUID foreign keys to `cities.id`;
 admin and API mutations validate active selections. The city migrations and seed script need
-a disposable PostgreSQL/PostGIS run in CI or another authorized environment. No Docker was
+a disposable PostgreSQL run in CI or another authorized environment. No Docker was
 run locally. All other findings below remain open or unverified as originally classified.
 
 The UUID relationship is a 2026-09-29 follow-up correction to the original name-keyed
@@ -496,7 +496,7 @@ precise types, Ruff style, and service/repository boundaries while fixing concre
   established that this revision passes; offline tests cannot substitute for them.
 - **Minimal fix / system effect:** investigate trusted Actions permissions/trigger diagnostics,
   correct the demonstrated issue, and obtain a CI run on the current master SHA.
-- **Verification:** green quality/test/security/docs/image jobs, disposable PostgreSQL/PostGIS/
+- **Verification:** green quality/test/security/docs/image jobs, disposable PostgreSQL/
   Redis tests, migration round trips, and configured 85% coverage gate.
 
 #### TEST-01 — Generic admin writes lack complete database coverage — 5/10
@@ -598,7 +598,7 @@ schema references, UUID city fields, and bearer-auth declarations.
 | Dependabot alert API | HTTP 401; current alert details **UNCONFIRMED** |
 | `uv run --locked pre-commit run --all-files` | All seven configured pre-commit checks passed |
 | `uv run --locked pre-commit run --all-files --hook-stage pre-push` | Full-project Ruff lint/format and strict mypy passed |
-| PostgreSQL/PostGIS/Redis suite, migration round trips, full coverage | **Not verified in this audit**; disposable service-backed CI required |
+| PostgreSQL/Redis suite, migration round trips, full coverage | **Not verified in this audit**; disposable service-backed CI required |
 | Docker, real providers/S3, load tests, EXPLAIN | **Not run locally**; local Docker prohibited |
 
 An earlier full-suite attempt without available services did not establish a passing full

@@ -34,7 +34,6 @@
       {% else %}
         <label>{{ field.label }}<input name="{{ field.name }}" type="{{ 'date' if field.kind == 'date' else 'text' }}" value="{{ field.value }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}></label>
         {% if field.kind == 'datetime' %}<p class="note">Date and time with timezone, e.g. 2026-09-18T12:00:00+03:00.</p>{% endif %}
-        {% if field.kind == 'point' %}<p class="note">Longitude, latitude (for example: 46.6753, 24.7136).</p>{% endif %}
       {% endif %}
       {% if field.nullable and not field.readonly %}<label class="clear-field"><input type="checkbox" name="null__{{ field.name }}" value="1"> Clear {{ field.label|lower }}</label>{% endif %}
     </div>

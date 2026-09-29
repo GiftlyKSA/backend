@@ -1,9 +1,4 @@
-"""Idempotent development seed (SPEC SECTION 9, README quickstart).
-
-Ensures the four SYSTEM_* wallets exist. The baseline migration already seeds them,
-so this is a safety net for databases created another way; it never duplicates a
-system wallet thanks to the partial unique indexes.
-"""
+"""Idempotent city and system-wallet seeds for fresh database initialization."""
 
 from __future__ import annotations
 
@@ -31,15 +26,22 @@ async def seed_system_wallets() -> int:
     settings = get_settings()
     engine = build_engine(settings)
     factory = build_session_factory(engine)
-    created = 0
     async with factory() as session:
-        for wallet_type in _SYSTEM_WALLETS:
-            existing = await session.scalar(select(Wallet).where(Wallet.type == wallet_type))
-            if existing is None:
-                session.add(Wallet(type=wallet_type, user_id=None))
-                created += 1
+        created = await seed_system_wallets_in_session(session)
         await session.commit()
     await engine.dispose()
+    return created
+
+
+async def seed_system_wallets_in_session(session: AsyncSession) -> int:
+    """Create missing system wallets within the caller's transaction."""
+    created = 0
+    for wallet_type in _SYSTEM_WALLETS:
+        existing = await session.scalar(select(Wallet).where(Wallet.type == wallet_type))
+        if existing is None:
+            session.add(Wallet(type=wallet_type, user_id=None))
+            created += 1
+    await session.flush()
     return created
 
 

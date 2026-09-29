@@ -24,8 +24,6 @@ from sqlalchemy import select
 
 from tests.conftest import make_test_settings
 
-_LAT, _LNG = 21.5000, 39.2000
-
 
 def _settings() -> Settings:
     overrides: dict[str, object] = {}
@@ -132,8 +130,7 @@ async def _paid_in_progress(
         headers=cust_h,
         json={
             "delivery_city": "Jeddah",
-            "latitude": _LAT,
-            "longitude": _LNG,
+            "delivery_map_url": "https://maps.app.goo.gl/Test",
             "delivery_date": _future(),
             "request_media_keys": [],
         },
@@ -174,22 +171,11 @@ async def test_full_lifecycle_deliver_approve_rate() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
             cust_h, cour_h, order_id = await _paid_in_progress(client, app, factory)
 
-            # A far-away delivery is rejected by the geofence.
-            key = await _proof_key(client, cour_h)
-            far = await client.post(
-                f"/api/orders/{order_id}/deliver",
-                headers=cour_h,
-                json={"latitude": 24.7, "longitude": 46.7, "proof_media_keys": [key]},
-            )
-            assert far.status_code == 422
-
             key2 = await _proof_key(client, cour_h)
             delivered = await client.post(
                 f"/api/orders/{order_id}/deliver",
                 headers=cour_h,
                 json={
-                    "latitude": _LAT,
-                    "longitude": _LNG,
                     "proof_media_keys": [key2],
                     "note": "left with the concierge",
                 },

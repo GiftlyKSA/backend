@@ -1,20 +1,11 @@
-"""Order and order-media persistence (SPEC SECTION 10, 13, 20.C).
-
-Spatial writes put longitude FIRST in ``ST_MakePoint`` — reversing it puts Jeddah in
-Antarctica and every geofence check silently fails. Money-free ownership is enforced
-in the query (customer or courier), never fetch-then-compare.
-"""
+"""Order and order-media persistence (SPEC SECTION 10, 13, 20.C)."""
 
 from __future__ import annotations
 
-import json
 import uuid
-from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 
-from geoalchemy2 import Geography
-from redis.asyncio import Redis
-from sqlalchemy import Select, cast, func, select, tuple_
+from sqlalchemy import Select, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import City, Conversation, Order, OrderMedia, User
@@ -50,17 +41,16 @@ class OrderRepository:
         customer_id: uuid.UUID,
         description: str | None,
         delivery_city: City,
-        longitude: float,
-        latitude: float,
+        delivery_map_url: str,
         delivery_date: date,
         address_note: str | None,
     ) -> Order:
-        """Insert a NEW order; the point is built lng-first (ST_MakePoint(x, y))."""
+        """Insert a NEW order with the customer-supplied map link."""
         order = Order(
             customer_id=customer_id,
             description=description,
             city=delivery_city,
-            delivery_location=func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326),
+            delivery_map_url=delivery_map_url,
             delivery_date=delivery_date,
             delivery_address_note=address_note,
             status=OrderStatus.NEW,
@@ -78,18 +68,9 @@ class OrderRepository:
         storage_key: str,
         content_type: str,
         byte_size: int,
-        capture_longitude: float | None = None,
-        capture_latitude: float | None = None,
         captured_at: datetime | None = None,
     ) -> None:
-        """Attach a media object (customer request or delivery proof) to an order.
-
-        A DELIVERY_PROOF must carry the courier's capture location (the DB CHECK
-        ``chk_proof_has_location``); the point is built longitude-FIRST.
-        """
-        location = None
-        if capture_longitude is not None and capture_latitude is not None:
-            location = func.ST_SetSRID(func.ST_MakePoint(capture_longitude, capture_latitude), 4326)
+        """Attach a media object (customer request or delivery proof) to an order."""
         self._session.add(
             OrderMedia(
                 order_id=order_id,
@@ -98,7 +79,6 @@ class OrderRepository:
                 storage_key=storage_key,
                 content_type=content_type,
                 byte_size=byte_size,
-                capture_location=location,
                 captured_at=captured_at,
             )
         )
@@ -153,12 +133,14 @@ class OrderRepository:
         *,
         description: str | None,
         delivery_city: City,
+        delivery_map_url: str,
         delivery_date: date,
         delivery_address_note: str | None,
     ) -> None:
-        """Update non-financial, non-location order details for an administrator."""
+        """Update non-financial order details for an administrator."""
         order.description = description
         order.city = delivery_city
+        order.delivery_map_url = delivery_map_url
         order.delivery_date = delivery_date
         order.delivery_address_note = delivery_address_note
         await self._session.flush()
@@ -262,42 +244,9 @@ class OrderRepository:
         await self._session.flush()
         return conversation
 
-    async def coords_for_actor(
-        self, order_id: uuid.UUID, actor_id: uuid.UUID
-    ) -> tuple[float, float] | None:
-        """Return coordinates only when SQL proves the actor participates."""
-        row = (
-            await self._session.execute(
-                select(
-                    func.ST_X(Order.delivery_location), func.ST_Y(Order.delivery_location)
-                ).where(
-                    Order.id == order_id,
-                    (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
-                )
-            )
-        ).first()
-        return (float(row[0]), float(row[1])) if row is not None else None
-
     async def flush(self) -> None:
         """Flush pending writes."""
         await self._session.flush()
-
-    async def distance_to_delivery(
-        self, order_id: uuid.UUID, *, longitude: float, latitude: float
-    ) -> float | None:
-        """Return metres between (lng, lat) and the order's drop-off, or None.
-
-        Both points are cast to ``geography`` so ``ST_Distance`` returns metres — on plain
-        ``geometry`` it returns degrees, which would make every geofence check meaningless.
-        The point is built longitude-FIRST.
-        """
-        point = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326)
-        result = await self._session.scalar(
-            select(
-                func.ST_Distance(cast(Order.delivery_location, Geography), cast(point, Geography))
-            ).where(Order.id == order_id)
-        )
-        return float(result) if result is not None else None
 
     async def list_auto_approve_due(self, cutoff: datetime, limit: int) -> list[Order]:
         """Return DELIVERED orders whose delivered_at is at or before ``cutoff``."""
@@ -314,65 +263,3 @@ class OrderRepository:
     def now() -> datetime:
         """Return the current UTC time (single source for assigned/cancelled stamps)."""
         return datetime.now(UTC)
-
-
-@dataclass(frozen=True, slots=True)
-class CourierLocation:
-    """One sanitized, ephemeral courier location sample."""
-
-    order_id: uuid.UUID
-    courier_id: uuid.UUID
-    latitude: float
-    longitude: float
-    accuracy: float | None
-    received_at: datetime
-
-
-class CourierLocationRepository:
-    """Stores only the latest courier location in Redis with a short TTL."""
-
-    def __init__(self, redis: Redis) -> None:
-        """Bind the repository to the shared Redis client."""
-        self._redis = redis
-
-    async def save(self, location: CourierLocation, *, ttl_seconds: int = 60) -> None:
-        """Replace the latest sample and publish the same sanitized payload."""
-        payload = asdict(location)
-        payload["order_id"] = str(location.order_id)
-        payload["courier_id"] = str(location.courier_id)
-        payload["received_at"] = location.received_at.isoformat()
-        encoded = json.dumps(payload, separators=(",", ":"))
-        await self._redis.set(
-            self._key(location.order_id, location.courier_id), encoded, ex=ttl_seconds
-        )
-        await self._redis.publish(self.channel(location.order_id), encoded)
-
-    async def get(self, order_id: uuid.UUID, courier_id: uuid.UUID) -> CourierLocation | None:
-        """Return the unexpired latest sample for an order/courier pair."""
-        raw: bytes | str | None = await self._redis.get(self._key(order_id, courier_id))
-        if raw is None:
-            return None
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8")
-        payload = json.loads(raw)
-        return CourierLocation(
-            order_id=uuid.UUID(payload["order_id"]),
-            courier_id=uuid.UUID(payload["courier_id"]),
-            latitude=float(payload["latitude"]),
-            longitude=float(payload["longitude"]),
-            accuracy=float(payload["accuracy"]) if payload["accuracy"] is not None else None,
-            received_at=datetime.fromisoformat(payload["received_at"]),
-        )
-
-    async def delete(self, order_id: uuid.UUID, courier_id: uuid.UUID) -> None:
-        """Remove the ephemeral sample when tracking is no longer allowed."""
-        await self._redis.delete(self._key(order_id, courier_id))
-
-    @staticmethod
-    def channel(order_id: uuid.UUID) -> str:
-        """Return the private fan-out channel for one order."""
-        return f"orders:{order_id}:location"
-
-    @staticmethod
-    def _key(order_id: uuid.UUID, courier_id: uuid.UUID) -> str:
-        return f"orders:{order_id}:couriers:{courier_id}:location"

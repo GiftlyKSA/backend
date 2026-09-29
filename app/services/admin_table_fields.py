@@ -16,6 +16,7 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import ENUM, INET, JSONB, UUID
 
 from app.core.exceptions import ValidationDomainError
+from app.core.map_url import validate_delivery_map_url
 
 _GENERATED = {"created_at", "updated_at", "auth_version"}
 _SECRET_MARKERS = ("encrypted", "token", "secret", "hash", "fingerprint", "password")
@@ -128,13 +129,6 @@ def _numeric(column: Column[Any], raw: str) -> Decimal:
     return value
 
 
-def _point(raw: str) -> str:
-    longitude, latitude = (Decimal(part.strip()) for part in raw.split(","))
-    if not (-180 <= longitude <= 180 and -90 <= latitude <= 90):
-        raise ValueError("Coordinates out of range")
-    return f"SRID=4326;POINT({longitude} {latitude})"
-
-
 def _structured(column: Column[Any], raw: str) -> object:
     if isinstance(column.type, JSONB):
         return json.loads(
@@ -166,6 +160,8 @@ def _json_float(raw: str) -> float:
 
 
 def _parse(column: Column[Any], raw: str) -> object:
+    if column.name == "delivery_map_url":
+        return validate_delivery_map_url(raw)
     if isinstance(column.type, ENUM):
         if raw not in column.type.enums:
             raise ValueError("Invalid enum")

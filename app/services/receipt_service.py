@@ -7,7 +7,7 @@ IS NULL): a sweeper drains it, so a receipt is never lost even if a prior attemp
 Sending is at-most-once per pass under a row lock (a second sweeper blocks, then sees the
 stamp and skips); a crash between send and commit yields an at-least-once retry, which for
 a receipt is friendlier than losing it. Template variables carry only amounts and the
-order reference — never a phone, coordinates, or any Restricted data.
+order reference — never a phone, map link, or any Restricted data.
 """
 
 from __future__ import annotations

@@ -30,7 +30,6 @@ from app.services.invoice_service import (
 )
 from app.services.payment_reservation_service import build_payment_reservation_service
 from app.services.promo_service import PromoService
-from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -80,7 +79,7 @@ async def _assigned_order(db: AsyncSession) -> Order:
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today() + timedelta(days=20),
         status=OrderStatus.ASSIGNED,
     )

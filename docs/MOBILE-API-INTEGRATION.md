@@ -266,12 +266,12 @@
 - **Screens:** Customer Create order `/request`.
 - **Who / authorization:** Authenticated customer; bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `CreateOrderRequest` — `description?: string | null`; exactly one of `delivery_city_id: UUID string` (preferred) or `delivery_city: string` (legacy); `latitude: number`; `longitude: number`; `delivery_date: date (YYYY-MM-DD)`; `request_media_keys?: string[]`
-- **Response:** HTTP 201; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Request body:** `CreateOrderRequest` — `description?: string | null`; exactly one of `delivery_city_id: UUID string` (preferred) or `delivery_city: string` (legacy); `delivery_map_url: HTTPS Google Maps URL string`; `delivery_date: date (YYYY-MM-DD)`; `request_media_keys?: string[]`
+- **Response:** HTTP 201; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Optional `POST /api/media/upload-urls` → direct PUT → confirm for 0–3 photos.
 - **Then / dependent API:** `GET /api/orders/{order_id}` and `/waiting/[id]`; courier `GET /api/orders/available`.
 
-**When/how (57 words):** Create a gift request for a city, drop-off coordinates, and Gregorian delivery date. Send at most three previously confirmed `ORDER_REQUEST` storage keys, not local file URIs. The server returns a `NEW` order and generated UUID; it does not return the prototype's order number, period, recipient phone, or media URLs. Use the UUID for waiting and detail navigation.
+**When/how:** Create a gift request for a city, a customer-provided HTTPS Google Maps link, and Gregorian delivery date. Send at most three previously confirmed `ORDER_REQUEST` storage keys, not local file URIs. The server stores the link without fetching it and returns a `NEW` order and generated UUID. Use that UUID for waiting and detail navigation; the available-order list omits the link.
 
 ### GET /api/orders
 
@@ -297,7 +297,7 @@
 - **Before:** Courier verification complete; matching city stored on profile.
 - **Then / dependent API:** `POST /api/orders/{order_id}/accept`.
 
-**When/how (63 words):** Load a paginated radar of `NEW` orders in the courier's city. Summaries intentionally omit exact drop-off coordinates, customer identity, and full media, so use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.
+**When/how:** Load a paginated radar of `NEW` orders in the courier's city. Summaries intentionally omit the customer-provided map link, customer identity, and full media, so use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.
 
 ### GET /api/orders/{order_id}
 
@@ -306,11 +306,11 @@
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order UUID from create, owned list, or accepted order.
 - **Then / dependent API:** Active invoice, participant profile, chat, rating, or state transition.
 
-**When/how (63 words):** Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain participant access once assigned. The response includes status, city, date, amount, assignment time, and coordinates only when the service allows them. It does not include a full timeline, attached image URLs, delivery proof gallery, or invoice items; fetch related resources separately where endpoints exist.
+**When/how:** Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain participant access once assigned. The response includes status, city, date, amount, assignment time, and the customer-provided Google Maps link. It does not include a full timeline, attached image URLs, delivery proof gallery, or invoice items; fetch related resources separately where endpoints exist.
 
 ### POST /api/orders/{order_id}/accept
 
@@ -319,7 +319,7 @@
 - **Who / authorization:** Authenticated active verified courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** `GET /api/orders/available` supplies a `NEW` order UUID.
 - **Then / dependent API:** `GET /api/orders/{order_id}`, chat, then invoice creation.
 
@@ -332,7 +332,7 @@
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `CancelOrderRequest` — `reason?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Participant order still in a cancellable pre-progress state.
 - **Then / dependent API:** Refresh `GET /api/orders/{order_id}` and owned list.
 
@@ -344,12 +344,12 @@
 - **Screens:** Courier Delivery `/delivery/[id]`.
 - **Who / authorization:** Authenticated active verified assigned courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
-- **Request body:** `DeliverRequest` — `latitude: number`; `longitude: number`; `proof_media_keys: string[]`; `note?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Request body:** `DeliverRequest` — `proof_media_keys: string[]`; `note?: string | null`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order `IN_PROGRESS`; 1–5 confirmed `DELIVERY_PROOF` image keys.
 - **Then / dependent API:** Customer `POST /api/orders/{order_id}/approve` or dispute.
 
-**When/how (58 words):** Submit current courier coordinates and confirmed delivery-proof photo keys after reaching the drop-off location. The backend checks assignment, state, radius, ownership, and purpose of each image; it then marks the order delivered. Send the actual current location in decimal degrees and do not substitute a cached order location. This is a state transition, not a generic photo-upload call.
+**When/how:** Submit one to five confirmed delivery-proof photo keys after reaching the drop-off location. The backend checks courier assignment, order state, and ownership and purpose of each image before marking the order delivered. It does not calculate distance or verify physical presence. The customer-provided map link is returned on order detail for navigation; it is not submitted again as delivery proof.
 
 ### POST /api/orders/{order_id}/approve
 
@@ -358,7 +358,7 @@
 - **Who / authorization:** Authenticated customer who owns the order; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `latitude?: number | null`; `longitude?: number | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order is `DELIVERED` and proof reviewed.
 - **Then / dependent API:** `POST /api/orders/{order_id}/ratings`; refresh wallet/order.
 

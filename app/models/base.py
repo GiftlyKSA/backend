@@ -1,7 +1,7 @@
 """SQLAlchemy declarative base and shared column mixins (SPEC SECTION 10).
 
 Every table has a UUID ``id`` and ``created_at`` / ``updated_at`` TIMESTAMPTZ in
-UTC; ``updated_at`` is maintained by a DB trigger (see the baseline migration).
+UTC; both timestamps have database defaults.
 Soft-deletable tables add ``deleted_at``. ORM models carry no business logic beyond
 hybrid properties (SPEC SECTION 3).
 """

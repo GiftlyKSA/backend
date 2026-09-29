@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, NotFoundError, ValidationDomainError
+from app.core.map_url import validate_delivery_map_url
 from app.core.security import hmac_hex
 from app.models import City, CourierProfile, User, Withdrawal
 from app.models.enums import OrderStatus, UserRole, UserStatus
@@ -516,9 +517,8 @@ class AdminService:
         customer_id: uuid.UUID,
         description: str | None,
         delivery_city: str,
+        delivery_map_url: str,
         delivery_date: date,
-        longitude: float,
-        latitude: float,
         delivery_address_note: str | None,
         ip: str | None,
     ) -> uuid.UUID:
@@ -537,14 +537,15 @@ class AdminService:
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
-        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
-            raise ValidationDomainError("Delivery coordinates are invalid.")
+        try:
+            validate_delivery_map_url(delivery_map_url)
+        except ValueError as exc:
+            raise ValidationDomainError(str(exc)) from exc
         order = await self._orders.create(
             customer_id=customer_id,
             description=description,
             delivery_city=city_record,
-            longitude=longitude,
-            latitude=latitude,
+            delivery_map_url=delivery_map_url,
             delivery_date=delivery_date,
             address_note=delivery_address_note,
         )
@@ -582,6 +583,7 @@ class AdminService:
         order_id: uuid.UUID,
         description: str | None,
         delivery_city: str,
+        delivery_map_url: str,
         delivery_date: date,
         delivery_address_note: str | None,
         ip: str | None,
@@ -598,10 +600,15 @@ class AdminService:
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
+        try:
+            validate_delivery_map_url(delivery_map_url)
+        except ValueError as exc:
+            raise ValidationDomainError(str(exc)) from exc
         await self._orders.update_admin_details(
             order,
             description=description,
             delivery_city=city_record,
+            delivery_map_url=delivery_map_url,
             delivery_date=delivery_date,
             delivery_address_note=delivery_address_note,
         )

@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
@@ -30,9 +31,11 @@ from app.core.middleware import (
 )
 from app.core.ratelimit import RateLimiter
 from app.core.redis import build_redis
+from app.core.schema_guards import install_schema_guards
 from app.integrations.factory import build_clients
 from app.models.base import Base
 from app.routers import health
+from app.seed import seed_cities_in_session, seed_system_wallets_in_session
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +57,9 @@ _DATABASE_SCHEMA_LOCK_ID = 749283746
 # A PaaS may start the application container a little before PostgreSQL is
 # ready to accept connections. Retry connection-level failures only.
 #
-# Actual schema errors, authentication errors, missing PostGIS, invalid SQL,
+# Actual schema errors, authentication errors, invalid SQL,
 # etc. are NOT silently retried; startup fails with the original traceback.
-_DATABASE_STARTUP_ATTEMPTS = 8
+_DATABASE_STARTUP_ATTEMPTS = 3
 _DATABASE_RETRY_INITIAL_SECONDS = 1.0
 _DATABASE_RETRY_MAX_SECONDS = 5.0
 
@@ -103,8 +106,36 @@ async def _initialize_database_schema(app: FastAPI) -> None:
         )
 
         try:
-            async with engine.begin() as conn:
+            conn = await asyncio.wait_for(engine.connect(), timeout=3)
+        except (OSError, TimeoutError) as exc:
+            if attempt >= _DATABASE_STARTUP_ATTEMPTS:
+                logger.exception(
+                    "database_connection_failed attempts=%s url=%s error=%r",
+                    _DATABASE_STARTUP_ATTEMPTS,
+                    safe_database_url,
+                    exc,
+                )
+                raise
+            logger.warning(
+                "database_connection_unavailable attempt=%s/%s retry_in_seconds=%s error=%r",
+                attempt,
+                _DATABASE_STARTUP_ATTEMPTS,
+                retry_delay,
+                exc,
+            )
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, _DATABASE_RETRY_MAX_SECONDS)
+            continue
+        except OperationalError as exc:
+            logger.exception("database_connection_rejected url=%s error=%r", safe_database_url, exc)
+            raise
+
+        try:
+            async with asyncio.timeout(30), conn.begin():
                 logger.info("database_connected")
+
+                await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+                await conn.execute(text("SET LOCAL statement_timeout = '20s'"))
 
                 # Only one Gunicorn worker may inspect/create the schema at once.
                 await conn.execute(
@@ -113,19 +144,6 @@ async def _initialize_database_schema(app: FastAPI) -> None:
                 )
 
                 logger.info("database_schema_lock_acquired")
-
-                # The application uses geometry(POINT, 4326), which requires
-                # PostgreSQL's PostGIS extension.
-                #
-                # If the managed PostgreSQL server does not provide PostGIS or
-                # this database user cannot enable extensions, startup will fail
-                # here with an explicit error instead of failing later while
-                # creating the orders table.
-                # await conn.execute(
-                #     text("CREATE EXTENSION IF NOT EXISTS postgis"),
-                # )
-
-                logger.info("database_postgis_ready")
 
                 # create_all(checkfirst=True):
                 #
@@ -139,6 +157,11 @@ async def _initialize_database_schema(app: FastAPI) -> None:
                     Base.metadata.create_all,
                     checkfirst=True,
                 )
+                await install_schema_guards(conn)
+
+                async with AsyncSession(bind=conn) as session:
+                    await seed_cities_in_session(session)
+                    await seed_system_wallets_in_session(session)
 
                 logger.info("database_schema_create_all_finished")
 
@@ -146,40 +169,18 @@ async def _initialize_database_schema(app: FastAPI) -> None:
             logger.info("database_schema_committed")
             return
 
-        except (ConnectionRefusedError, OperationalError, OSError) as exc:
-            if attempt >= _DATABASE_STARTUP_ATTEMPTS:
-                logger.exception(
-                    "database_connection_failed attempts=%s url=%s",
-                    _DATABASE_STARTUP_ATTEMPTS,
-                    safe_database_url,
-                )
-                raise
-
-            logger.warning(
-                "database_connection_unavailable "
-                "attempt=%s/%s retry_in_seconds=%s error=%r",
-                attempt,
-                _DATABASE_STARTUP_ATTEMPTS,
-                retry_delay,
-                exc,
-            )
-
-            await asyncio.sleep(retry_delay)
-
-            retry_delay = min(
-                retry_delay * 2,
-                _DATABASE_RETRY_MAX_SECONDS,
-            )
-
-        except Exception:
+        except Exception as exc:
             # We successfully reached PostgreSQL but something about schema
             # initialization itself failed. Do not hide or endlessly retry
             # programming/configuration errors.
             logger.exception(
-                "database_schema_initialization_failed url=%s",
+                "database_schema_initialization_failed url=%s error=%r",
                 safe_database_url,
+                exc,
             )
             raise
+        finally:
+            await conn.close()
 
 
 async def _close_shared_resources(app: FastAPI) -> None:

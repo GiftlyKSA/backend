@@ -1,4 +1,4 @@
-"""Fulfilment-service tests: geofenced delivery, escrow release, disputes, auto-approve.
+"""Fulfilment-service tests: photo proof, escrow release, disputes, auto-approve.
 
 The escrow lifecycle is money-critical: every test that moves money re-runs the ledger
 reconciliation to prove no drift. Funds are moved only through the double-entry ledger.
@@ -32,13 +32,10 @@ from app.repositories.wallet_repository import WalletRepository
 from app.services.fulfillment_service import DeliveryInput, FulfillmentService
 from app.services.media_service import MediaService
 from app.services.money_service import Leg, MoneyService
-from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
 from tests.integration.conftest import city_by_name
-
-_LNG, _LAT = 39.2000, 21.5000
 
 
 def _settings() -> Settings:
@@ -81,7 +78,7 @@ async def _paid_order(
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_location=WKTElement(f"POINT({_LNG} {_LAT})", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=10),
         status=status,
     )
@@ -120,16 +117,14 @@ async def _paid_order(
     return customer, courier, order, invoice
 
 
-async def test_deliver_requires_geofence(db_session: AsyncSession) -> None:
+async def test_deliver_requires_proof(db_session: AsyncSession) -> None:
     _cust, courier, order, _inv = await _paid_order(db_session)
     svc = _service(db_session)
-    key = "orders/proof/unused.jpg"
-    # Far from the drop-off (different city) -> rejected.
     with pytest.raises(ValidationDomainError):
         await svc.submit_delivery(
             order_id=order.id,
             courier_id=courier.id,
-            data=DeliveryInput(latitude=24.7, longitude=46.7, proof_media_keys=[key], note=None),
+            data=DeliveryInput(proof_media_keys=[], note=None),
         )
 
 
@@ -147,9 +142,7 @@ async def test_deliver_and_approve_releases_escrow(db_session: AsyncSession) -> 
     delivered = await svc.submit_delivery(
         order_id=order.id,
         courier_id=courier.id,
-        data=DeliveryInput(
-            latitude=_LAT, longitude=_LNG, proof_media_keys=[key], note="left at door"
-        ),
+        data=DeliveryInput(proof_media_keys=[key], note="left at door"),
     )
     assert delivered.status is OrderStatus.DELIVERED
 

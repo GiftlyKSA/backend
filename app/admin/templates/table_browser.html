@@ -21,10 +21,10 @@
 </p>
 <div class="table-scroll">
   <table class="list data-table">
-    <thead><tr>{% for column in data.columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+    <thead><tr>{% for column in data.columns %}<th>{{ column }}</th>{% endfor %}<th>Actions</th></tr></thead>
     <tbody>{% for row in data.rows %}
-      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
-    {% else %}<tr><td colspan="{{ data.columns|length }}">No records.</td></tr>{% endfor %}</tbody>
+      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}<td>{% if row.edit_url %}<a href="{{ row.edit_url }}">Edit / delete</a>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="{{ data.columns|length + 1 }}">No records.</td></tr>{% endfor %}</tbody>
   </table>
 </div>
 <div class="pager">

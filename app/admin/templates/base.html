@@ -31,7 +31,21 @@
   </form>
 </aside>
 <div class="workspace">
-  <header class="workspace-header"><span>Giftly operations</span><span class="account-badge" aria-label="Admin account">Admin</span></header>
+  <header class="workspace-header">
+    <span>Giftly operations</span>
+    {% set parts = request.url.path.split('/') %}
+    {% set section = parts[4] if parts|length > 4 else '' %}
+    {% set table_names = {'users': 'users', 'couriers': 'courier_profiles', 'orders': 'orders', 'invoices': 'invoices', 'promos': 'promos', 'disputes': 'disputes', 'withdrawals': 'withdrawals', 'wallets': 'wallets', 'topups': 'wallet_topups', 'audit-logs': 'audit_logs'} %}
+    {% set table_name = table_names.get(section) %}
+    {% if table_name %}
+    <nav aria-label="Record actions">
+      <a href="/v1/admin/admin/tables/{{ table_name }}">View all</a>
+      <a href="/v1/admin/admin/tables/{{ table_name }}/new">Add record</a>
+      {% if parts|length == 6 and parts[5] != 'new' %}<a href="/v1/admin/admin/tables/{{ table_name }}/{{ parts[5] }}">Edit or delete</a>{% endif %}
+    </nav>
+    {% endif %}
+    <span class="account-badge" aria-label="Admin account">Admin</span>
+  </header>
 {% endif %}
 <main>{% block content %}{% endblock %}</main>
 {% if ctx %}</div>{% endif %}

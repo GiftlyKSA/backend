@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,9 @@ class Environment(StrEnum):
     DEVELOPMENT = "development"
     TEST = "test"
     PRODUCTION = "production"
+
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -124,7 +128,6 @@ class Settings(BaseSettings):
     MAX_TOPUP_AMOUNT: Decimal = Decimal("20000.00")
     MIN_WITHDRAWAL_AMOUNT: Decimal = Decimal("50.00")
     MAX_WITHDRAWAL_AMOUNT: Decimal = Decimal("20000.00")
-    MAX_DELIVERY_RADIUS_METERS: int = 200
     AUTO_APPROVE_HOURS: int = 72
     PAYMENT_EXPIRY_HOURS: int = 48
     MAX_UPLOAD_BYTES: int = 10_485_760
@@ -223,6 +226,10 @@ class Settings(BaseSettings):
             password = self.ADMIN_PASSWORD.get_secret_value()
             if not password:
                 raise ValueError("ADMIN_PASSWORD must not be empty.")
+            if self.is_production and (
+                self.ADMIN_USERNAME.casefold() == "admin" or password.casefold() == "admin"
+            ):
+                raise ValueError("Production admin credentials must not use development defaults.")
             if self.ADMIN_SESSION_SECRET is None:
                 raise ValueError("ADMIN_SESSION_SECRET is required when the dashboard is on.")
             if len(self.ADMIN_SESSION_SECRET.get_secret_value().encode("utf-8")) < 32:
@@ -276,4 +283,13 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Return the process-wide settings singleton, constructed once at first use."""
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as exc:
+        reasons = [
+            str(error["msg"]).removeprefix("Value error, ")
+            for error in exc.errors(include_input=False, include_url=False)
+        ]
+        message = "Invalid application settings: " + "; ".join(reasons)
+        logger.error("Application settings failed validation: %s", message)
+        raise RuntimeError(message) from None

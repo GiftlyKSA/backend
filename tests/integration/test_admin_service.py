@@ -252,8 +252,7 @@ async def test_ban_and_controlled_table_edits(
         customer_id=target.id,
         description="Original",
         delivery_city=await city_by_name(db_session, "Jeddah"),
-        longitude=39.2,
-        latitude=21.5,
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today() + timedelta(days=2),
         address_note="Original note",
     )
@@ -262,6 +261,7 @@ async def test_ban_and_controlled_table_edits(
         order_id=order.id,
         description="Updated",
         delivery_city="Riyadh",
+        delivery_map_url="https://maps.app.goo.gl/Updated",
         delivery_date=date.today() + timedelta(days=3),
         delivery_address_note="Updated note",
         ip=None,
@@ -322,8 +322,7 @@ async def test_admin_crud_for_users_profiles_and_new_orders(
         description="Admin-created order",
         delivery_city="Jeddah",
         delivery_date=date.today() + timedelta(days=2),
-        longitude=39.2,
-        latitude=21.5,
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_address_note="Reception",
         ip=None,
     )

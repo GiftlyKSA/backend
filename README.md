@@ -3,7 +3,7 @@
 Giftly is a two-sided mobile marketplace for **custom** gifting: a customer posts a
 gift request tied to a city and a delivery date, a verified courier claims it and
 builds an itemised invoice, the customer pays into platform escrow, and funds release
-to the courier only after geofenced, photo-proven delivery is approved. This repository
+to the courier only after photo-proven delivery is approved. This repository
 is the backend, admin dashboard, and documentation — there is no mobile/web client here.
 
 > Payment status: **Dhamen is the selected provider; production payments are disabled**
@@ -28,7 +28,7 @@ is the backend, admin dashboard, and documentation — there is no mobile/web cl
                  |                              money, pricing,    |
                  |                              crypto, security)  |
                  +----------------------------------------------+
-   PostgreSQL 16 + PostGIS + pgcrypto  .  Redis 7  .  private S3 + CloudFront
+   PostgreSQL 16  .  Redis 7  .  private S3 + CloudFront
 ```
 
 Dependency rule (strict): `routers/admin -> services -> repositories -> models`, never
@@ -37,7 +37,7 @@ the reverse. A module may import another module's **service interface** only.
 ## Tech stack
 
 Python 3.13 in Docker (project minimum: 3.11), FastAPI + Uvicorn/Gunicorn, Pydantic v2,
-SQLAlchemy 2 async + asyncpg, Alembic, Redis, TaskIQ, PostgreSQL 16 + PostGIS,
+SQLAlchemy 2 async + asyncpg, Alembic, Redis, TaskIQ, PostgreSQL 16,
 `cryptography`, PyJWT, Jinja2 (admin), ruff, mypy, pytest. Package management is **`uv`
 only** — `pip`, `poetry`, `pipenv`, `virtualenv`, and `conda` are forbidden everywhere.
 
@@ -52,14 +52,12 @@ only** — `pip`, `poetry`, `pipenv`, `virtualenv`, and `conda` are forbidden ev
 uv sync                                   # install from the committed uv.lock
 cp .env.example .env                      # then fill in the blanks (see the table below)
 docker compose up -d db redis             # data services only; run the API below
-uv run alembic upgrade head               # apply the schema (creates system wallets)
-uv run python -m app.seed                 # idempotent safety-net seed
-uv run --locked python -m app.seed_cities  # add 20 active Saudi cities if the catalog is empty
-uv run uvicorn app.main:create_app --factory --reload   # http://localhost:3000
+uv run --locked python -m app.bootstrap_db # create fresh schema and seed wallets/cities
+uv run --locked uvicorn app.main:create_app --factory --reload --port 3000
 ```
 
-The city migration creates 20 active Saudi city choices; `app.seed_cities` is an
-idempotent safety net for an empty catalog. `GET /api/cities` lists active choices
+Schema initialization seeds 20 active Saudi city choices and system wallets;
+`app.seed_cities` remains an idempotent repair command. `GET /api/cities` lists active choices
 without authentication. Orders and courier profiles store UUID foreign keys to `cities.id`.
 New clients can submit the selected `id` as `delivery_city_id`, `city_id`, or
 `courier_city_id`; the former city-name request fields remain accepted for existing clients.
@@ -173,11 +171,15 @@ All hook tools use the versions in `uv.lock`, matching CI. See
 [the pre-commit documentation](https://pre-commit.com/) for hook operation.
 
 The full test suite remains a separate CI gate because it needs disposable
-PostgreSQL/PostGIS and Redis services. Hooks do not replace CI or branch protection.
+PostgreSQL and Redis services. Hooks do not replace CI or branch protection.
 Follow [AGENTS.md](AGENTS.md) for backend development rules. Push to `master` when
 authorized. On Windows, use `Copy-Item .env.example .env` in place of `cp` in setup.
 
 ## Migrations
+
+This fresh-database checkout currently has no Alembic revisions. Run
+`uv run --locked python -m app.bootstrap_db` for the initial schema and seeds.
+Future schema changes need reviewed forward Alembic revisions.
 
 ```bash
 uv run alembic revision --autogenerate -m "describe change"   # DRAFT — read every line
@@ -221,8 +223,8 @@ signature are a test harness, **not a Dhamen protocol**.
 
 The migration history was cleaned for fresh databases with the owner's confirmation
 that no existing database needs the previous history. Create a fresh database and run
-`uv run --locked alembic upgrade head`; do not apply this rewritten history to an
-older deployment. Downgrade testing must use a disposable database. Production
+`uv run --locked python -m app.bootstrap_db`; do not apply this bootstrap to an
+older deployment. Future migration testing must use a disposable database. Production
 payments require a separately reviewed Dhamen implementation before activation.
 
 ## Admin dashboard
@@ -244,21 +246,17 @@ the service. Blank edit inputs preserve stored values; **Clear** explicitly sets
 optional field to NULL. Generated identifiers and timestamps are not editable. Concurrent
 edits return a conflict and show the latest record instead of overwriting it.
 
-Apply `uv run --locked alembic upgrade head` before using the table editors. Migration
-`d4e5f6a7b8c9` adds a transaction-local maintenance override tied to an active admin session
-for ledger, invoice-item, and message immutability triggers. It is enabled only around the
-audited maintenance operation and cleared afterward; foreign keys, uniqueness, and CHECK
+Run `uv run --locked python -m app.bootstrap_db` before using the table editors on a fresh
+database. Bootstrap installs a transaction-local maintenance guard tied to an active admin
+session and immutable-row triggers for ledger entries, invoice items, and messages. The guard
+is enabled only around audited maintenance operations; foreign keys, uniqueness, and CHECK
 constraints remain enforced. Invalid writes roll back with a safe error message.
 
 These are direct administrative data corrections: editing financial or lifecycle fields
 does not run payment settlement, create balancing ledger entries, or notify customers.
 Admins must keep related balances and business state consistent. Production payment
-processing remains disabled. For an editor-only rollback, deploy compatible code that
-removes the editor, or use a reviewed forward migration restoring normal immutable-row
-triggers while preserving later schema. Do not downgrade to `c9d0e1f2a3b4` as an editor-only
-rollback: the linear chain also removes credential versions, media upload grants, and
-payment reservation ownership. A full-chain rollback requires a reviewed deployment and
-data-restoration plan with backups; it does not undo administrative data corrections.
+processing remains disabled. Take a database backup before administrative data corrections;
+reversing a correction requires a reviewed data-restoration plan.
 
 Courier identity edits derive their duplicate-detection fingerprint from the final
 national ID, falling back to the passport. An explicitly entered fingerprint remains an

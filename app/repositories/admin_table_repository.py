@@ -13,7 +13,6 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
-    case,
     cast,
     delete,
     exists,

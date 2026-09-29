@@ -12,7 +12,6 @@ from app.core.crypto import blob_version, build_aad, build_cipher
 from app.models import Conversation, CourierProfile, Order, User, Wallet, Withdrawal
 from app.models.enums import OrderStatus, UserRole, WalletType, WithdrawalStatus
 from app.services.key_rotation_service import KeyRotationService
-from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -58,7 +57,7 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db_session, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today(),
         status=OrderStatus.IN_PROGRESS,
     )

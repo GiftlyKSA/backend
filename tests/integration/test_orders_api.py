@@ -77,7 +77,7 @@ async def _make_stack() -> tuple[object, object, object]:
     return settings, engine, factory
 
 
-async def test_order_flow_and_coordinate_privacy() -> None:
+async def test_order_flow_and_map_link_privacy() -> None:
     settings, engine, factory = await _make_stack()
     customer_phone, courier_phone = _phone(), _phone()
     app = create_app(settings)
@@ -96,8 +96,7 @@ async def test_order_flow_and_coordinate_privacy() -> None:
                 json={
                     "description": "Hand-painted ceramic vase, blue",
                     "delivery_city": "Jeddah",
-                    "latitude": 21.5433,
-                    "longitude": 39.1728,
+                    "delivery_map_url": "https://maps.app.goo.gl/Test",
                     "delivery_date": _future(),
                     "request_media_keys": [],
                 },
@@ -110,10 +109,10 @@ async def test_order_flow_and_coordinate_privacy() -> None:
             courier = await _login(client, app, courier_phone)
             cour_h = {"Authorization": f"Bearer {courier['access_token']}"}
 
-            # Radar shows the order but the summary carries NO coordinates.
+            # Radar shows the order without its customer-provided map link.
             radar = await client.get("/api/orders/available", headers=cour_h)
             radar_row = next(o for o in radar.json()["items"] if o["id"] == order_id)
-            assert "latitude" not in radar_row and "longitude" not in radar_row
+            assert "delivery_map_url" not in radar_row
 
             # A courier has no relationship to a NEW order yet, so the detail is 404
             # (do not confirm existence to a non-participant).
@@ -123,7 +122,7 @@ async def test_order_flow_and_coordinate_privacy() -> None:
             accepted = await client.post(f"/api/orders/{order_id}/accept", headers=cour_h)
             assert accepted.status_code == 200
             assert accepted.json()["status"] == "ASSIGNED"
-            assert accepted.json()["latitude"] == pytest.approx(21.5433, abs=1e-4)
+            assert accepted.json()["delivery_map_url"] == "https://maps.app.goo.gl/Test"
 
             # A second accept now conflicts (already assigned).
             again = await client.post(f"/api/orders/{order_id}/accept", headers=cour_h)
@@ -146,8 +145,7 @@ async def test_customer_can_cancel_new_order() -> None:
                 headers=cust_h,
                 json={
                     "delivery_city": "Riyadh",
-                    "latitude": 24.7136,
-                    "longitude": 46.6753,
+                    "delivery_map_url": "https://maps.app.goo.gl/Test",
                     "delivery_date": _future(),
                     "request_media_keys": [],
                 },
@@ -183,8 +181,7 @@ async def test_parallel_accepts_assign_exactly_once() -> None:
                 headers=cust_h,
                 json={
                     "delivery_city": "Jeddah",
-                    "latitude": 21.5,
-                    "longitude": 39.2,
+                    "delivery_map_url": "https://maps.app.goo.gl/Test",
                     "delivery_date": _future(),
                     "request_media_keys": [],
                 },

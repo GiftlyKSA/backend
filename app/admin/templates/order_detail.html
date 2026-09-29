@@ -7,6 +7,7 @@
   <tr><td>Status</td><td>{{ order.status }}</td></tr>
   <tr><td>City</td><td>{{ order.delivery_city }}</td></tr>
   <tr><td>Delivery date</td><td>{{ order.delivery_date }}</td></tr>
+  <tr><td>Map link</td><td><a href="{{ order.delivery_map_url }}" rel="noopener noreferrer" target="_blank">Open Google Maps</a></td></tr>
   <tr><td>Total</td><td class="num">{{ order.total_amount }}</td></tr>
   <tr><td>Commission</td><td class="num">{{ order.commission_amount }}</td></tr>
   <tr><td>Courier payout</td><td class="num">{{ order.courier_payout_amount }}</td></tr>
@@ -14,11 +15,12 @@
 {% if order.status in ["NEW", "ASSIGNED"] and can_edit %}
 <section class="card edit-card">
   <h2>Edit delivery details</h2>
-  <p class="note">Financial fields, courier assignment, location coordinates, and status remain protected.</p>
+  <p class="note">Financial fields, courier assignment, and status remain protected.</p>
   <form method="post" action="/v1/admin/admin/orders/{{ order.id }}/edit">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <label>City<select name="delivery_city" required>{% for city in cities %}<option value="{{ city.name }}" {% if city.id == order.delivery_city_id %}selected{% endif %}>{{ city.name }}</option>{% endfor %}</select></label>
     <label>Delivery date<input name="delivery_date" type="date" value="{{ order.delivery_date }}" required></label>
+    <label>Google Maps link<input name="delivery_map_url" type="url" maxlength="2048" value="{{ order.delivery_map_url }}" required></label>
     <label>Description<textarea name="description" maxlength="5000">{{ order.description or "" }}</textarea></label>
     <label>Address note<textarea name="delivery_address_note" maxlength="255">{{ order.delivery_address_note or "" }}</textarea></label>
     <button type="submit">Save order details</button>

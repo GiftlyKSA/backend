@@ -39,8 +39,7 @@ def test_public_city_list_is_in_openapi() -> None:
 def test_order_request_accepts_city_id_and_rejects_ambiguous_selection() -> None:
     fields = {
         "delivery_city_id": str(uuid4()),
-        "latitude": 24.7,
-        "longitude": 46.7,
+        "delivery_map_url": "https://maps.app.goo.gl/Test",
         "delivery_date": date.today(),
     }
     assert CreateOrderRequest.model_validate(fields).delivery_city is None
@@ -68,8 +67,7 @@ async def test_order_rejects_city_missing_from_active_catalog() -> None:
     data = NewOrderInput(
         description=None,
         delivery_city="Unknown City",
-        latitude=24.7,
-        longitude=46.7,
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today(),
         request_media_keys=[],
     )
@@ -105,8 +103,7 @@ async def test_order_saves_selected_city_record() -> None:
             description=None,
             delivery_city=None,
             delivery_city_id=city_id,
-            latitude=24.7,
-            longitude=46.7,
+            delivery_map_url="https://maps.app.goo.gl/Test",
             delivery_date=date.today(),
             request_media_keys=[],
         ),

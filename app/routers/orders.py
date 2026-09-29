@@ -158,8 +158,7 @@ async def create_order(
             description=body.description,
             delivery_city=body.delivery_city,
             delivery_city_id=body.delivery_city_id,
-            latitude=body.latitude,
-            longitude=body.longitude,
+            delivery_map_url=body.delivery_map_url,
             delivery_date=body.delivery_date,
             request_media_keys=body.request_media_keys,
         ),
@@ -205,7 +204,7 @@ async def available_orders(
     cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
-    """List NEW orders in the courier's city (the radar). No exact coordinates."""
+    """List NEW orders in the courier's city without private map links."""
     service = _service(request, db)
     views = await service.list_available_views_for_courier(
         courier_id=actor.id,
@@ -271,13 +270,11 @@ async def deliver_order(
     body: DeliverRequest,
     actor: Annotated[Actor, Depends(_active_courier)],
 ) -> OrderDetail:
-    """Mark an in-progress order delivered with geofenced proof (assigned courier)."""
+    """Mark an in-progress order delivered with photo proof (assigned courier)."""
     order = await _fulfillment(request, db).submit_delivery(
         order_id=order_id,
         courier_id=actor.id,
         data=DeliveryInput(
-            latitude=body.latitude,
-            longitude=body.longitude,
             proof_media_keys=body.proof_media_keys,
             note=body.note,
         ),
@@ -326,9 +323,6 @@ def _page(views: list[OrderView], limit: int) -> OrderListResponse:
 
 def _detail(view: OrderView) -> OrderDetail:
     order = view.order
-    lat = lng = None
-    if view.coordinates is not None:
-        lng, lat = view.coordinates
     return OrderDetail(
         id=str(order.id),
         status=str(order.status),
@@ -338,8 +332,7 @@ def _detail(view: OrderView) -> OrderDetail:
         delivery_city_id=order.delivery_city_id,
         delivery_date=order.delivery_date.isoformat(),
         description=order.description,
-        latitude=lat,
-        longitude=lng,
+        delivery_map_url=order.delivery_map_url,
         total_amount=money_str(order.total_amount),
         assigned_at=order.assigned_at.isoformat() if order.assigned_at else None,
         created_at=order.created_at.isoformat(),

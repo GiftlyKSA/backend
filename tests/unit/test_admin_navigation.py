@@ -1,0 +1,38 @@
+"""Admin pages expose the shared CRUD editor for their underlying tables."""
+
+from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from jinja2 import Environment, FileSystemLoader
+
+_TEMPLATES = Path(__file__).resolve().parents[2] / "app" / "admin" / "templates"
+
+
+@pytest.mark.parametrize(
+    "section,table",
+    [
+        ("users", "users"),
+        ("couriers", "courier_profiles"),
+        ("orders", "orders"),
+        ("invoices", "invoices"),
+        ("promos", "promos"),
+        ("disputes", "disputes"),
+        ("withdrawals", "withdrawals"),
+        ("wallets", "wallets"),
+        ("topups", "wallet_topups"),
+        ("audit-logs", "audit_logs"),
+    ],
+)
+def test_section_has_table_crud_links(section: str, table: str) -> None:
+    environment = Environment(loader=FileSystemLoader(_TEMPLATES), autoescape=True)
+    record_id = uuid4()
+    request = SimpleNamespace(url=SimpleNamespace(path=f"/v1/admin/admin/{section}/{record_id}"))
+    ctx = SimpleNamespace(csrf_token="test")
+
+    html = environment.get_template("base.html").render(request=request, ctx=ctx)
+
+    assert f'/v1/admin/admin/tables/{table}"' in html
+    assert f'/v1/admin/admin/tables/{table}/new"' in html
+    assert f'/v1/admin/admin/tables/{table}/{record_id}"' in html

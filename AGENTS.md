@@ -14,7 +14,7 @@
 - This repository is the Python backend, server-rendered admin dashboard, workers, and API documentation for Giftly.
 - Production Docker images use Python 3.13. `pyproject.toml` currently permits Python 3.11+, and Ruff/mypy target 3.11; preserve compatibility until an upgrade is authorized.
 - HTTP and WebSocket APIs use FastAPI, Pydantic v2, and Uvicorn/Gunicorn. The admin dashboard uses Jinja2.
-- Persistence uses PostgreSQL 16 with PostGIS and pgcrypto, SQLAlchemy 2 async, asyncpg, GeoAlchemy2, and Alembic migrations.
+- Persistence uses PostgreSQL 16, SQLAlchemy 2 async, asyncpg, and Alembic migrations.
 - Redis 7 supports shared state and Taskiq background processing. Docker and Docker Compose provide the development and deployment container workflow.
 - Dhamen is the selected payment provider; do not describe dormant scaffolding as a verified live integration. Other integrations include email, SMS, push, private S3 storage, and CloudFront. Preserve integration interfaces and test fakes.
 - Use `uv` exclusively for Python dependencies and execution; retain `uv.lock`. Do not introduce pip, Poetry, conda, or a competing dependency manager.
@@ -98,7 +98,7 @@
 - Preserve double-entry ledger invariants, escrow accounting, invoice revisions, idempotency, and order lifecycle safeguards.
 - Use explicit transaction boundaries and appropriate locking/constraints for concurrent financial operations, reservations, claims, and state transitions.
 - Treat Alembic autogeneration as a draft. Review extension handling, defaults, indexes, constraints, data backfills, locking impact, and downgrade behavior before applying migrations.
-- Test migrations against a disposable PostgreSQL/PostGIS database. Never substitute SQLite for PostgreSQL-specific behavior or use a shared/production database for tests.
+- Test migrations against a disposable PostgreSQL database. Never substitute SQLite for PostgreSQL-specific behavior or use a shared/production database for tests.
 - Bound query results and batch sizes, avoid N+1 queries, add indexes based on actual query paths, and measure performance-sensitive changes.
 - Keep blocking I/O off async request paths. Use timeouts, bounded retries, and cancellation-safe cleanup for external calls.
 - Make retried jobs idempotent and account for partial failures. Avoid holding database transactions open across slow network operations.
@@ -110,7 +110,7 @@
 - Pre-push runs full-project Ruff lint, Ruff formatting checks, and strict mypy. Do not bypass hooks to conceal failures.
 - Run `uv run --locked pre-commit run --all-files` and `uv run --locked pre-commit run --all-files --hook-stage pre-push` to reproduce the gates manually.
 - Add meaningful tests for business rules, authorization, concurrency, migrations, failures, and regressions. A regression check should detect the original bug.
-- Run focused tests during development and `uv run --locked pytest` before declaring application changes complete. Integration tests require disposable PostgreSQL/PostGIS and Redis services; inspect fixtures and CI setup first.
+- Run focused tests during development and `uv run --locked pytest` before declaring application changes complete. Integration tests require disposable PostgreSQL and Redis services; inspect fixtures and CI setup first.
 - CI separately enforces the full suite with at least 85% coverage, OpenAPI generation, security auditing, and Docker checks. Local hooks do not replace CI or remote branch protection.
 - For documentation/configuration-only work, validate syntax, paths, commands, and actual hook behavior. Report existing failures separately instead of silently expanding scope.
 - Use the verification relevant to the change: migrations, API contracts, Docker build/runtime, and external-provider fakes where applicable. Never infer production integration success from mocks alone.

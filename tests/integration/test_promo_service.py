@@ -38,7 +38,6 @@ from app.models.enums import (
 )
 from app.repositories.promo_repository import PromoRepository
 from app.services.promo_service import PromoService
-from geoalchemy2.elements import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import make_test_settings
@@ -66,7 +65,7 @@ async def _order_and_invoice(db: AsyncSession, customer_id: uuid.UUID) -> tuple[
         customer_id=customer_id,
         courier_id=customer_id,  # a self-reference is fine for these promo tests
         city=await city_by_name(db, "Jeddah"),
-        delivery_location=WKTElement("POINT(39.1728 21.5433)", srid=4326),
+        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today() + timedelta(days=30),
         status=OrderStatus.ASSIGNED,
     )

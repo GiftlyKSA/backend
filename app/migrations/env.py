@@ -25,17 +25,6 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-# PostGIS manages these tables/indexes itself; exclude them from autogenerate so a
-# diff never proposes dropping spatial_ref_sys (SPEC SECTION 4.8 — clean revisions).
-def _include_object(
-    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
-) -> bool:
-    """Exclude PostGIS-managed objects from autogenerate comparison."""
-    if type_ == "table" and reflected and name not in target_metadata.tables:
-        return False
-    return True
-
-
 _settings = get_settings()
 config.set_main_option("sqlalchemy.url", _settings.DATABASE_URL.get_secret_value())
 
@@ -47,7 +36,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
-        include_object=_include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -58,7 +46,6 @@ def _do_run_migrations(connection: object) -> None:
         connection=connection,  # type: ignore[arg-type]
         target_metadata=target_metadata,
         compare_type=True,
-        include_object=_include_object,
     )
     with context.begin_transaction():
         context.run_migrations()

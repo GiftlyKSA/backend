@@ -1,7 +1,7 @@
 """Database fixtures for integration tests.
 
 Each test runs inside an outer transaction that is always rolled back, so tests never
-pollute each other and the schema created by ``alembic upgrade head`` is reused. If the
+pollute each other and the schema created by ``app.bootstrap_db`` is reused. If the
 database is unreachable the whole module is skipped (CI always has a real Postgres).
 """
 

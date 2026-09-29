@@ -11,11 +11,9 @@ from app.core.money import MoneyError, parse_money
 
 
 class DeliverRequest(BaseModel):
-    """A courier's geofenced delivery submission."""
+    """A courier's delivery submission with photographic proof."""
 
     model_config = ConfigDict(extra="forbid")
-    latitude: float = Field(..., ge=-90, le=90, description="Courier's current latitude.")
-    longitude: float = Field(..., ge=-180, le=180, description="Courier's current longitude.")
     proof_media_keys: list[str] = Field(
         ..., min_length=1, max_length=5, description="Confirmed delivery-proof photo keys."
     )

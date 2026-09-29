@@ -25,7 +25,6 @@ from app.models.enums import (
 from app.repositories.wallet_repository import WalletRepository
 from app.services.money_service import Leg, MoneyService
 from app.workers.auto_approve import auto_approve_delivered
-from geoalchemy2 import WKTElement
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
@@ -73,7 +72,7 @@ async def test_auto_approve_completes_and_pays() -> None:
                 customer_id=customer.id,
                 courier_id=courier.id,
                 city=await city_by_name(session, "Jeddah"),
-                delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+                delivery_map_url="https://maps.app.goo.gl/Test",
                 delivery_date=datetime.now(UTC).date() + timedelta(days=5),
                 status=OrderStatus.DELIVERED,
                 delivered_at=datetime.now(UTC) - timedelta(hours=100),

@@ -25,6 +25,7 @@ from app.core.exceptions import (
     ValidationDomainError,
 )
 from app.core.locks import LockNotAcquiredError, redis_lock
+from app.core.map_url import validate_delivery_map_url
 from app.models import Order
 from app.models.enums import MediaType, MessageType, OrderStatus, UserRole
 from app.repositories.city_repository import CityRepository
@@ -37,9 +38,6 @@ from app.services.media_service import MediaService
 from app.services.order_state import assert_transition
 from app.services.rating_service import RatingService
 
-# Saudi Arabia bounding box (approx) — reject coordinates outside it early.
-_SA_LAT = (16.0, 33.0)
-_SA_LNG = (34.0, 56.0)
 _MAX_CUSTOMER_ACTIVE = 5
 _MAX_COURIER_ACTIVE = 3
 _MAX_REQUEST_MEDIA = 3
@@ -52,8 +50,7 @@ class NewOrderInput:
 
     description: str | None
     delivery_city: str | None
-    latitude: float
-    longitude: float
+    delivery_map_url: str
     delivery_date: date
     request_media_keys: list[str]
     delivery_city_id: uuid.UUID | None = None
@@ -65,7 +62,6 @@ class OrderView:
 
     order: Order
     current_actor_has_rated: bool
-    coordinates: tuple[float, float] | None = None
 
 
 class OrderService:
@@ -97,17 +93,17 @@ class OrderService:
         self._cities = CityService(CityRepository(session))
 
     async def create_order(self, *, customer_id: uuid.UUID, data: NewOrderInput) -> Order:
-        """Create a NEW order after validating limits, coordinates, and media.
+        """Create a NEW order after validating limits, map link, and media.
 
         Raises:
-            ValidationDomainError: Coordinates out of range, too many media keys, or a
+            ValidationDomainError: Invalid map link, too many media keys, or a
                 media object that fails validation.
             ConflictError: The customer already has the maximum active orders.
         """
-        if not (_SA_LAT[0] <= data.latitude <= _SA_LAT[1]):
-            raise ValidationDomainError("Latitude is outside the service area.")
-        if not (_SA_LNG[0] <= data.longitude <= _SA_LNG[1]):
-            raise ValidationDomainError("Longitude is outside the service area.")
+        try:
+            validate_delivery_map_url(data.delivery_map_url)
+        except ValueError as exc:
+            raise ValidationDomainError(str(exc)) from exc
         if len(data.request_media_keys) > _MAX_REQUEST_MEDIA:
             raise ValidationDomainError("At most 3 request photos are allowed.")
         if data.delivery_city_id is not None:
@@ -127,8 +123,7 @@ class OrderService:
             customer_id=customer_id,
             description=data.description,
             delivery_city=city,
-            longitude=data.longitude,
-            latitude=data.latitude,
+            delivery_map_url=data.delivery_map_url,
             delivery_date=data.delivery_date,
             address_note=None,
         )
@@ -255,48 +250,32 @@ class OrderService:
     async def get_order_view_for_actor(
         self, *, order_id: uuid.UUID, actor_id: uuid.UUID, role: UserRole
     ) -> OrderView:
-        """Return a participant order with actor-scoped rating and coordinates."""
+        """Return a participant order with actor-scoped rating state."""
         order = await self.get_order_for_actor(order_id=order_id, actor_id=actor_id)
-        return (
-            await self._enrich_orders(
-                [order], actor_id=actor_id, role=role, include_coordinates=True
-            )
-        )[0]
+        return (await self._enrich_orders([order], actor_id=actor_id))[0]
 
     async def view_existing_order_for_actor(
         self, *, order: Order, actor_id: uuid.UUID, role: UserRole
     ) -> OrderView:
         """Enrich a just-mutated participant order behind the same eligibility boundary."""
         await self._eligibility.require_eligible_actor(actor_id)
-        return (
-            await self._enrich_orders(
-                [order], actor_id=actor_id, role=role, include_coordinates=True
-            )
-        )[0]
+        return (await self._enrich_orders([order], actor_id=actor_id))[0]
 
     async def _enrich_orders(
         self,
         orders: list[Order],
         *,
         actor_id: uuid.UUID,
-        role: UserRole | None = None,
-        include_coordinates: bool = False,
     ) -> list[OrderView]:
         states = await self._ratings.current_actor_rating_states(
             [order.id for order in orders], actor_id
         )
         views: list[OrderView] = []
         for order in orders:
-            coordinates = None
-            if include_coordinates and (
-                role is UserRole.CUSTOMER or order.status is not OrderStatus.NEW
-            ):
-                coordinates = await self._orders.coords_for_actor(order.id, actor_id)
             views.append(
                 OrderView(
                     order=order,
                     current_actor_has_rated=states[order.id],
-                    coordinates=coordinates,
                 )
             )
         return views

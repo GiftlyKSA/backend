@@ -29,7 +29,6 @@ from app.services.expiry_service import ExpiryService
 from app.services.money_service import Leg, MoneyService
 from app.services.payment_service import WebhookEvent, build_payment_service
 from app.workers.expiry import expire_stale
-from geoalchemy2 import WKTElement
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
@@ -94,7 +93,7 @@ async def test_expiry_reopens_order_and_releases_hold() -> None:
                 customer_id=customer.id,
                 courier_id=courier.id,
                 city=await city_by_name(session, "Jeddah"),
-                delivery_location=WKTElement("POINT(39.2 21.5)", srid=4326),
+                delivery_map_url="https://maps.app.goo.gl/Test",
                 delivery_date=datetime.now(UTC).date() + timedelta(days=5),
                 status=OrderStatus.WAITING_PAYMENT,
                 total_amount=Decimal("724.50"),

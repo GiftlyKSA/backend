@@ -2514,19 +2514,11 @@
             ],
             "title": "Delivery City Id"
           },
-          "latitude": {
-            "type": "number",
-            "maximum": 90.0,
-            "minimum": -90.0,
-            "title": "Latitude",
-            "description": "Drop-off latitude."
-          },
-          "longitude": {
-            "type": "number",
-            "maximum": 180.0,
-            "minimum": -180.0,
-            "title": "Longitude",
-            "description": "Drop-off longitude."
+          "delivery_map_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Delivery Map Url",
+            "description": "HTTPS Google Maps link."
           },
           "delivery_date": {
             "type": "string",
@@ -2547,8 +2539,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "latitude",
-          "longitude",
+          "delivery_map_url",
           "delivery_date"
         ],
         "title": "CreateOrderRequest",
@@ -2556,20 +2547,6 @@
       },
       "DeliverRequest": {
         "properties": {
-          "latitude": {
-            "type": "number",
-            "maximum": 90.0,
-            "minimum": -90.0,
-            "title": "Latitude",
-            "description": "Courier's current latitude."
-          },
-          "longitude": {
-            "type": "number",
-            "maximum": 180.0,
-            "minimum": -180.0,
-            "title": "Longitude",
-            "description": "Courier's current longitude."
-          },
           "proof_media_keys": {
             "items": {
               "type": "string"
@@ -2596,12 +2573,10 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "latitude",
-          "longitude",
           "proof_media_keys"
         ],
         "title": "DeliverRequest",
-        "description": "A courier's geofenced delivery submission."
+        "description": "A courier's delivery submission with photographic proof."
       },
       "DeviceResponse": {
         "properties": {
@@ -3119,28 +3094,10 @@
             ],
             "title": "Description"
           },
-          "latitude": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Latitude",
-            "description": "Shown to a courier only once assigned."
-          },
-          "longitude": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Longitude"
+          "delivery_map_url": {
+            "type": "string",
+            "title": "Delivery Map Url",
+            "description": "Customer-provided Google Maps link."
           },
           "total_amount": {
             "type": "string",
@@ -3177,6 +3134,7 @@
           "delivery_city_id",
           "delivery_date",
           "description",
+          "delivery_map_url",
           "total_amount",
           "assigned_at",
           "created_at",

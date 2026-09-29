@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for every Giftly table (SPEC SECTION 10, 13).
 
 Models carry no business logic beyond hybrid properties. Money columns are
-``Numeric`` (never float); spatial columns are PostGIS ``Geometry(Point, 4326)``;
+``Numeric`` (never float).
 enums are native PG enums. CHECK constraints, unique constraints, and indexes are
 declared in ``__table_args__`` so the schema is defined in one place and the DB
 enforces the invariants independently of the services.
@@ -13,7 +13,6 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-# from geoalchemy2 import Geometry
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -37,14 +36,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models import enums
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-
 gateway_customer_identifier_seq = Sequence(
     "gateway_customer_identifier_seq",
     metadata=Base.metadata,
     start=1,
 )
-# Native PG enum types, created once by the baseline migration (create_type=False so
-# the ORM never tries to re-create them at table-create time).
+# Native PostgreSQL enum types are created by metadata bootstrap on a fresh database.
 _user_role = ENUM(enums.UserRole, name="user_role")
 _user_status = ENUM(enums.UserStatus, name="user_status")
 _order_status = ENUM(enums.OrderStatus, name="order_status")
@@ -342,7 +339,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A customer's gift request, tied to a city and a delivery date <= 6 months out.
 
     ``description`` is intentionally NOT encrypted: no healthcare data is in scope
-    (SPEC SECTION 1), so it is not Restricted. ``delivery_location`` stores lng-first.
+    (SPEC SECTION 1), so it is not Restricted.
     """
 
     __tablename__ = "orders"
@@ -364,12 +361,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         """Expose the related city name to existing read contracts."""
         return self.city.name
 
-    # delivery_location: Mapped[object] = mapped_column(
-    #     # spatial_index=False: the explicit idx_orders_location_gist below is the one
-    #     # GIST index we want; GeoAlchemy2's auto-index would duplicate it.
-    #     Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
-    #     nullable=False,
-    # )
+    delivery_map_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     delivery_address_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[enums.OrderStatus] = mapped_column(
@@ -416,7 +408,6 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "delivered_at",
             postgresql_where=text("status = 'DELIVERED'"),
         ),
-        #Index("idx_orders_location_gist", "delivery_location", postgresql_using="gist"),
     )
 
 
@@ -435,20 +426,9 @@ class OrderMedia(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    # capture_location: Mapped[object | None] = mapped_column(
-    #     # No spatial index in the spec index list for proof media; suppress the auto one.
-    #     Geometry(geometry_type="POINT", srid=4326, spatial_index=False),
-    #     nullable=True,
-    # )
     captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (
-        CheckConstraint(
-            "media_type <> 'DELIVERY_PROOF' OR capture_location IS NOT NULL",
-            name="chk_proof_has_location",
-        ),
-        Index("idx_order_media_order_type", "order_id", "media_type"),
-    )
+    __table_args__ = (Index("idx_order_media_order_type", "order_id", "media_type"),)
 
 
 class Promo(UUIDPrimaryKeyMixin, TimestampMixin, Base):
