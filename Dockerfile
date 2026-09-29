@@ -48,5 +48,5 @@ ENTRYPOINT ["python", "-m", "app.entrypoint"]
 CMD ["gunicorn", "app.main:create_app()", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:3000", \
-     "--workers", "4", \
-     "--timeout", "60"]
+     "--workers", "3", \
+     "--timeout", "80"]

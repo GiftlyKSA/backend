@@ -27,9 +27,9 @@ def main() -> None:
         "--bind",
         "0.0.0.0:3000",
         "--workers",
-        os.getenv("WEB_CONCURRENCY", "1"),
+        os.getenv("WEB_CONCURRENCY", "3"),
         "--timeout",
-        os.getenv("GUNICORN_TIMEOUT", "60"),
+        os.getenv("GUNICORN_TIMEOUT", "80"),
     ]
     os.execvp(command[0], command)  # noqa: S606, S607 - deployment command, no shell
 
