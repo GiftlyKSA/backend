@@ -2,7 +2,7 @@
 # must not be reused for a deployed environment.
 
 x-app-environment: &app-environment
-  ENVIRONMENT: development
+  ENVIRONMENT: production
   DEBUG: "true"
   LOG_LEVEL: INFO
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/giftly

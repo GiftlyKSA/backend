@@ -15,7 +15,11 @@ from app.core.config import get_settings
 
 _settings = get_settings()
 
-broker = ListQueueBroker(url=_settings.REDIS_URL.get_secret_value())
+broker = ListQueueBroker(
+    url=_settings.REDIS_URL.get_secret_value(),
+    socket_connect_timeout=5,
+    socket_timeout=None,
+)
 
 # Taskiq loads this broker entry point without discovering modules named outside tasks.py.
 for _module in ("auto_approve", "expiry", "receipts", "reconciliation"):
