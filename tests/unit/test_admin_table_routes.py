@@ -171,6 +171,34 @@ async def test_edit_form_shows_generated_values_without_writable_inputs(monkeypa
         assert f'name="{name}"' not in response.text
 
 
+async def test_datetime_fields_use_picker_and_date_only_fields_keep_date_picker(monkeypatch):
+    app, ctx = make_app(monkeypatch)
+    starts_at = datetime(2026, 10, 1, 12, 30, tzinfo=UTC)
+    record_id = uuid4()
+    ctx.tables.form = AsyncMock(
+        return_value=TableForm(
+            "promos",
+            form_fields(Base.metadata.tables["promos"], {"starts_at": starts_at}),
+            record_id,
+            "revision",
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        promo = await client.get(f"/v1/admin/admin/tables/promos/{record_id}/edit")
+        ctx.tables.form = AsyncMock(
+            return_value=TableForm(
+                "users", form_fields(Base.metadata.tables["users"], None), None, ""
+            )
+        )
+        user = await client.get("/v1/admin/admin/tables/users/new")
+
+    assert 'name="starts_at" type="datetime-local"' in promo.text
+    assert 'name="ends_at" type="datetime-local"' in promo.text
+    assert 'data-iso="2026-10-01T12:30:00+00:00"' in promo.text
+    assert 'name="date_of_birth" type="date"' in user.text
+    assert "/static/datetime-fields.js" in promo.text
+
+
 async def test_stale_write_response_shows_current_values_not_stale_submission(monkeypatch):
     app, ctx = make_app(monkeypatch)
     identifier = uuid4()

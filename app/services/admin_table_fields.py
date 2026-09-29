@@ -102,6 +102,10 @@ def form_fields(table: Table, row: dict[str, Any] | None) -> list[TableField]:
     for column in columns:
         secret = is_secret(column.name)
         value = "" if secret or row is None else _format(row.get(column.name))
+        if row is not None and isinstance(column.type, DateTime) and column.name not in _GENERATED:
+            stored = row.get(column.name)
+            if isinstance(stored, datetime):
+                value = stored.isoformat()
         if row is not None and isinstance(column.type, JSONB) and row.get(column.name) is not None:
             value = json.dumps(row[column.name], ensure_ascii=False)
         fields.append(

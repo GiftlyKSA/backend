@@ -31,9 +31,11 @@
         </select></label>
       {% elif field.kind in ['textarea', 'json'] %}
         <label>{{ field.label }}<textarea name="{{ field.name }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}>{{ field.value }}</textarea></label>
+      {% elif field.kind == 'datetime' %}
+        <label>{{ field.label }}<input name="{{ field.name }}" type="datetime-local" step="1" data-iso="{{ field.value }}" {% if field.required %}required{% endif %}></label>
+        <p class="note">Choose the date and time in your local timezone.</p>
       {% else %}
         <label>{{ field.label }}<input name="{{ field.name }}" type="{{ 'date' if field.kind == 'date' else 'text' }}" value="{{ field.value }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}></label>
-        {% if field.kind == 'datetime' %}<p class="note">Date and time with timezone, e.g. 2026-09-18T12:00:00+03:00.</p>{% endif %}
       {% endif %}
       {% if form.record_id and field.nullable and not field.readonly %}<label class="clear-field"><input type="checkbox" name="null__{{ field.name }}" value="1"> Clear {{ field.label|lower }}</label>{% endif %}
     </div>

@@ -259,6 +259,8 @@ the service. Blank edit inputs preserve stored values; **Clear** on edit explici
 optional field to NULL. Generated identifiers and creation, update, and deletion timestamps
 are shown read-only on edit with both date and time. Concurrent
 edits return a conflict and show the latest record instead of overwriting it.
+Editable timestamp fields, including promo start and end, use a date-and-time picker in
+the admin's local timezone; date-only fields use a calendar picker.
 
 Run `uv run --locked python -m app.bootstrap_db` before using the table editors on a fresh
 database. Bootstrap installs a transaction-local maintenance guard tied to an active admin
