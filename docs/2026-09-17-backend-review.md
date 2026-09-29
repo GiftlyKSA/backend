@@ -9,7 +9,7 @@ Scope: authentication and token flows, OTP and rate limits, admin access and CRU
 | Priority | ID | Category | Severity | Status | Impact if unresolved |
 | --- | --- | --- | --- | --- | --- |
 | 1 | INT-01 | Integration / release | High 8 | UNCONFIRMED | OTP or receipts may fail with real vendors |
-| 2 | CI-02 | Quality / release | Mid 6 | UNCONFIRMED | Master changes lack verified CI evidence |
+| 2 | CI-02 | Quality / release | Mid 6 | Confirmed missing run evidence | Master changes lack verified CI evidence |
 | 3 | TEST-01 | Quality / security | Mid 5 | Open | Generic admin CRUD can regress per table |
 | 4 | PERF-03 | SQL performance | Mid 5 | Open | Deep admin pages can scan millions of rows |
 | 5 | SEC-09 | Supply chain | Mid 4 | UNCONFIRMED | Historical GitHub alerts may differ from local audit |
@@ -76,7 +76,7 @@ No confirmed high-severity exploit was established in inspected source. Deployme
 
 **TEST-01 — Generic admin CRUD coverage — 5/10, open.** The dynamic browser and mutation path have authentication/CSRF checks, but not every mapped table and relationship has a database-backed create/edit/delete round trip. A model change could break one form at runtime. Add a disposable-PostgreSQL matrix for field types, FK selection, uniqueness, nullable clearing and protected writes. This catches regressions without changing product behavior.
 
-**CI-02 — Master CI evidence — 6/10, UNCONFIRMED.** A previous workflow query found no matching master run. Local non-Docker checks do not establish deployment readiness. Confirm the pushed commit triggers and passes PostgreSQL/Redis integration, coverage, dependency audit, OpenAPI generation and build checks; repair the workflow if it does not.
+**CI-02 — Master CI evidence — 6/10, confirmed missing run evidence.** On 2026-09-29, `gh run list --workflow CI --branch master` returned no runs, including for the pushed commit `6c939f3`. The workflow file is active and declares a master push trigger. A manual dispatch attempt returned HTTP 401, so this session could not run it. This is a release-verification gap, not proof that application code fails. An authorized repository maintainer should check Actions policy/permissions, trigger CI, and verify PostgreSQL/Redis integration, coverage, dependency audit, OpenAPI generation and build checks. Fixing the trigger would make future master changes verifiable.
 
 ### Low
 
