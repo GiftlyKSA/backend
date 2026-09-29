@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import Select, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import City, Conversation, Order, OrderMedia, User
+from app.models import City, Conversation, Order, OrderMedia, OrderNotification, User
 from app.models.enums import MediaType, OrderStatus
 
 # Statuses that count against a customer's concurrent-order limit.
@@ -56,6 +56,8 @@ class OrderRepository:
             status=OrderStatus.NEW,
         )
         self._session.add(order)
+        await self._session.flush()
+        self._session.add(OrderNotification(order_id=order.id, city_id=delivery_city.id))
         await self._session.flush()
         return order
 

@@ -24,6 +24,7 @@ from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
+from app.core.ws_connections import WebSocketLease
 from app.models.enums import UserRole
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.courier_repository import CourierRepository
@@ -204,18 +205,49 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
         else conversation.customer_id
     )
 
-    await websocket.accept()
     redis: Redis = websocket.app.state.redis
-    pubsub = redis.pubsub()
-    await pubsub.subscribe(conversation_channel(conversation_id))
-    tasks = [
-        asyncio.create_task(_pump_pubsub_to_socket(pubsub, websocket, conversation_id)),
-        asyncio.create_task(
-            _pump_socket_to_chat(websocket, conversation_id, actor, recipient_id, factory, redis)
-        ),
-        asyncio.create_task(_monitor_authorization(websocket, conversation_id)),
-    ]
+    lease = WebSocketLease(redis, actor.id)
     try:
+        admitted = await lease.acquire()
+    except Exception:
+        await websocket.close(code=1013)
+        return
+    if not admitted:
+        await websocket.close(code=4429)
+        return
+    try:
+        await _run_admitted_ws(
+            websocket, conversation_id, actor, recipient_id, factory, redis, lease
+        )
+    finally:
+        with contextlib.suppress(Exception):
+            await lease.release()
+
+
+async def _run_admitted_ws(
+    websocket: WebSocket,
+    conversation_id: uuid.UUID,
+    actor: Actor,
+    recipient_id: uuid.UUID,
+    factory: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    lease: WebSocketLease,
+) -> None:
+    """Serve an admitted socket and release its subscription and tasks on exit."""
+    pubsub = redis.pubsub()
+    tasks: list[asyncio.Task[None]] = []
+    try:
+        await pubsub.subscribe(conversation_channel(conversation_id))
+        await websocket.accept()
+        tasks = [
+            asyncio.create_task(_pump_pubsub_to_socket(pubsub, websocket, conversation_id)),
+            asyncio.create_task(
+                _pump_socket_to_chat(
+                    websocket, conversation_id, actor, recipient_id, factory, redis
+                )
+            ),
+            asyncio.create_task(_monitor_authorization(websocket, conversation_id, lease)),
+        ]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             task.result()
@@ -356,10 +388,14 @@ async def _require_live_authorization(websocket: WebSocket, conversation_id: uui
         raise UnauthorizedError("This session is no longer valid.")
 
 
-async def _monitor_authorization(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
+async def _monitor_authorization(
+    websocket: WebSocket, conversation_id: uuid.UUID, lease: WebSocketLease
+) -> None:
     """Recheck idle connections every five seconds, with a five-second dependency deadline."""
     while True:
         await _require_live_authorization(websocket, conversation_id)
+        if not await lease.renew():
+            raise UnauthorizedError("This connection is no longer active.")
         await asyncio.sleep(5)
 
 

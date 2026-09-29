@@ -35,6 +35,10 @@ class StorageClient(ABC):
         """Return object metadata, or None if it does not exist."""
 
     @abstractmethod
+    async def delete_object(self, storage_key: str) -> None:
+        """Delete an abandoned object; a missing object counts as success."""
+
+    @abstractmethod
     async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
         """Return whether the object's bytes match its issued image type."""
 

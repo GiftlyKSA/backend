@@ -8,6 +8,7 @@ import pytest
 from app.core.deps import require_auth
 from app.core.exceptions import NotFoundError, UnauthorizedError
 from app.core.jwt import create_access_token
+from app.core.ws_connections import _ACQUIRE, _RELEASE, _RENEW
 from app.models.enums import UserRole, UserStatus
 from app.repositories.user_repository import UserRepository
 from app.routers import chat
@@ -116,6 +117,9 @@ async def test_idle_socket_revocation_cancels_reader_and_writer(monkeypatch):
         aclose=AsyncMock(),
     )
     websocket.app.state.redis.pubsub = Mock(return_value=pubsub)
+    websocket.app.state.redis.eval.side_effect = lambda script, *args: (
+        2 if script == _ACQUIRE else 1 if script == _RENEW else 0
+    )
     checked = []
 
     async def expire_while_idle(delay):
@@ -129,6 +133,24 @@ async def test_idle_socket_revocation_cancels_reader_and_writer(monkeypatch):
     websocket.send_text.assert_not_awaited()
     pubsub.unsubscribe.assert_awaited_once()
     pubsub.aclose.assert_awaited_once()
+    assert any(call.args[0] == _RELEASE for call in websocket.app.state.redis.eval.await_args_list)
+
+
+@pytest.mark.parametrize("result,code", [(0, 4429), (1, 4429)])
+async def test_socket_cap_rejects_before_allocating_pubsub(monkeypatch, result, code):
+    websocket, _, _ = socket_context(monkeypatch)
+    websocket.app.state.redis.eval.return_value = result
+    await chat.conversation_ws(websocket, uuid4())
+    websocket.close.assert_awaited_once_with(code=code)
+    websocket.app.state.redis.pubsub.assert_not_called()
+
+
+async def test_socket_cap_fails_closed_on_redis_error(monkeypatch):
+    websocket, _, _ = socket_context(monkeypatch)
+    websocket.app.state.redis.eval.side_effect = OSError("redis unavailable")
+    await chat.conversation_ws(websocket, uuid4())
+    websocket.close.assert_awaited_once_with(code=1013)
+    websocket.app.state.redis.pubsub.assert_not_called()
 
 
 async def test_refresh_replay_revocation_is_committed_before_unauthorized():

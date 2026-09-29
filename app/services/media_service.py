@@ -19,6 +19,8 @@ from app.repositories.media_repository import MediaRepository
 
 ALLOWED_IMAGE_TYPES = frozenset({"image/jpeg", "image/png"})
 _UPLOAD_TTL_SECONDS = 300
+MAX_OUTSTANDING_UPLOADS = 20
+MAX_OUTSTANDING_BYTES = 50 * 1024 * 1024
 _PREFIX_BY_PURPOSE = {
     "ORDER_REQUEST": "orders/pending",
     "DELIVERY_PROOF": "orders/proof",
@@ -56,18 +58,20 @@ class MediaService:
 
         ext = "jpg" if content_type == "image/jpeg" else "png"
         storage_key = f"{prefix}/{uuid.uuid4()}.{ext}"
-        url = await self._storage.create_upload_url(
-            storage_key=storage_key,
-            content_type=content_type,
-            byte_size=byte_size,
-            ttl_seconds=_UPLOAD_TTL_SECONDS,
-        )
         await self._uploads.issue(
             storage_key=storage_key,
             actor_id=actor_id,
             purpose=purpose,
             content_type=content_type,
             byte_size=byte_size,
+            max_count=MAX_OUTSTANDING_UPLOADS,
+            max_bytes=MAX_OUTSTANDING_BYTES,
+        )
+        url = await self._storage.create_upload_url(
+            storage_key=storage_key,
+            content_type=content_type,
+            byte_size=byte_size,
+            ttl_seconds=_UPLOAD_TTL_SECONDS,
         )
         return url, storage_key, _UPLOAD_TTL_SECONDS
 
@@ -79,7 +83,7 @@ class MediaService:
                 image by magic bytes.
         """
         grant = await self._owned_grant(storage_key, actor_id)
-        if grant.attached_at is not None:
+        if grant.attached_at is not None or grant.deleting_at is not None:
             raise ConflictError("This media has already been attached.")
         await self._verify_object(grant)
         if not await self._uploads.mark_confirmed(storage_key, actor_id):
@@ -90,7 +94,7 @@ class MediaService:
         grant = await self._owned_grant(storage_key, actor_id)
         if grant.purpose != purpose or grant.confirmed_at is None:
             raise BadRequestError("The media is not confirmed for this purpose.")
-        if grant.attached_at is not None:
+        if grant.attached_at is not None or grant.deleting_at is not None:
             raise ConflictError("This media has already been attached.")
         head = await self._verify_object(grant)
         if not await self._uploads.claim(storage_key, actor_id, purpose):

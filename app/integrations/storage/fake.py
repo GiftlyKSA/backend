@@ -33,6 +33,10 @@ class FakeStorageClient(StorageClient):
         """Return the recorded object metadata, or None."""
         return self._objects.get(storage_key)
 
+    async def delete_object(self, storage_key: str) -> None:
+        """Remove an abandoned test object."""
+        self._objects.pop(storage_key, None)
+
     async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
         """Report a recorded object as a valid image."""
         head = self._objects.get(storage_key)

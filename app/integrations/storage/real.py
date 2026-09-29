@@ -95,6 +95,13 @@ class S3StorageClient(StorageClient):
             content_type=str(resp.get("ContentType", "")),
         )
 
+    async def delete_object(self, storage_key: str) -> None:
+        """Delete an abandoned object; S3 treats a missing key as success."""
+        async with self._session.client(
+            "s3", region_name=self._region, config=self._client_config
+        ) as s3:
+            await s3.delete_object(Bucket=self._bucket, Key=storage_key)
+
     async def verify_image_magic_bytes(self, storage_key: str, content_type: str) -> bool:
         """Read the first bytes and confirm they match the issued image type."""
         async with self._session.client(

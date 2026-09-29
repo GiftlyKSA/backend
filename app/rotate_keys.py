@@ -24,7 +24,6 @@ async def _run() -> None:
     try:
         async with factory() as session:
             report = await KeyRotationService(session=session, settings=settings).rotate()
-            await session.commit()
     finally:
         await engine.dispose()
     print(

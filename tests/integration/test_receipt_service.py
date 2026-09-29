@@ -16,11 +16,8 @@ from app.core.config import Environment, Settings
 from app.integrations.email.fake import FakeEmailClient
 from app.models import Invoice, Order, User
 from app.models.enums import InvoiceStatus, OrderStatus, UserRole
-from app.repositories.invoice_repository import InvoiceRepository
-from app.repositories.order_repository import OrderRepository
-from app.repositories.user_repository import UserRepository
 from app.services.receipt_service import ReceiptService
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import make_test_settings
 from tests.integration.conftest import city_by_name
@@ -35,9 +32,7 @@ def _settings() -> Settings:
 
 def _service(db: AsyncSession, email: FakeEmailClient) -> ReceiptService:
     return ReceiptService(
-        invoices=InvoiceRepository(db),
-        orders=OrderRepository(db),
-        users=UserRepository(db),
+        factory=async_sessionmaker(db.bind, expire_on_commit=False),
         email=email,
         settings=_settings(),
     )
@@ -93,6 +88,7 @@ async def test_receipt_sent_once_on_paid(db_session: AsyncSession) -> None:
     assert sent.variables["order_id"] == str(invoice.order_id)
     # No Restricted data leaks into the template variables.
     assert "phone" not in sent.variables and "delivery_map_url" not in sent.variables
+    await db_session.refresh(invoice)
     assert invoice.receipt_email_sent_at is not None
 
     # A second attempt is a no-op — never two receipts.
@@ -106,6 +102,7 @@ async def test_receipt_skipped_when_no_email(db_session: AsyncSession) -> None:
     assert await _service(db_session, email).send_receipt(invoice.id) is False
     assert email.sent == []
     # Still stamped so the sweeper stops retrying it.
+    await db_session.refresh(invoice)
     assert invoice.receipt_email_sent_at is not None
 
 

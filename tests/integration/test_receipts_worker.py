@@ -136,5 +136,5 @@ async def test_scheduled_task_runs_under_lock() -> None:
 
     from app.workers.receipts import deliver_pending_receipts
 
-    # The scheduled entry point acquires a Redis lock, sweeps, and releases it.
+    # The scheduled entry point drains eligible receipts using per-invoice claims.
     await deliver_pending_receipts()

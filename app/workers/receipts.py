@@ -3,8 +3,7 @@
 Drains the ``idx_invoices_receipt_pending`` set (PAID invoices with no receipt yet),
 sending each customer their one receipt. The sweeper is the delivery mechanism, so a
 receipt survives a failed send: it stays pending until a later pass delivers it. Each
-invoice is processed in its own transaction, so one failure never blocks the rest. The
-scheduled task holds a Redis lock so two workers never sweep at once.
+invoice has a durable, time-bounded claim; overlapping sweeps skip claimed rows.
 """
 
 from __future__ import annotations
@@ -15,19 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.core.db import build_engine, build_session_factory
-from app.core.locks import LockNotAcquiredError, redis_lock
-from app.core.redis import build_redis
 from app.integrations.email.base import EmailClient
 from app.integrations.factory import build_clients
 from app.repositories.invoice_repository import InvoiceRepository
-from app.repositories.order_repository import OrderRepository
-from app.repositories.user_repository import UserRepository
 from app.services.receipt_service import ReceiptService
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.receipts")
-_LOCK_KEY = "job:send_receipts"
-_LOCK_TTL_SECONDS = 300
 
 
 async def send_pending_receipts(
@@ -59,21 +52,12 @@ async def send_pending_receipts(
             invoice_ids = [invoice.id for invoice in pending]
 
         for invoice_id in invoice_ids:
-            async with factory() as session:
-                service = ReceiptService(
-                    invoices=InvoiceRepository(session),
-                    orders=OrderRepository(session),
-                    users=UserRepository(session),
-                    email=email,
-                    settings=settings,
-                )
-                try:
-                    if await service.send_receipt(invoice_id):
-                        sent += 1
-                    await session.commit()
-                except Exception:  # noqa: BLE001 - one bad invoice must not stall the sweep
-                    await session.rollback()
-                    _logger.exception("receipt send failed for invoice %s", invoice_id)
+            service = ReceiptService(factory=factory, email=email, settings=settings)
+            try:
+                if await service.send_receipt(invoice_id):
+                    sent += 1
+            except Exception:  # noqa: BLE001 - one bad invoice must not stall the sweep
+                _logger.exception("receipt send failed for invoice %s", invoice_id)
     finally:
         try:
             if owned_clients is not None:
@@ -97,15 +81,5 @@ async def send_pending_receipts(
 
 @broker.task(schedule=[{"cron": "*/5 * * * *"}])
 async def deliver_pending_receipts() -> None:
-    """Scheduled task: acquire a lock and drain the pending-receipt set."""
-    settings = get_settings()
-    redis = build_redis(settings)
-    try:
-        # Lua compare-and-delete release (audit SEC-5): if this run outlives the TTL
-        # and a peer re-acquires, releasing must not free the peer's lock.
-        async with redis_lock(redis, _LOCK_KEY, ttl_seconds=_LOCK_TTL_SECONDS):
-            await send_pending_receipts()
-    except LockNotAcquiredError:
-        _logger.info("receipt sweep already running elsewhere; skipping")
-    finally:
-        await redis.aclose()
+    """Scheduled task: drain invoices not held by a live claim."""
+    await send_pending_receipts()

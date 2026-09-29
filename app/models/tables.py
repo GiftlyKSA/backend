@@ -251,12 +251,24 @@ class MediaUpload(UUIDPrimaryKeyMixin, Base):
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleting_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
 
     __table_args__ = (
         UniqueConstraint("storage_key", name="uq_media_uploads_storage_key"),
+        Index(
+            "idx_media_uploads_expiry",
+            "created_at",
+            "id",
+            postgresql_where=text("attached_at IS NULL"),
+        ),
+        Index(
+            "idx_media_uploads_outstanding_owner",
+            "owner_user_id",
+            postgresql_where=text("attached_at IS NULL"),
+        ),
         CheckConstraint("purpose IN ('ORDER_REQUEST', 'DELIVERY_PROOF')", name="chk_media_purpose"),
         CheckConstraint(
             "content_type IN ('image/jpeg', 'image/png')", name="chk_media_content_type"
@@ -411,6 +423,36 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class OrderNotification(TimestampMixin, Base):
+    """Durable cursor for a new order's city notification."""
+
+    __tablename__ = "order_notifications"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True
+    )
+    city_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cities.id"), nullable=False
+    )
+    cursor_token_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "idx_order_notifications_pending",
+            "available_at",
+            "created_at",
+            postgresql_where=text("completed_at IS NULL"),
+        ),
+    )
+
+
 class OrderMedia(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A media object attached to an order (customer request or delivery proof)."""
 
@@ -544,6 +586,10 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     receipt_email_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    receipt_claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    receipt_claimed_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

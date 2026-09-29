@@ -72,9 +72,10 @@ Health check: `curl localhost:3000/api/health`. In development the OpenAPI docs 
 
 Compose starts one `scheduler` service alongside the `worker`. The scheduler reads
 the cron labels registered by `app.workers.broker` and enqueues expiry,
-auto-approval, receipt, ledger reconciliation, and refresh-token cleanup jobs. Keep
-one scheduler instance per deployment to avoid duplicate enqueues; the jobs retain
-their Redis locks and idempotency checks. To run both processes outside Compose after
+auto-approval, receipts, order notifications, abandoned-upload cleanup, ledger
+reconciliation, and refresh-token cleanup. Keep one scheduler instance per deployment
+to avoid duplicate enqueues. Jobs use their own database claims or Redis locks to
+coordinate concurrent workers. To run both processes outside Compose after
 starting PostgreSQL and Redis, use two terminals:
 
 ```bash
@@ -283,6 +284,10 @@ For order request photos and delivery proof, the actor who requested the upload 
 must confirm the uploaded key before attaching it. Each confirmed key can be attached
 once, for its requested purpose; rejected order or delivery transactions leave the key
 available for retry.
+Each account may have at most 20 unattached uploads and 50 MiB of reserved upload bytes.
+Unattached grants and their objects are eligible for hourly cleanup after one day;
+attached order photos and delivery proof are retained. Cleanup handles at most 100
+grants per run and retries storage failures on a later run.
 The PUT to the returned S3 URL must include the issued `Content-Type` and
 `Content-Length` plus `If-None-Match: *`. The signed condition makes the upload
 create-only; another PUT to the same key fails with HTTP 412. Browser clients also

@@ -9,7 +9,7 @@ never fetch-then-compare.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -190,16 +190,47 @@ class InvoiceRepository:
                 .where(
                     Invoice.status == InvoiceStatus.PAID,
                     Invoice.receipt_email_sent_at.is_(None),
+                    (Invoice.receipt_claimed_until.is_(None))
+                    | (Invoice.receipt_claimed_until <= datetime.now(UTC)),
                 )
                 .order_by(Invoice.paid_at)
                 .limit(limit)
             )
         )
 
-    async def mark_receipt_sent(self, invoice: Invoice, *, when: datetime) -> None:
-        """Stamp the receipt-sent time so the invoice leaves the pending set."""
-        invoice.receipt_email_sent_at = when
+    async def claim_receipt(
+        self, invoice_id: uuid.UUID, *, token: uuid.UUID, now: datetime, lease: timedelta
+    ) -> Invoice | None:
+        """Claim an eligible invoice in a short transaction."""
+        invoice = await self.lock(invoice_id)
+        if (
+            invoice is None
+            or invoice.status is not InvoiceStatus.PAID
+            or invoice.receipt_email_sent_at is not None
+            or (invoice.receipt_claimed_until is not None and invoice.receipt_claimed_until > now)
+        ):
+            return None
+        invoice.receipt_claim_token = token
+        invoice.receipt_claimed_until = now + lease
         await self._session.flush()
+        return invoice
+
+    async def complete_receipt(
+        self, invoice_id: uuid.UUID, *, token: uuid.UUID, when: datetime
+    ) -> bool:
+        """Stamp only the still-owned claim; stale workers cannot complete it."""
+        invoice = await self.lock(invoice_id)
+        if (
+            invoice is None
+            or invoice.receipt_claim_token != token
+            or invoice.receipt_email_sent_at is not None
+        ):
+            return False
+        invoice.receipt_email_sent_at = when
+        invoice.receipt_claim_token = None
+        invoice.receipt_claimed_until = None
+        await self._session.flush()
+        return True
 
     async def flush(self) -> None:
         """Flush pending writes."""

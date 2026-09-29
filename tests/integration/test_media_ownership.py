@@ -5,17 +5,19 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.core.config import Environment
 from app.core.db import build_engine, build_session_factory
 from app.core.exceptions import BadRequestError, ConflictError
 from app.integrations.storage.fake import FakeStorageClient
-from app.models import User
+from app.models import MediaUpload, User
 from app.models.enums import UserRole
 from app.repositories.media_repository import MediaRepository
+from app.services.media_cleanup_service import clean_abandoned_uploads
 from app.services.media_service import MediaService
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -99,6 +101,151 @@ async def test_claim_rejects_changed_object_metadata(db_session: AsyncSession) -
     )
     with pytest.raises(BadRequestError):
         await media.claim(key, actor_id=owner.id, purpose="ORDER_REQUEST")
+
+
+async def test_outstanding_upload_count_and_bytes(db_session: AsyncSession) -> None:
+    owner = await _user(db_session)
+    storage = FakeStorageClient(Environment.TEST)
+    media = MediaService(storage, make_test_settings(), MediaRepository(db_session))
+    keys = []
+    for _ in range(20):
+        _url, key, _ttl = await media.request_upload_url(
+            actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=1000
+        )
+        keys.append(key)
+    with pytest.raises(ConflictError):
+        await media.request_upload_url(
+            actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=1000
+        )
+    await media.confirm(keys[0], actor_id=owner.id)
+    await media.claim(keys[0], actor_id=owner.id, purpose="ORDER_REQUEST")
+    await media.request_upload_url(
+        actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=1000
+    )
+    byte_owner = await _user(db_session)
+    for _ in range(5):
+        await media.request_upload_url(
+            actor_id=byte_owner.id,
+            purpose="ORDER_REQUEST",
+            content_type="image/jpeg",
+            byte_size=10 * 1024 * 1024,
+        )
+    with pytest.raises(ConflictError):
+        await media.request_upload_url(
+            actor_id=byte_owner.id,
+            purpose="ORDER_REQUEST",
+            content_type="image/jpeg",
+            byte_size=1,
+        )
+
+
+async def test_cleanup_preserves_attached() -> None:
+    settings = make_test_settings()
+    engine = build_engine(settings)
+    factory = build_session_factory(engine)
+    storage = FakeStorageClient(Environment.TEST)
+    try:
+        async with factory() as session:
+            await session.execute(select(User.id).limit(1))
+    except Exception as exc:  # noqa: BLE001
+        await engine.dispose()
+        pytest.skip(f"database unavailable: {exc}")
+    try:
+        async with factory() as session:
+            owner = await _user(session)
+            owner_id = owner.id
+            media = MediaService(storage, settings, MediaRepository(session))
+            _url, abandoned, _ttl = await media.request_upload_url(
+                actor_id=owner_id,
+                purpose="ORDER_REQUEST",
+                content_type="image/jpeg",
+                byte_size=1000,
+            )
+            _url, attached, _ttl = await media.request_upload_url(
+                actor_id=owner_id,
+                purpose="ORDER_REQUEST",
+                content_type="image/jpeg",
+                byte_size=1000,
+            )
+            await media.confirm(attached, actor_id=owner_id)
+            await media.claim(attached, actor_id=owner_id, purpose="ORDER_REQUEST")
+            await session.execute(
+                update(MediaUpload)
+                .where(MediaUpload.storage_key.in_([abandoned, attached]))
+                .values(created_at=datetime.now(UTC) - timedelta(days=2))
+            )
+            await session.commit()
+        cleaned = await clean_abandoned_uploads(factory=factory, storage=storage, settings=settings)
+        assert cleaned == 1
+        assert await storage.head_object(abandoned) is None
+        assert await storage.head_object(attached) is not None
+        async with factory() as session:
+            assert await MediaRepository(session).get(abandoned) is None
+            assert await MediaRepository(session).get(attached) is not None
+            await session.execute(delete(User).where(User.id == owner_id))
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+async def test_cleanup_retries_delete_failure() -> None:
+    class FailingStorage(FakeStorageClient):
+        def __init__(self) -> None:
+            super().__init__(Environment.TEST)
+            self.fail = True
+
+        async def delete_object(self, storage_key: str) -> None:
+            if self.fail:
+                raise RuntimeError("temporary storage error")
+            await super().delete_object(storage_key)
+
+    settings = make_test_settings()
+    engine = build_engine(settings)
+    factory = build_session_factory(engine)
+    storage = FailingStorage()
+    try:
+        async with factory() as session:
+            await session.execute(select(User.id).limit(1))
+    except Exception as exc:  # noqa: BLE001
+        await engine.dispose()
+        pytest.skip(f"database unavailable: {exc}")
+    try:
+        async with factory() as session:
+            owner = await _user(session)
+            owner_id = owner.id
+            media = MediaService(storage, settings, MediaRepository(session))
+            _url, key, _ttl = await media.request_upload_url(
+                actor_id=owner_id,
+                purpose="ORDER_REQUEST",
+                content_type="image/jpeg",
+                byte_size=1000,
+            )
+            await session.execute(
+                update(MediaUpload)
+                .where(MediaUpload.storage_key == key)
+                .values(created_at=datetime.now(UTC) - timedelta(days=2))
+            )
+            await session.commit()
+        cleaned = await clean_abandoned_uploads(factory=factory, storage=storage, settings=settings)
+        assert cleaned == 0
+        assert await storage.head_object(key) is not None
+        async with factory() as session:
+            assert (await MediaRepository(session).get(key)).deleting_at is not None
+            await session.execute(
+                update(MediaUpload)
+                .where(MediaUpload.storage_key == key)
+                .values(deleting_at=datetime.now(UTC) - timedelta(hours=2))
+            )
+            await session.commit()
+        storage.fail = False
+        cleaned = await clean_abandoned_uploads(factory=factory, storage=storage, settings=settings)
+        assert cleaned == 1
+        assert await storage.head_object(key) is None
+        async with factory() as session:
+            await session.execute(delete(User).where(User.id == owner_id))
+            await session.commit()
+    finally:
+        await engine.dispose()
 
 
 async def test_opposite_key_orders_finish_without_deadlock() -> None:

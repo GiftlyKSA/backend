@@ -99,7 +99,7 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
 
     # Rotation is global; the shared test DB has other committed rows too, so assert our
     # rows were counted (>= 1) rather than an exact total.
-    report = await KeyRotationService(session=db_session, settings=settings).rotate()
+    report = await KeyRotationService(session=db_session, settings=settings, batch_size=1).rotate()
     assert report.courier_national_id >= 1
     assert report.conversation_preview >= 1
     assert report.withdrawal_iban >= 1
@@ -115,6 +115,14 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
         == "1234567890"
     )
     assert blob_version(withdrawal.iban_encrypted) == 2
+    assert blob_version(conv.last_message_preview_encrypted) == 2
+    assert (
+        active.decrypt(
+            conv.last_message_preview_encrypted,
+            build_aad("conversations", "last_message_preview", str(conv.id)),
+        )
+        == "see you soon"
+    )
     assert (
         active.decrypt(
             withdrawal.iban_encrypted, build_aad("withdrawals", "iban", str(withdrawal.id))

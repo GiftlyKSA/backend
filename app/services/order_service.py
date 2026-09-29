@@ -26,16 +26,21 @@ from app.core.exceptions import (
 )
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.map_url import validate_delivery_map_url
+from app.core.money import ZERO
 from app.models import Order
-from app.models.enums import MediaType, MessageType, OrderStatus, UserRole
+from app.models.enums import InvoiceStatus, MediaType, MessageType, OrderStatus, UserRole
 from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
+from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.message_repository import MessageWriter
 from app.repositories.order_repository import OrderRepository
+from app.repositories.promo_repository import PromoRepository
 from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.media_service import MediaService
 from app.services.order_state import assert_transition
+from app.services.payment_reservation_service import build_payment_reservation_service
+from app.services.promo_service import PromoService
 from app.services.rating_service import RatingService
 
 _MAX_CUSTOMER_ACTIVE = 5
@@ -91,6 +96,9 @@ class OrderService:
         self._redis = redis
         self._settings = settings
         self._cities = CityService(CityRepository(session))
+        self._invoices = InvoiceRepository(session)
+        self._reservations = build_payment_reservation_service(session)
+        self._promos = PromoService(PromoRepository(session))
 
     async def create_order(self, *, customer_id: uuid.UUID, data: NewOrderInput) -> Order:
         """Create a NEW order after validating limits, map link, and media.
@@ -187,19 +195,37 @@ class OrderService:
     async def cancel_order(
         self, *, order_id: uuid.UUID, actor_id: uuid.UUID, reason: str | None
     ) -> Order:
-        """Cancel an order before it is in progress (either party).
+        """Cancel an order before progress, releasing any issued invoice reservations.
 
         Raises:
             NotFoundError: No such order for this actor.
             InvalidStateTransitionError: The order is past the cancellable window.
         """
         await self._eligibility.require_eligible_actor(actor_id)
+        participant = await self._orders.get_for_actor(order_id, actor_id)
+        if participant is None:
+            raise NotFoundError("Order not found.")
+        # Existing invoice mutations take the invoice lock before the order lock.
+        candidate = await self._invoices.get_active_for_order(order_id)
+        invoice = await self._invoices.lock(candidate.id) if candidate is not None else None
         order = await self._orders.lock_for_actor(order_id, actor_id)
         if order is None:
             raise NotFoundError("Order not found.")
         assert_transition(order.status, OrderStatus.CANCELLED)
+        active = await self._invoices.get_active_for_order(order_id)
+        if active is not None and (invoice is None or active.id != invoice.id):
+            raise ConflictError("The order's invoice changed; retry cancellation.")
+        if invoice is not None and invoice.status is InvoiceStatus.ISSUED:
+            await self._reservations.expire_for_invoice(invoice.id)
+            await self._promos.release(invoice_id=invoice.id)
+            invoice.status = InvoiceStatus.CANCELLED
+        elif invoice is not None:
+            raise ConflictError("The order's invoice changed; retry cancellation.")
+        elif order.status is OrderStatus.WAITING_PAYMENT:
+            raise ConflictError("The order's invoice changed; retry cancellation.")
         order.status = OrderStatus.CANCELLED
         order.cancelled_reason = reason
+        order.total_amount = ZERO
         await self._orders.flush()
         return order
 
