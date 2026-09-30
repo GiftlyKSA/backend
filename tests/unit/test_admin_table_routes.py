@@ -1,4 +1,7 @@
+import re
 from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -112,6 +115,8 @@ async def test_overview_renders_at_new_admin_path_with_live_summary(monkeypatch)
     assert "الطلبات المنشأة" in response.text
     assert "2026-09-30: 2" in response.text
     assert "حالة الطلبات" in response.text
+    assert 'class="daily-bar" width="20" height="100"' in response.text
+    assert response.headers["cache-control"] == "no-store"
     ctx.service.list_orders.assert_awaited_once_with(limit=5)
     ctx.service.list_audit_logs.assert_awaited_once_with(limit=5)
 
@@ -130,6 +135,31 @@ async def test_admin_display_preferences_persist_and_reject_unsafe_redirect(monk
     assert 'lang="en" dir="ltr" data-theme="dark"' in page.text
     assert "Admin sign in" in page.text
     assert invalid.status_code == 400
+
+
+@pytest.fixture
+def dashboard_css():
+    return Path("app/admin/static/admin.css").read_bytes()
+
+
+async def test_admin_html_loads_exact_stylesheet_from_content_versioned_path(
+    monkeypatch, dashboard_css
+):
+    app, _ = make_app(monkeypatch)
+    css = dashboard_css
+    digest = sha256(css).hexdigest()[:16]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        page = await client.get("/v1/admin/admin/login")
+        url = re.search(r'<link rel="stylesheet" href="([^"]+)"', page.text).group(1)
+        stylesheet = await client.get(url)
+        missing = await client.get("/v1/admin/admin/assets/admin.invalid.css")
+    assert url == f"/v1/admin/admin/assets/admin.{digest}.css"
+    assert page.headers["cache-control"] == "no-store"
+    assert stylesheet.status_code == 200
+    assert stylesheet.content == css
+    assert stylesheet.headers["content-type"].startswith("text/css")
+    assert "immutable" in stylesheet.headers["cache-control"]
+    assert missing.status_code == 404
 
 
 async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(monkeypatch):

@@ -18,7 +18,7 @@
       {% for day in overview.daily_orders %}
       {% set height = (day.count / peak_day * 100)|round|int if peak_day else 0 %}
       <div class="day" title="{{ day.date.isoformat() }}: {{ day.count }} {{ tr('orders') }}">
-        <svg class="daily-bar" viewBox="0 0 20 100" preserveAspectRatio="none" role="img" aria-label="{{ day.count }} {{ tr('orders') }}"><rect x="0" y="{{ 100 - height }}" width="20" height="{{ height }}" /></svg>
+        <svg class="daily-bar" width="20" height="100" viewBox="0 0 20 100" preserveAspectRatio="none" role="img" aria-label="{{ day.count }} {{ tr('orders') }}"><rect x="0" y="{{ 100 - height }}" width="20" height="{{ height }}" /></svg>
         <span class="value">{{ day.count }}</span><span class="label">{{ day.date.strftime('%d/%m') }}</span>
       </div>
       {% endfor %}

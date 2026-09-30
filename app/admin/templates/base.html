@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ tr('Giftly Admin') }}{% endblock %}</title>
-  <link rel="stylesheet" href="/v1/admin/admin/static/admin.css?v=20260930b">
+  <link rel="stylesheet" href="{{ stylesheet_url }}">
   <script src="/v1/admin/admin/static/relationships.js" defer></script>
   <script src="/v1/admin/admin/static/datetime-fields.js" defer></script>
 </head>
@@ -41,12 +41,12 @@
         <form method="get" action="/v1/admin/admin/preferences">
           <input type="hidden" name="lang" value="{{ 'en' if lang == 'ar' else 'ar' }}">
           <input type="hidden" name="next" value="{{ request.url.path }}">
-          <button type="submit" class="secondary" aria-label="{{ tr('Language') }}: {{ tr('English') if lang == 'ar' else tr('Arabic') }}" title="{{ tr('English') if lang == 'ar' else tr('Arabic') }}"><svg class="display-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-2.5 2.5-3.5 5.5-3.5 9s1 6.5 3.5 9M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9"/></svg></button>
+          <button type="submit" class="secondary" aria-label="{{ tr('Language') }}: {{ tr('English') if lang == 'ar' else tr('Arabic') }}" title="{{ tr('English') if lang == 'ar' else tr('Arabic') }}"><svg class="display-icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-2.5 2.5-3.5 5.5-3.5 9s1 6.5 3.5 9M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9"/></svg></button>
         </form>
         <form method="get" action="/v1/admin/admin/preferences">
           <input type="hidden" name="theme" value="{{ 'dark' if theme == 'light' else 'light' }}">
           <input type="hidden" name="next" value="{{ request.url.path }}">
-          <button type="submit" class="secondary" aria-label="{{ tr('Appearance') }}: {{ tr('Dark') if theme == 'light' else tr('Light') }}" title="{{ tr('Dark') if theme == 'light' else tr('Light') }}"><svg class="display-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{% if theme == 'light' %}<path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/>{% else %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>{% endif %}</svg></button>
+          <button type="submit" class="secondary" aria-label="{{ tr('Appearance') }}: {{ tr('Dark') if theme == 'light' else tr('Light') }}" title="{{ tr('Dark') if theme == 'light' else tr('Light') }}"><svg class="display-icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{% if theme == 'light' %}<path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/>{% else %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>{% endif %}</svg></button>
         </form>
       </div>
       <details class="account-menu">
@@ -65,12 +65,12 @@
   <form method="get" action="/v1/admin/admin/preferences">
     <input type="hidden" name="lang" value="{{ 'en' if lang == 'ar' else 'ar' }}">
     <input type="hidden" name="next" value="{{ request.url.path }}">
-    <button type="submit" class="secondary" aria-label="{{ tr('Language') }}: {{ tr('English') if lang == 'ar' else tr('Arabic') }}" title="{{ tr('English') if lang == 'ar' else tr('Arabic') }}"><svg class="display-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-2.5 2.5-3.5 5.5-3.5 9s1 6.5 3.5 9M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9"/></svg></button>
+    <button type="submit" class="secondary" aria-label="{{ tr('Language') }}: {{ tr('English') if lang == 'ar' else tr('Arabic') }}" title="{{ tr('English') if lang == 'ar' else tr('Arabic') }}"><svg class="display-icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-2.5 2.5-3.5 5.5-3.5 9s1 6.5 3.5 9M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9"/></svg></button>
   </form>
   <form method="get" action="/v1/admin/admin/preferences">
     <input type="hidden" name="theme" value="{{ 'dark' if theme == 'light' else 'light' }}">
     <input type="hidden" name="next" value="{{ request.url.path }}">
-    <button type="submit" class="secondary" aria-label="{{ tr('Appearance') }}: {{ tr('Dark') if theme == 'light' else tr('Light') }}" title="{{ tr('Dark') if theme == 'light' else tr('Light') }}"><svg class="display-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{% if theme == 'light' %}<path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/>{% else %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>{% endif %}</svg></button>
+    <button type="submit" class="secondary" aria-label="{{ tr('Appearance') }}: {{ tr('Dark') if theme == 'light' else tr('Light') }}" title="{{ tr('Dark') if theme == 'light' else tr('Light') }}"><svg class="display-icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{% if theme == 'light' %}<path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/>{% else %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>{% endif %}</svg></button>
   </form>
 </div>{% endif %}
 <main>

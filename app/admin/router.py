@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin.assets import STYLESHEET, STYLESHEET_VERSION
 from app.admin.deps import (
     SESSION_COOKIE,
     AdminContext,
@@ -53,6 +54,19 @@ def _render(
         template,
         {"request": request, **template_context(request), **context},
         status_code=status_code,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/assets/admin.{version}.css")
+async def dashboard_stylesheet(version: str) -> Response:
+    """Serve only the exact stylesheet version referenced by this build's HTML."""
+    if version != STYLESHEET_VERSION:
+        raise HTTPException(status_code=404, detail="Stylesheet version not found")
+    return Response(
+        STYLESHEET,
+        media_type="text/css",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
 

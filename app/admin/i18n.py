@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from app.admin.assets import STYLESHEET_URL
+
 LANGUAGE_COOKIE = "giftly_admin_language"
 THEME_COOKIE = "giftly_admin_theme"
 LANGUAGES = {"ar", "en"}
@@ -561,6 +563,7 @@ def template_context(request: Request) -> dict[str, object]:
     """Expose the chosen display preferences and translation helper to Jinja."""
     selected_language = language(request)
     return {
+        "stylesheet_url": STYLESHEET_URL,
         "lang": selected_language,
         "theme": theme(request),
         "tr": lambda value: translate(value, selected_language),

@@ -84,6 +84,7 @@ def test_header_uses_accessible_icon_controls_and_account_menu() -> None:
     assert 'name="theme" value="dark"' in header
     assert 'name="lang" value="en"' in header
     assert header.count('class="display-icon"') == 2
+    assert header.count('width="19" height="19"') == 2
     assert 'aria-label="Language: English"' in header
     assert 'aria-label="Appearance: Dark"' in header
     assert ">English</button>" not in header

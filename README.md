@@ -259,6 +259,9 @@ Deletion requires a confirmation checkbox and follows database cascade rules.
 
 The dashboard opens in Arabic with a right-to-left layout. Language and light/dark
 appearance controls are available on the login page and in the dashboard header.
+Dashboard HTML is served with `Cache-Control: no-store`. Its stylesheet URL includes
+the SHA-256 content version in the path so browsers and proxies fetch updated layout
+and theme rules after a deployment, even when they ignore query-string versions.
 
 User, admin, and system audit activity have separate dashboard pages. User activity
 combines customer and courier changes. Each page filters by actor ID, action, or entity
