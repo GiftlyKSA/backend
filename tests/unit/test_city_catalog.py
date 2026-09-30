@@ -16,7 +16,7 @@ from tests.conftest import make_test_settings
 
 def test_city_catalog_has_required_columns_and_protects_references() -> None:
     city = Base.metadata.tables["cities"]
-    assert {"id", "name", "shortcut", "is_active", "created_at"} <= set(city.c.keys())
+    assert {"id", "name", "name_ar", "shortcut", "is_active", "created_at"} <= set(city.c.keys())
     assert city.c.name.unique and city.c.shortcut.unique
     for table_name, column_name in (
         ("orders", "delivery_city_id"),
@@ -94,7 +94,7 @@ async def test_order_saves_selected_city_record() -> None:
         settings=make_test_settings(),
     )
     city_id = uuid4()
-    city = City(id=city_id, name="Jeddah", shortcut="JED", is_active=True)
+    city = City(id=city_id, name="Jeddah", name_ar="جدة", shortcut="JED", is_active=True)
     service._cities = AsyncMock()
     service._cities.require_active_id.return_value = city
     await service.create_order(

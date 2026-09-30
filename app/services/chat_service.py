@@ -115,6 +115,16 @@ class ChatService:
             raise NotFoundError("Conversation not found.")
         return conversation
 
+    async def get_conversation_for_order(
+        self, *, order_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> Conversation:
+        """Return an order's conversation to its eligible customer or courier."""
+        await self._eligibility.require_eligible_actor(actor_id)
+        conversation = await self._chat.get_for_order_and_actor(order_id, actor_id)
+        if conversation is None:
+            raise NotFoundError("Conversation not found.")
+        return conversation
+
     async def send_message(
         self, *, conversation_id: uuid.UUID, sender_id: uuid.UUID, text: str
     ) -> ChatMessage:

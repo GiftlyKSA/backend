@@ -120,9 +120,15 @@ async def test_rest_chat_send_list_read_inbox() -> None:
     app = create_app(settings)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
-            cust_h, cour_h, _order_id, conv_id, _tok = await _assigned_conversation(
+            cust_h, cour_h, order_id, conv_id, _tok = await _assigned_conversation(
                 client, app, factory
             )
+
+            for headers in (cust_h, cour_h):
+                found = await client.get(f"/api/orders/{order_id}/conversation", headers=headers)
+                assert found.status_code == 200, found.text
+                assert found.json()["conversation_id"] == conv_id
+                assert found.json()["order_id"] == order_id
 
             sent = await client.post(
                 f"/api/conversations/{conv_id}/messages",
@@ -160,6 +166,8 @@ async def test_rest_chat_send_list_read_inbox() -> None:
                 json={"text": "let me in"},
             )
             assert leak.status_code == 404
+            hidden = await client.get(f"/api/orders/{order_id}/conversation", headers=other_h)
+            assert hidden.status_code == 404
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

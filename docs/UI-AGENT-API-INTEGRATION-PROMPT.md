@@ -5,7 +5,7 @@ match the implemented backend; keep the current visual design unless a contract 
 requires a small UI change. Read the mobile repository's instructions and current code
 before editing. Use these backend files as the source of truth:
 
-- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 44
+- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 45
   implemented non-admin HTTP operations.
 - `../backend/docs/MOBILE-API-INTEGRATION.md` — screen mapping, call order, WebSocket,
   environment behavior, and unsupported features.
@@ -13,8 +13,9 @@ before editing. Use these backend files as the source of truth:
   inventory only. Where it conflicts with the backend contract, follow the backend
   and record the mismatch.
 
-The backend source snapshot reviewed for this handoff is `c3d484e` on `master`.
-Recent backend work did **not** add a new mobile HTTP endpoint or change its wire fields.
+The backend source and contract were reviewed on 2026-09-30. For the latest order-chat,
+profile, city, map-link, and rating changes, follow
+`../backend/docs/UI-AGENT-ORDER-CHAT-UPDATE-PROMPT.md` as an additional implementation brief.
 Do not implement server-rendered `/v1/admin/admin` pages or admin TOTP in the mobile app.
 Do not invent routes for unsupported screens; mark those actions as waiting for a later
 backend API and keep their UI honest about the limit.
@@ -30,8 +31,8 @@ Check and update these flows in the app:
    both tokens atomically and avoid parallel use of one refresh token. On logout, clear
    protected local state, close chat sockets, and return to login; backend logout revokes
    all account sessions.
-2. **Cities and orders:** Load `GET /api/cities` for city selectors and submit selected
-   UUIDs. Require an HTTPS Google Maps **URL** for delivery location; do not send or
+2. **Cities and orders:** Load `GET /api/cities` for city selectors, display `name_ar` in
+   Arabic, and submit selected UUIDs. The HTTPS Google Maps URL is optional; do not send or
    compute latitude, longitude, radius, or distance. Create orders with zero to three
    confirmed request-photo storage keys. Use the backend's actual order statuses and
    delivery-date bounds, translating labels only for display. Courier available orders
@@ -43,8 +44,9 @@ Check and update these flows in the app:
    implemented; do not present checkout as functional or treat a browser redirect as
    payment success. Use the specified `Idempotency-Key` on withdrawal requests.
 4. **Media, chat, and notifications:** Follow upload URL → signed PUT → confirm → attach
-   storage key. Use the conversation ID from the inbox, page REST history, and reconnect
-   the WebSocket with a fresh access token after refresh; load REST history again because
+   storage key. For an old order, use `GET /api/orders/{order_id}/conversation` to find its
+   conversation ID directly. Page REST history and reconnect the WebSocket with a fresh
+   access token after refresh; load REST history again because
    socket events are not replayed. Register/unregister device push tokens when appropriate.
    There is no in-app notification-feed endpoint.
 5. **Screen gaps:** Compare every customer and courier screen to the handoff table in

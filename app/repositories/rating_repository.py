@@ -58,7 +58,7 @@ class RatingRepository:
             .where(
                 Rating.order_id == order_id,
                 Rating.rater_id == actor_id,
-                (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+                Order.customer_id == actor_id,
             )
         )
         return found is not None
@@ -75,7 +75,7 @@ class RatingRepository:
             .where(
                 Rating.order_id.in_(order_ids),
                 Rating.rater_id == actor_id,
-                (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+                Order.customer_id == actor_id,
             )
         )
         return set(rows)
@@ -84,8 +84,12 @@ class RatingRepository:
         """Return (average score to 2dp, count) of ratings a user has received."""
         row = (
             await self._session.execute(
-                select(func.avg(Rating.score), func.count(Rating.id)).where(
-                    Rating.rated_user_id == user_id
+                select(func.avg(Rating.score), func.count(Rating.id))
+                .join(Order, Order.id == Rating.order_id)
+                .where(
+                    Rating.rated_user_id == user_id,
+                    Order.courier_id == user_id,
+                    Rating.rater_id == Order.customer_id,
                 )
             )
         ).first()

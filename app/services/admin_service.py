@@ -519,7 +519,7 @@ class AdminService:
         customer_id: uuid.UUID,
         description: str | None,
         delivery_city: str,
-        delivery_map_url: str,
+        delivery_map_url: str | None,
         delivery_date: date,
         delivery_address_note: str | None,
         ip: str | None,
@@ -539,10 +539,11 @@ class AdminService:
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
-        try:
-            validate_delivery_map_url(delivery_map_url)
-        except ValueError as exc:
-            raise ValidationDomainError(str(exc)) from exc
+        if delivery_map_url is not None:
+            try:
+                validate_delivery_map_url(delivery_map_url)
+            except ValueError as exc:
+                raise ValidationDomainError(str(exc)) from exc
         order = await self._orders.create(
             customer_id=customer_id,
             description=description,
@@ -585,7 +586,7 @@ class AdminService:
         order_id: uuid.UUID,
         description: str | None,
         delivery_city: str,
-        delivery_map_url: str,
+        delivery_map_url: str | None,
         delivery_date: date,
         delivery_address_note: str | None,
         ip: str | None,
@@ -602,10 +603,11 @@ class AdminService:
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
-        try:
-            validate_delivery_map_url(delivery_map_url)
-        except ValueError as exc:
-            raise ValidationDomainError(str(exc)) from exc
+        if delivery_map_url is not None:
+            try:
+                validate_delivery_map_url(delivery_map_url)
+            except ValueError as exc:
+                raise ValidationDomainError(str(exc)) from exc
         await self._orders.update_admin_details(
             order,
             description=description,

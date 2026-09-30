@@ -70,6 +70,10 @@ async def test_rate_once_and_aggregate(db_session: AsyncSession) -> None:
     average, count = await svc.summary_for_user(courier.id)
     assert count == 1 and average == Decimal("4.00")
 
+    with pytest.raises(NotFoundError):
+        await svc.rate(order_id=order.id, rater_id=courier.id, score=5, comment=None)
+    assert await svc.summary_for_user(customer.id) == (Decimal("0.00"), 0)
+
 
 async def test_rate_requires_participation(db_session: AsyncSession) -> None:
     _customer, _courier, order = await _order(db_session, OrderStatus.COMPLETED)

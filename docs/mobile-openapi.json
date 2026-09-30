@@ -5,8 +5,7 @@
     "version": "0.1.0",
     "description": "Generated from implemented backend routes for mobile integration. Admin routes are excluded. Screen and flow details are vendor extensions; unsupported screen features are future API work and have no route in this specification. Production payment routes currently return PAYMENTS_DISABLED until a verified Dhamen integration is available."
   },
-  "x-integration-reviewed-on": "2026-09-29",
-  "x-backend-source-commit": "c3d484e",
+  "x-integration-reviewed-on": "2026-09-30",
   "paths": {
     "/api/health": {
       "get": {
@@ -72,7 +71,7 @@
           "cities"
         ],
         "summary": "List Cities",
-        "description": "Fetch active cities to populate registration, profile, and delivery selectors. Submit the selected id as city_id for courier registration, courier_city_id for profile editing, or delivery_city_id for order creation. These are UUID relationships to cities.id and inactive choices are rejected. Existing name-based request fields remain for older clients, but provide only one city field per request. Responses include the city ID and display name. Refresh choices before selection instead of hard-coding the seed list.",
+        "description": "Fetch active cities to populate registration, profile, and delivery selectors. Submit the selected id as a UUID relationship for courier registration, profile editing, or order creation. Display name_ar in Arabic and name in English. Existing name-based request fields remain for older clients, but send only one city field per request. Refresh choices before new selections instead of hard-coding the seed list.",
         "operationId": "list_cities_api_cities_get",
         "responses": {
           "200": {
@@ -321,7 +320,7 @@
           "users"
         ],
         "summary": "Get Me",
-        "description": "Fetch the current user's authoritative profile after restoring a stored session and whenever the profile screen opens. Use the returned role and status to select the mobile experience; do not trust a saved role from prototype fixtures. Courier verification details appear only in `courier_profile`. The response does not include date of birth or theme preference, so those values cannot currently be restored from this endpoint.",
+        "description": "Fetch the authenticated user profile after restoring a session and whenever the profile screen opens. Use the generated seven-digit public_identifier as a display identifier, but keep the UUID id for API paths. Customers have no rating fields; courier rating and count are under courier_profile and are derived from customer reviews. Use server role and status for navigation instead of saved prototype fixtures.",
         "operationId": "get_me_api_users_me_get",
         "responses": {
           "200": {
@@ -351,7 +350,7 @@
           "users"
         ],
         "summary": "Update Me",
-        "description": "Send only fields the user actually changed; omitted properties leave existing values untouched, while explicit null can clear optional values. Customer and courier users can edit common details; courier city and biography apply to courier profiles. Use the returned profile as the new display state. Phone changes, avatar upload, and theme preference are not offered by this mobile API.",
+        "description": "Send only fields the user changed; omitted properties leave existing values untouched. The seven-digit public_identifier is generated and read-only, so do not submit it. Customer and courier users can edit common details, while courier city and biography apply to courier profiles. Use the returned profile as the new display state. Courier ratings are derived from reviews and cannot be edited through this route.",
         "operationId": "update_me_api_users_me_patch",
         "requestBody": {
           "content": {
@@ -435,7 +434,7 @@
           "users"
         ],
         "summary": "Get Participant Profile",
-        "description": "Retrieve a minimal public-facing profile for the customer or courier on an order. The backend requires proof that the caller shares an order or conversation with the target; arbitrary account browsing is not supported. Use its display name, initials, rating, and safe courier details in chat headers and order detail. Do not expect phone, email, identity documents, or full profile fields.",
+        "description": "Retrieve a minimal public-facing profile for a customer or courier who shares an order or conversation with the caller. Use its seven-digit public_identifier, display name, and initials in chat or order detail. Rating and courier details appear only for courier profiles. The backend enforces the relationship; arbitrary account browsing is unsupported. Never expect phone, email, identity documents, or full private profile fields.",
         "operationId": "get_participant_profile_api_users__user_id__participant_get",
         "parameters": [
           {
@@ -815,7 +814,7 @@
           "orders"
         ],
         "summary": "Create Order",
-        "description": "Create a gift request for a city, drop-off coordinates, and Gregorian delivery date. Send at most three previously confirmed `ORDER_REQUEST` storage keys, not local file URIs. The server returns a `NEW` order and generated UUID; it does not return the prototype's order number, period, recipient phone, or media URLs. Use the UUID for waiting and detail navigation.",
+        "description": "Create a gift request for a selected city and Gregorian delivery date. A valid HTTPS Google Maps URL is optional; omit it or send null if unavailable. Send up to three confirmed order-request media keys, not local file paths. The backend returns a new order UUID and computes financial totals later through invoice and settlement flows. Do not submit a client-calculated order total, commission, or courier payout.",
         "operationId": "create_order_api_orders_post",
         "requestBody": {
           "required": true,
@@ -1027,7 +1026,7 @@
           "orders"
         ],
         "summary": "Get Order",
-        "description": "Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain participant access once assigned. The response includes status, city, date, amount, assignment time, and coordinates only when the service allows them. It does not include a full timeline, attached image URLs, delivery proof gallery, or invoice items; fetch related resources separately where endpoints exist.",
+        "description": "Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain access once assigned. The response includes status, city, delivery date, computed total, assignment time, and an optional map URL. Hide map actions when that value is null. Fetch conversation identity by order ID, then use paginated REST messages for durable chat history.",
         "operationId": "get_order_api_orders__order_id__get",
         "parameters": [
           {
@@ -1767,7 +1766,7 @@
           "ratings"
         ],
         "summary": "Rate Order",
-        "description": "Submit a score from one to five and an optional short comment for the other participant on a completed order. The backend derives the rated user from the order; do not send or select a target user ID. Each participant can rate once, so use `current_actor_has_rated` in order responses to decide whether to show the action. Display the returned rating only after success.",
+        "description": "After an order reaches COMPLETED, its customer may rate the assigned courier once with an integer score from one to five and an optional comment. The backend derives the rated courier from the order, so never submit a target user ID. Couriers cannot rate customers through this route. Use current_actor_has_rated to hide repeat submission and display a rating only after the request succeeds.",
         "operationId": "rate_order_api_orders__order_id__ratings_post",
         "parameters": [
           {
@@ -1814,7 +1813,7 @@
           }
         },
         "x-mobile-screen": "Customer/Courier Order detail `/order/[id]` after completion",
-        "x-audience": "Authenticated customer or assigned courier participant; bearer access token",
+        "x-audience": "Authenticated order customer after COMPLETED status; bearer access token",
         "x-before": "Order completed and caller has not already rated it",
         "x-dependent-api": "`GET /api/users/{user_id}/ratings/summary`; refresh order detail",
         "x-availability": "configured environments",
@@ -1831,7 +1830,7 @@
           "ratings"
         ],
         "summary": "User Rating Summary",
-        "description": "Fetch a user's aggregate received rating and count for a compact trust indicator. This endpoint needs authentication but does not require the caller to share an order with the target, unlike the participant-profile endpoint. Use the decimal-string average directly for display and avoid treating it as a detailed review list. The API does not return individual ratings or comments.",
+        "description": "Fetch a courier aggregate rating and count computed from customer reviews of completed orders. The response includes a decimal-string average and integer count, not detailed review rows. The route requires authentication but does not require a shared order with the courier. Use the average only for display; never treat it as a stored field on the generic user record or a client-editable score.",
         "operationId": "user_rating_summary_api_users__user_id__ratings_summary_get",
         "parameters": [
           {
@@ -1957,7 +1956,7 @@
           "chat"
         ],
         "summary": "List Messages",
-        "description": "Load the conversation's decrypted text and system messages, newest first, in bounded pages. Use `next_cursor` to retrieve older messages and reverse/display them as needed in chronological chat order. The backend enforces membership, so a guessed conversation ID will not expose another user's content. After opening the thread, connect the WebSocket for live events and use read acknowledgement to clear unread counts.",
+        "description": "Load decrypted conversation messages newest first in bounded pages. Pass next_cursor unchanged to the same route to retrieve older messages and stop when it is null. Membership is enforced; missing or foreign-conversation cursors return 404 instead of restarting history. Open the WebSocket for live updates, but fetch REST history after reconnect because socket events are not replayed. Deduplicate merged messages by id and acknowledge reads only when visible.",
         "operationId": "list_messages_api_conversations__conversation_id__messages_get",
         "parameters": [
           {
@@ -2317,6 +2316,60 @@
         "x-availability": "development-only",
         "security": []
       }
+    },
+    "/api/orders/{order_id}/conversation": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Find Order Conversation",
+        "description": "When a customer or courier reopens any assigned order, including a completed order, use its order ID to find the conversation ID directly. This avoids scanning every page of the inbox for an old thread. A missing, unassigned, or unrelated order returns 404. Once found, request the first REST message page, then follow its cursor for older history. Open the WebSocket only when live updates are needed.",
+        "operationId": "get_order_conversation_api_orders__order_id__conversation_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer/Courier old-order detail and Chat `/chat/[id]`",
+        "x-audience": "Authenticated order customer or assigned courier; bearer access token",
+        "x-before": "Order accepted and conversation created",
+        "x-dependent-api": "GET /api/conversations/{conversation_id}/messages; optional WebSocket",
+        "x-availability": "configured environments",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2425,13 +2478,23 @@
               }
             ],
             "title": "Avatar Url"
+          },
+          "rating": {
+            "type": "string",
+            "title": "Rating"
+          },
+          "rating_count": {
+            "type": "integer",
+            "title": "Rating Count"
           }
         },
         "type": "object",
         "required": [
           "city_of_residence",
           "city_of_residence_id",
-          "verification_status"
+          "verification_status",
+          "rating",
+          "rating_count"
         ],
         "title": "CourierProfileResponse",
         "description": "Safe courier details visible only through an authorized profile response."
@@ -2517,8 +2580,15 @@
             "title": "Delivery City Id"
           },
           "delivery_map_url": {
-            "type": "string",
-            "maxLength": 2048,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Delivery Map Url",
             "description": "HTTPS Google Maps link."
           },
@@ -2541,7 +2611,6 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "delivery_map_url",
           "delivery_date"
         ],
         "title": "CreateOrderRequest",
@@ -3097,7 +3166,14 @@
             "title": "Description"
           },
           "delivery_map_url": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Delivery Map Url",
             "description": "Customer-provided Google Maps link."
           },
@@ -3136,7 +3212,6 @@
           "delivery_city_id",
           "delivery_date",
           "description",
-          "delivery_map_url",
           "total_amount",
           "assigned_at",
           "created_at",
@@ -3245,12 +3320,30 @@
             "type": "string",
             "title": "Role"
           },
+          "public_identifier": {
+            "type": "integer",
+            "title": "Public Identifier"
+          },
           "rating": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Rating"
           },
           "rating_count": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Rating Count"
           },
           "initials": {
@@ -3296,8 +3389,7 @@
           "id",
           "display_name",
           "role",
-          "rating",
-          "rating_count",
+          "public_identifier",
           "initials"
         ],
         "title": "ParticipantProfile",
@@ -3422,7 +3514,7 @@
           "score"
         ],
         "title": "RatingRequest",
-        "description": "Rate the other party on a completed order."
+        "description": "Rate the courier on a completed order."
       },
       "RatingResponse": {
         "properties": {
@@ -3486,7 +3578,7 @@
           "count"
         ],
         "title": "RatingSummaryResponse",
-        "description": "A user's aggregate received rating."
+        "description": "A courier's aggregate received rating."
       },
       "RefreshRequest": {
         "properties": {
@@ -3971,6 +4063,11 @@
             "title": "Id",
             "description": "User id."
           },
+          "public_identifier": {
+            "type": "integer",
+            "title": "Public Identifier",
+            "description": "Unique seven-digit public user identifier."
+          },
           "phone": {
             "type": "string",
             "title": "Phone",
@@ -4010,16 +4107,6 @@
             "title": "Email",
             "description": "Email, used only for the paid receipt."
           },
-          "rating": {
-            "type": "string",
-            "title": "Rating",
-            "description": "Denormalized average rating as a decimal string."
-          },
-          "rating_count": {
-            "type": "integer",
-            "title": "Rating Count",
-            "description": "Number of ratings received."
-          },
           "courier_profile": {
             "anyOf": [
               {
@@ -4035,11 +4122,10 @@
         "type": "object",
         "required": [
           "id",
+          "public_identifier",
           "phone",
           "role",
-          "status",
-          "rating",
-          "rating_count"
+          "status"
         ],
         "title": "UserMeResponse",
         "description": "The authenticated user's own profile."
@@ -4386,6 +4472,10 @@
             "type": "string",
             "title": "Name"
           },
+          "name_ar": {
+            "type": "string",
+            "title": "Name Ar"
+          },
           "shortcut": {
             "type": "string",
             "title": "Shortcut"
@@ -4395,6 +4485,7 @@
         "required": [
           "id",
           "name",
+          "name_ar",
           "shortcut"
         ],
         "title": "CityResponse",
@@ -4415,6 +4506,30 @@
         ],
         "title": "OrderStatus",
         "description": "Order lifecycle status (see the state machine in SPEC SECTION 9)."
+      },
+      "ConversationResponse": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          },
+          "other_user_id": {
+            "type": "string",
+            "title": "Other User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "order_id",
+          "other_user_id"
+        ],
+        "title": "ConversationResponse",
+        "description": "Conversation identity for an order participant."
       }
     },
     "securitySchemes": {

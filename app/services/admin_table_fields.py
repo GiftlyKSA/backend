@@ -19,7 +19,8 @@ from app.core.exceptions import ValidationDomainError
 from app.core.map_url import validate_delivery_map_url
 
 _AUDIT_TIMESTAMPS = {"created_at", "updated_at", "deleted_at"}
-_GENERATED = _AUDIT_TIMESTAMPS | {"auth_version"}
+_GENERATED = _AUDIT_TIMESTAMPS | {"auth_version", "public_identifier"}
+_DERIVED_ORDER_FIELDS = {"total_amount", "commission_amount", "courier_payout_amount"}
 _SECRET_MARKERS = ("encrypted", "token", "secret", "hash", "fingerprint", "password")
 MAX_FIELD_LENGTH = 16_384
 
@@ -52,6 +53,7 @@ def editable_columns(table: Table, *, creating: bool) -> list[Column[Any]]:
         column
         for column in table.c
         if column.name not in _GENERATED
+        and not (table.name == "orders" and column.name in _DERIVED_ORDER_FIELDS)
         and (not column.primary_key or (creating and column.foreign_keys))
     ]
 
@@ -94,7 +96,11 @@ def form_fields(table: Table, row: dict[str, Any] | None) -> list[TableField]:
         [
             column
             for column in table.c
-            if column.name in editable or column.primary_key or column.name in _AUDIT_TIMESTAMPS
+            if column.name in editable
+            or column.primary_key
+            or column.name in _AUDIT_TIMESTAMPS
+            or column.name == "public_identifier"
+            or (table.name == "orders" and column.name in _DERIVED_ORDER_FIELDS)
         ]
         if row is not None
         else editable_columns(table, creating=True)
@@ -126,8 +132,11 @@ def form_fields(table: Table, row: dict[str, Any] | None) -> list[TableField]:
                 maxlength=min(
                     getattr(column.type, "length", None) or MAX_FIELD_LENGTH, MAX_FIELD_LENGTH
                 ),
-                readonly=row is not None
-                and (column.primary_key or column.name in _AUDIT_TIMESTAMPS),
+                readonly=(
+                    row is not None and (column.primary_key or column.name in _AUDIT_TIMESTAMPS)
+                )
+                or (table.name == "orders" and column.name in _DERIVED_ORDER_FIELDS)
+                or column.name == "public_identifier",
             )
         )
     return fields

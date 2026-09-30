@@ -52,6 +52,13 @@ def test_delivery_proof_needs_no_coordinates() -> None:
     assert request.proof_media_keys == ["proof-key"]
 
 
+def test_order_map_url_may_be_omitted() -> None:
+    payload = _order_payload("https://maps.app.goo.gl/Example")
+    del payload["delivery_map_url"]
+    assert CreateOrderRequest.model_validate(payload).delivery_map_url is None
+    assert Order.__table__.c.delivery_map_url.nullable
+
+
 def test_fresh_schema_has_map_url_and_no_spatial_constraint() -> None:
     assert "delivery_map_url" in Order.__table__.c
     assert "delivery_location" not in Order.__table__.c

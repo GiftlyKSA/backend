@@ -41,7 +41,7 @@ class OrderRepository:
         customer_id: uuid.UUID,
         description: str | None,
         delivery_city: City,
-        delivery_map_url: str,
+        delivery_map_url: str | None,
         delivery_date: date,
         address_note: str | None,
     ) -> Order:
@@ -135,7 +135,7 @@ class OrderRepository:
         *,
         description: str | None,
         delivery_city: City,
-        delivery_map_url: str,
+        delivery_map_url: str | None,
         delivery_date: date,
         delivery_address_note: str | None,
     ) -> None:

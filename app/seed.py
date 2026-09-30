@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.city_seeds import DEFAULT_CITIES
@@ -59,14 +59,18 @@ async def seed_cities() -> int:
 
 
 async def seed_cities_in_session(session: AsyncSession) -> int:
-    """Seed one transaction if no city has been created."""
-    if await session.scalar(select(func.count()).select_from(City)):
-        return 0
-    session.add_all(
-        City(name=name, shortcut=shortcut, is_active=True) for name, shortcut in DEFAULT_CITIES
-    )
+    """Create missing cities and refresh Arabic names without changing activity."""
+    existing = {city.shortcut: city for city in await session.scalars(select(City))}
+    created = 0
+    for name, name_ar, shortcut in DEFAULT_CITIES:
+        city = existing.get(shortcut)
+        if city is None:
+            session.add(City(name=name, name_ar=name_ar, shortcut=shortcut, is_active=True))
+            created += 1
+        else:
+            city.name_ar = name_ar
     await session.flush()
-    return len(DEFAULT_CITIES)
+    return created
 
 
 def main() -> None:

@@ -168,3 +168,46 @@ async def test_list_messages_returns_full_thread(
         conversation_id=conv.id, actor_id=customer.id, limit=10, before_id=None
     )
     assert {m.content for m in msgs} == {"first", "second"}
+
+
+async def test_order_conversation_lookup_hides_other_orders(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    customer, courier, conv = await _conversation(db_session)
+    stranger = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
+    db_session.add(stranger)
+    await db_session.flush()
+    svc = _service(db_session, redis_client)
+
+    assert (
+        await svc.get_conversation_for_order(order_id=conv.order_id, actor_id=customer.id)
+    ).id == conv.id
+    assert (
+        await svc.get_conversation_for_order(order_id=conv.order_id, actor_id=courier.id)
+    ).id == conv.id
+    with pytest.raises(NotFoundError):
+        await svc.get_conversation_for_order(order_id=conv.order_id, actor_id=stranger.id)
+
+
+async def test_message_cursor_must_belong_to_conversation(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    customer, _courier, conv = await _conversation(db_session)
+    other_customer, _other_courier, other_conv = await _conversation(db_session)
+    svc = _service(db_session, redis_client)
+    await svc.send_message(conversation_id=conv.id, sender_id=customer.id, text="private")
+    other_message = await svc.send_message(
+        conversation_id=other_conv.id, sender_id=other_customer.id, text="other"
+    )
+
+    with pytest.raises(NotFoundError):
+        await svc.list_messages(
+            conversation_id=conv.id,
+            actor_id=customer.id,
+            limit=10,
+            before_id=uuid.UUID(other_message.id),
+        )
+    with pytest.raises(NotFoundError):
+        await svc.list_messages(
+            conversation_id=conv.id, actor_id=customer.id, limit=10, before_id=uuid.uuid4()
+        )

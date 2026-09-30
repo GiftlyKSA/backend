@@ -33,6 +33,14 @@ class MessagePage(BaseModel):
     next_cursor: str | None = None
 
 
+class ConversationResponse(BaseModel):
+    """Conversation identity for an order participant."""
+
+    conversation_id: str
+    order_id: str
+    other_user_id: str
+
+
 class InboxItemResponse(BaseModel):
     """A conversation row for the inbox, with a decrypted preview."""
 

@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from sqlalchemy import insert, literal, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError
 from app.models import Conversation, Message, MessageAttachment
 from app.models.enums import MessageType
 
@@ -36,6 +37,18 @@ class ChatRepository:
         if for_update:
             query = query.with_for_update().execution_options(populate_existing=True)
         result: Conversation | None = await self._session.scalar(query)
+        return result
+
+    async def get_for_order_and_actor(
+        self, order_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> Conversation | None:
+        """Look up an order's conversation within the caller's participant scope."""
+        result: Conversation | None = await self._session.scalar(
+            select(Conversation).where(
+                Conversation.order_id == order_id,
+                (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
+            )
+        )
         return result
 
     async def list_for_user(
@@ -163,11 +176,16 @@ class ChatRepository:
             .limit(limit)
         )
         if before_id is not None:
-            anchor = await self._session.get(Message, before_id)
-            if anchor is not None:
-                query = query.where(
-                    tuple_(Message.created_at, Message.id) < (anchor.created_at, anchor.id)
+            anchor = await self._session.scalar(
+                select(Message).where(
+                    Message.id == before_id, Message.conversation_id == conversation_id
                 )
+            )
+            if anchor is None:
+                raise NotFoundError("Message cursor not found.")
+            query = query.where(
+                tuple_(Message.created_at, Message.id) < (anchor.created_at, anchor.id)
+            )
         return list(await self._session.scalars(query))
 
     async def mark_read(self, conversation: Conversation, *, reader_is_customer: bool) -> None:

@@ -23,7 +23,6 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
-    Sequence,
     SmallInteger,
     String,
     Text,
@@ -36,11 +35,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models import enums
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-gateway_customer_identifier_seq = Sequence(
-    "gateway_customer_identifier_seq",
-    metadata=Base.metadata,
-    start=1,
-)
 # Native PostgreSQL enum types are created by metadata bootstrap on a fresh database.
 _user_role = ENUM(enums.UserRole, name="user_role")
 _user_status = ENUM(enums.UserStatus, name="user_status")
@@ -70,6 +64,7 @@ class City(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "cities"
 
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    name_ar: Mapped[str] = mapped_column(String(100), nullable=False)
     shortcut: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
@@ -116,9 +111,7 @@ class RefreshToken(UUIDPrimaryKeyMixin, Base):
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A marketplace participant (customer, courier, or admin).
 
-    ``rating`` is a DENORMALIZED cache of the ``ratings`` table, recomputed
-    transactionally on each rating insert — never the source of truth. Soft-deleted
-    on erasure; ledger rows are never removed.
+    Soft-deleted on erasure; ledger rows are never removed.
     """
 
     __tablename__ = "users"
@@ -132,33 +125,22 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[enums.UserStatus] = mapped_column(
         _user_status, nullable=False, server_default=enums.UserStatus.ACTIVE.value
     )
-    rating: Mapped[Decimal] = mapped_column(
-        Numeric(2, 1), nullable=False, server_default=text("5.0")
-    )
-    rating_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    avatar_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    gateway_customer_identifier: Mapped[str | None] = mapped_column(
-        String(12),
-        nullable=True,
-        server_default=text("lpad(nextval('gateway_customer_identifier_seq')::text, 12, '0')"),
+    public_identifier: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("giftly_new_public_identifier()"),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("rating BETWEEN 0.0 AND 5.0", name="chk_rating_range"),
         CheckConstraint(
-            "gateway_customer_identifier IS NULL OR gateway_customer_identifier ~ '^[0-9]{12}$'",
-            name="chk_users_gateway_customer_identifier",
+            "public_identifier BETWEEN 1000000 AND 9999999",
+            name="chk_users_public_identifier",
         ),
         UniqueConstraint("phone", name="uq_users_phone"),
         Index("uq_users_email", "email", unique=True, postgresql_where=text("email IS NOT NULL")),
         Index("idx_users_role_status", "role", "status"),
-        Index(
-            "uq_users_gateway_customer_identifier",
-            "gateway_customer_identifier",
-            unique=True,
-            postgresql_where=text("gateway_customer_identifier IS NOT NULL"),
-        ),
+        UniqueConstraint("public_identifier", name="uq_users_public_identifier"),
     )
 
 
@@ -373,7 +355,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         """Expose the related city name to existing read contracts."""
         return self.city.name
 
-    delivery_map_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    delivery_map_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     delivery_address_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[enums.OrderStatus] = mapped_column(

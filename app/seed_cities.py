@@ -8,7 +8,7 @@ from app.seed import seed_cities
 
 
 def main() -> None:
-    """Create the default cities only if the catalog is empty."""
+    """Create missing default cities and refresh their Arabic names."""
     created = asyncio.run(seed_cities())
     print(f"City seed complete. Created {created} cities.")
 

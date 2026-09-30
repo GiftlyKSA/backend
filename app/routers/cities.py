@@ -20,4 +20,7 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 async def list_cities(db: DbDep) -> list[CityResponse]:
     """List active cities without requiring a login."""
     cities = await CityService(CityRepository(db)).list_active()
-    return [CityResponse(id=city.id, name=city.name, shortcut=city.shortcut) for city in cities]
+    return [
+        CityResponse(id=city.id, name=city.name, name_ar=city.name_ar, shortcut=city.shortcut)
+        for city in cities
+    ]

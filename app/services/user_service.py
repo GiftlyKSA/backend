@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationDomainError
 from app.models import CourierProfile, User
@@ -21,10 +20,9 @@ class ParticipantView:
     """Safe participant values ready for HTTP serialization."""
 
     id: uuid.UUID
+    public_identifier: int
     display_name: str
     role: UserRole
-    rating: Decimal
-    rating_count: int
     initials: str
     courier_city: str | None
     courier_bio: str | None
@@ -142,10 +140,9 @@ class UserService:
         initials = "".join(word[0].upper() for word in words[:2]) or "GU"
         return ParticipantView(
             id=projection.id,
+            public_identifier=projection.public_identifier,
             display_name=display_name,
             role=projection.role,
-            rating=Decimal(str(projection.rating)),
-            rating_count=projection.rating_count,
             initials=initials,
             courier_city=projection.courier_city,
             courier_bio=projection.courier_bio,

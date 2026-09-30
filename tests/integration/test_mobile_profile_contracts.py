@@ -222,12 +222,12 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
             assert allowed.status_code == 200, allowed.text
             assert allowed.json() == {
                 "id": str(courier_user.id),
+                "public_identifier": courier_user.public_identifier,
                 "display_name": "Cora Driver",
                 "role": "COURIER",
-                "rating": "5.0",
+                "rating": "0.00",
                 "rating_count": 0,
                 "initials": "CD",
-                "avatar_url": None,
                 "courier_city": "Jeddah",
                 "courier_bio": "Careful with fragile gifts.",
             }
@@ -307,6 +307,8 @@ async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_a
                 "verification_status": "ACTIVE",
                 "rejection_reason": None,
                 "avatar_url": None,
+                "rating": "0.00",
+                "rating_count": 0,
             }
 
             async with factory() as session:  # type: ignore[operator]

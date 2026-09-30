@@ -1,9 +1,4 @@
-"""Ratings on completed orders (SPEC SECTION 20.I).
-
-A participant rates the OTHER party once per order, and only after the order is
-COMPLETED. The rated user is derived from the order — never taken from the request — so
-a rater can neither rate themselves nor a stranger.
-"""
+"""Customer ratings of couriers after completed orders."""
 
 from __future__ import annotations
 
@@ -41,22 +36,22 @@ class RatingService:
         score: int,
         comment: str | None,
     ) -> Rating:
-        """Rate the other participant of a completed order.
+        """Rate the assigned courier of a completed customer order.
 
         Raises:
             NotFoundError: Not a participant's order.
             ConflictError: The order is not completed, or the rater already rated it.
         """
         await self._eligibility.require_eligible_actor(rater_id)
-        order = await self._orders.get_for_actor(order_id, rater_id)
-        if order is None:
+        order = await self._orders.lock_for_actor(order_id, rater_id)
+        if order is None or order.customer_id != rater_id:
             raise NotFoundError("Order not found.")
         if order.status is not OrderStatus.COMPLETED:
             raise ConflictError("You can only rate a completed order.")
 
-        rated_user_id = order.courier_id if rater_id == order.customer_id else order.customer_id
+        rated_user_id = order.courier_id
         if rated_user_id is None:  # pragma: no cover - a completed order always has a courier
-            raise ConflictError("This order has no counterparty to rate.")
+            raise ConflictError("This order has no courier to rate.")
         if await self._ratings.exists_for_rater(order_id, rater_id):
             raise ConflictError("You have already rated this order.")
 
@@ -69,7 +64,7 @@ class RatingService:
         )
 
     async def summary_for_user(self, user_id: uuid.UUID) -> tuple[Decimal, int]:
-        """Return a user's (average score, number of ratings received)."""
+        """Return courier ratings received from customers only."""
         return await self._ratings.summary_for_user(user_id)
 
     async def current_actor_has_rated(self, order_id: uuid.UUID, actor_id: uuid.UUID) -> bool:

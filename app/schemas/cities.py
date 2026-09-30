@@ -12,4 +12,5 @@ class CityResponse(BaseModel):
 
     id: uuid.UUID
     name: str
+    name_ar: str
     shortcut: str

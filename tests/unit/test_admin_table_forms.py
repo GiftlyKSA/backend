@@ -16,6 +16,17 @@ def test_every_foreign_key_gets_a_relationship_widget():
                 assert fields[column.name].kind == "relationship"
 
 
+def test_order_financial_fields_are_read_only():
+    table = Base.metadata.tables["orders"]
+    names = {"total_amount", "commission_amount", "courier_payout_amount"}
+    assert names.isdisjoint({field.name for field in form_fields(table, None)})
+    edit_fields = {field.name: field for field in form_fields(table, {})}
+    assert all(edit_fields[name].readonly for name in names)
+    for name in names:
+        with pytest.raises(ValidationDomainError, match="read-only"):
+            parse_values(table, {name: "12.00"}, creating=False)
+
+
 def test_media_upload_grants_have_uuid_admin_records_and_editable_fields():
     table = Base.metadata.tables["media_uploads"]
     assert [column.name for column in table.primary_key.columns] == ["id"]

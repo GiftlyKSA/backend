@@ -31,6 +31,7 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.device_token_repository import DeviceTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import (
+    ConversationResponse,
     InboxItemResponse,
     InboxResponse,
     MessagePage,
@@ -105,6 +106,29 @@ async def list_conversations(
         else None
     )
     return InboxResponse(items=rows, next_cursor=next_cursor)
+
+
+@router.get("/orders/{order_id}/conversation", response_model=ConversationResponse)
+async def get_order_conversation(
+    request: Request,
+    db: DbDep,
+    order_id: uuid.UUID,
+    actor: Annotated[Actor, Depends(_Participant)],
+) -> ConversationResponse:
+    """Find an order's existing conversation, including after order completion."""
+    conversation = await _service(request, db).get_conversation_for_order(
+        order_id=order_id, actor_id=actor.id
+    )
+    other_user_id = (
+        conversation.courier_id
+        if actor.id == conversation.customer_id
+        else conversation.customer_id
+    )
+    return ConversationResponse(
+        conversation_id=str(conversation.id),
+        order_id=str(conversation.order_id),
+        other_user_id=str(other_user_id),
+    )
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=MessagePage)

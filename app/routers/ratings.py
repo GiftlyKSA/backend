@@ -1,8 +1,4 @@
-"""Rating routes (SPEC SECTION 20.I).
-
-A participant rates the other party once per completed order. The rated user is derived
-from the order, never the request body. Anyone authenticated may read a user's aggregate.
-"""
+"""Customer-to-courier rating routes."""
 
 from __future__ import annotations
 
@@ -25,7 +21,7 @@ from app.services.rating_service import RatingService
 router = APIRouter(prefix="/api", tags=["ratings"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
-_Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
+_Customer = require_role(UserRole.CUSTOMER)
 
 
 def _service(db: AsyncSession) -> RatingService:
@@ -43,9 +39,9 @@ async def rate_order(
     db: DbDep,
     order_id: uuid.UUID,
     body: RatingRequest,
-    actor: Annotated[Actor, Depends(_Participant)],
+    actor: Annotated[Actor, Depends(_Customer)],
 ) -> RatingResponse:
-    """Rate the other party on a completed order."""
+    """Rate the assigned courier after order completion."""
     rating = await _service(db).rate(
         order_id=order_id, rater_id=actor.id, score=body.score, comment=body.comment
     )

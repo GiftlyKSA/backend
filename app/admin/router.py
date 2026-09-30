@@ -394,7 +394,7 @@ async def order_create(
     customer_id: Annotated[uuid.UUID, Form()],
     delivery_city: Annotated[str, Form(min_length=1, max_length=100)],
     delivery_date: Annotated[date, Form()],
-    delivery_map_url: Annotated[str, Form(min_length=1, max_length=2048)],
+    delivery_map_url: Annotated[str | None, Form(max_length=2048)] = None,
     description: Annotated[str, Form(max_length=5000)] = "",
     delivery_address_note: Annotated[str, Form(max_length=255)] = "",
 ) -> RedirectResponse:
@@ -407,7 +407,7 @@ async def order_create(
         description=description.strip() or None,
         delivery_city=delivery_city.strip(),
         delivery_date=delivery_date,
-        delivery_map_url=delivery_map_url,
+        delivery_map_url=delivery_map_url or None,
         delivery_address_note=delivery_address_note.strip() or None,
         ip=client_ip(request),
     )
@@ -445,7 +445,7 @@ async def order_edit(
     csrf_token: Annotated[str, Form()],
     delivery_city: Annotated[str, Form(min_length=1, max_length=100)],
     delivery_date: Annotated[date, Form()],
-    delivery_map_url: Annotated[str, Form(min_length=1, max_length=2048)],
+    delivery_map_url: Annotated[str | None, Form(max_length=2048)] = None,
     description: Annotated[str, Form(max_length=5000)] = "",
     delivery_address_note: Annotated[str, Form(max_length=255)] = "",
 ) -> RedirectResponse:
@@ -459,7 +459,7 @@ async def order_edit(
         description=description.strip() or None,
         delivery_city=delivery_city.strip(),
         delivery_date=delivery_date,
-        delivery_map_url=delivery_map_url,
+        delivery_map_url=delivery_map_url or None,
         delivery_address_note=delivery_address_note.strip() or None,
         ip=client_ip(request),
     )

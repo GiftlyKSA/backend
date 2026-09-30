@@ -61,7 +61,7 @@ class DisputeResponse(BaseModel):
 
 
 class RatingRequest(BaseModel):
-    """Rate the other party on a completed order."""
+    """Rate the courier on a completed order."""
 
     model_config = ConfigDict(extra="forbid")
     score: int = Field(..., ge=1, le=5)
@@ -79,7 +79,7 @@ class RatingResponse(BaseModel):
 
 
 class RatingSummaryResponse(BaseModel):
-    """A user's aggregate received rating."""
+    """A courier's aggregate received rating."""
 
     user_id: str
     average_score: str

@@ -6,7 +6,6 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 
 from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
@@ -23,10 +22,9 @@ class ParticipantProjection:
     """The complete privacy-scoped participant projection selected by SQL."""
 
     id: uuid.UUID
+    public_identifier: int
     full_name: str | None
     role: UserRole
-    rating: Decimal
-    rating_count: int
     courier_city: str | None
     courier_bio: str | None
 
@@ -95,10 +93,9 @@ class UserRepository:
             await self._session.execute(
                 select(
                     User.id,
+                    User.public_identifier,
                     User.full_name,
                     User.role,
-                    User.rating,
-                    User.rating_count,
                     City.name.label("city_of_residence"),
                     CourierProfile.bio,
                 )
@@ -111,10 +108,9 @@ class UserRepository:
             return None
         return ParticipantProjection(
             id=row.id,
+            public_identifier=row.public_identifier,
             full_name=row.full_name,
             role=row.role,
-            rating=row.rating,
-            rating_count=row.rating_count,
             courier_city=row.city_of_residence,
             courier_bio=row.bio,
         )

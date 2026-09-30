@@ -18,6 +18,8 @@ class CourierProfileResponse(BaseModel):
     verification_status: str
     rejection_reason: str | None = None
     avatar_url: str | None = None
+    rating: str
+    rating_count: int
 
 
 class ParticipantProfile(BaseModel):
@@ -26,8 +28,9 @@ class ParticipantProfile(BaseModel):
     id: str
     display_name: str
     role: str
-    rating: str
-    rating_count: int
+    public_identifier: int
+    rating: str | None = None
+    rating_count: int | None = None
     initials: str
     avatar_url: str | None = None
     courier_city: str | None = None
@@ -38,13 +41,12 @@ class UserMeResponse(BaseModel):
     """The authenticated user's own profile."""
 
     id: str = Field(..., description="User id.")
+    public_identifier: int = Field(..., description="Unique seven-digit public user identifier.")
     phone: str = Field(..., description="E.164 phone.")
     role: str = Field(..., description="User role.")
     status: str = Field(..., description="Account status.")
     full_name: str | None = Field(None, description="Display name.")
     email: str | None = Field(None, description="Email, used only for the paid receipt.")
-    rating: str = Field(..., description="Denormalized average rating as a decimal string.")
-    rating_count: int = Field(..., description="Number of ratings received.")
     courier_profile: CourierProfileResponse | None = Field(
         None, description="Owner-only courier details; null for non-courier accounts."
     )

@@ -55,7 +55,7 @@ class NewOrderInput:
 
     description: str | None
     delivery_city: str | None
-    delivery_map_url: str
+    delivery_map_url: str | None
     delivery_date: date
     request_media_keys: list[str]
     delivery_city_id: uuid.UUID | None = None
@@ -108,10 +108,11 @@ class OrderService:
                 media object that fails validation.
             ConflictError: The customer already has the maximum active orders.
         """
-        try:
-            validate_delivery_map_url(data.delivery_map_url)
-        except ValueError as exc:
-            raise ValidationDomainError(str(exc)) from exc
+        if data.delivery_map_url is not None:
+            try:
+                validate_delivery_map_url(data.delivery_map_url)
+            except ValueError as exc:
+                raise ValidationDomainError(str(exc)) from exc
         if len(data.request_media_keys) > _MAX_REQUEST_MEDIA:
             raise ValidationDomainError("At most 3 request photos are allowed.")
         if data.delivery_city_id is not None:

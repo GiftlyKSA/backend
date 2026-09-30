@@ -61,7 +61,9 @@ Schema initialization seeds 20 active Saudi city choices and system wallets;
 without authentication. Orders and courier profiles store UUID foreign keys to `cities.id`.
 New clients can submit the selected `id` as `delivery_city_id`, `city_id`, or
 `courier_city_id`; the former city-name request fields remain accepted for existing clients.
-Responses include both the city ID and display name. API services reject inactive cities. The
+Responses include the city ID, English `name`, and Arabic `name_ar`. Run
+`uv run --locked python -m app.seed_cities` to fill missing default cities and refresh their
+Arabic names on an existing database. API services reject inactive cities. The
 `shortcut` values are application labels, not official municipality codes. The
 initial city selection follows the [Saudi National Debt Management Center map](https://ndmc.gov.sa/IssuancePrograms/Documents/KSA%20Ijarah%20Sukuk%20Establishment%202025.pdf).
 
