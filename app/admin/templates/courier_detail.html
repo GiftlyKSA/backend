@@ -1,51 +1,47 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Courier {{ profile.user_id if profile else "" }}</h1>
-{% if not profile %}<p>Not found.</p>{% else %}
+<h1>{{ tr('Courier') }} {{ profile.user_id if profile else "" }}</h1>
+{% if not profile %}<p>{{ tr('Not found.') }}</p>{% else %}
 <section class="card">
   <table>
-    <tr><td>City</td><td>{{ profile.city_of_residence }}</td></tr>
-    <tr><td>Phone</td><td>{{ user.phone if user else "—" }}</td></tr>
-    <tr><td>Full name</td><td>{{ user.full_name if user and user.full_name else "—" }}</td></tr>
-    <tr><td>Email</td><td>{{ user.email if user and user.email else "—" }}</td></tr>
-    <tr><td>Verified</td><td>{{ profile.is_verified }}</td></tr>
-    <tr><td>Status</td><td>{{ user.status if user else "?" }}</td></tr>
-    <tr><td>National ID</td><td>{% if revealed %}<code>{{ revealed.national_id }}</code>{% else %}••••••••{% endif %}</td></tr>
-    <tr><td>Passport</td><td>{% if revealed %}<code>{{ revealed.passport_id }}</code>{% else %}••••••••{% endif %}</td></tr>
+    <tr><td>{{ tr('City') }}</td><td>{{ profile.city_of_residence }}</td></tr>
+    <tr><td>{{ tr('Phone') }}</td><td>{{ user.phone if user else "—" }}</td></tr>
+    <tr><td>{{ tr('Full name') }}</td><td>{{ user.full_name if user and user.full_name else "—" }}</td></tr>
+    <tr><td>{{ tr('Email') }}</td><td>{{ user.email if user and user.email else "—" }}</td></tr>
+    <tr><td>{{ tr('Verified') }}</td><td>{{ tr(profile.is_verified) }}</td></tr>
+    <tr><td>{{ tr('Status') }}</td><td>{{ user.status if user else "?" }}</td></tr>
+    <tr><td>{{ tr('National ID') }}</td><td>{% if revealed %}<code>{{ revealed.national_id }}</code>{% else %}••••••••{% endif %}</td></tr>
+    <tr><td>{{ tr('Passport') }}</td><td>{% if revealed %}<code>{{ revealed.passport_id }}</code>{% else %}••••••••{% endif %}</td></tr>
   </table>
 </section>
 <section class="card edit-card">
-  <h2>Edit courier profile</h2>
+  <h2>{{ tr('Edit courier profile') }}</h2>
   <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/edit">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <label>City<select name="city_of_residence" required>{% for city in cities %}<option value="{{ city.name }}" {% if city.id == profile.city_of_residence_id %}selected{% endif %}>{{ city.name }}</option>{% endfor %}</select></label>
-    <label>Bio<textarea name="bio" maxlength="1000">{{ profile.bio or "" }}</textarea></label>
-    <button type="submit">Save profile</button>
+    <label>{{ tr('City') }}<select name="city_of_residence" required>{% for city in cities %}<option value="{{ city.name }}" {% if city.id == profile.city_of_residence_id %}selected{% endif %}>{{ city.name }}</option>{% endfor %}</select></label>
+    <label>{{ tr('Bio') }}<textarea name="bio" maxlength="1000">{{ profile.bio or "" }}</textarea></label>
+    <button type="submit">{{ tr('Save profile') }}</button>
   </form>
 </section>
 <div class="actions">
   <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/verify">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <input type="hidden" name="decision" value="approve">
-    <input name="note" placeholder="note (optional)">
-    <button type="submit">Approve</button>
+    <input name="note" placeholder="{{ tr('note (optional)') }}">
+    <button type="submit">{{ tr('Approve') }}</button>
   </form>
   <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/verify">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <input type="hidden" name="decision" value="reject">
-    <button type="submit" class="danger">Reject</button>
+    <button type="submit" class="danger">{{ tr('Reject') }}</button>
   </form>
   <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/reveal-identity">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <button type="submit">Reveal identity</button>
+    <button type="submit">{{ tr('Reveal identity') }}</button>
   </form>
   <form method="post" action="/v1/admin/admin/couriers/{{ profile.user_id }}/delete">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <button type="submit" class="danger">Delete profile</button>
-  </form>
-  <form method="post" action="/v1/admin/admin/step-up/request">
-    <input type="hidden" name="next" value="/v1/admin/admin/couriers/{{ profile.user_id }}">
-    <button type="submit">Step-up</button>
+    <button type="submit" class="danger">{{ tr('Delete profile') }}</button>
   </form>
 </div>
 {% endif %}

@@ -1,11 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Audit log</h1>
-<table class="list">
-  <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th></tr></thead>
+<div class="page-heading"><h1>{{ tr('Audit trail') }}</h1></div>
+<form class="audit-filters card" method="get" action="/v1/admin/admin/audit-logs">
+  <label>{{ tr('Actor') }}
+    <select name="actor_category">
+      <option value="">{{ tr('All actors') }}</option>
+      {% for category in ['ADMIN', 'USER', 'SYSTEM', 'ANONYMOUS'] %}<option value="{{ category }}" {% if filters.actor_category == category %}selected{% endif %}>{{ tr(category) }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>{{ tr('Actor ID') }}<input name="actor_user_id" type="text" value="{{ filters.actor_user_id }}" placeholder="UUID"></label>
+  <label>{{ tr('Action') }}<input name="action" type="text" maxlength="100" value="{{ filters.action }}"></label>
+  <label>{{ tr('Entity') }}<input name="entity_type" type="text" maxlength="50" value="{{ filters.entity_type }}"></label>
+  <button type="submit">{{ tr('Filter') }}</button>
+  <a class="btn secondary" href="/v1/admin/admin/audit-logs">{{ tr('Clear filters') }}</a>
+</form>
+<div class="table-scroll"><table class="list data-table">
+  <thead><tr><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Route') }}</th><th>{{ tr('Result') }}</th><th>{{ tr('Details') }}</th></tr></thead>
   <tbody>{% for l in logs %}
-    <tr><td>{{ l.created_at }} · <a href="/v1/admin/admin/tables/audit_logs/{{ l.id }}/edit">Edit / delete</a></td><td>{{ l.actor_user_id }}</td><td>{{ l.action }}</td>
-        <td>{{ l.entity_type }}/{{ l.entity_id }}</td></tr>
-  {% else %}<tr><td colspan="4">No entries.</td></tr>{% endfor %}</tbody>
-</table>
+    {% set metadata = l.audit_metadata or {} %}
+    <tr><td>{{ l.created_at }}</td><td>{{ tr(metadata.get('actor_category', 'Unclassified')) }}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{{ metadata.get('route', '—') }}</td><td>{{ metadata.get('status', '—') }}</td><td>{% if metadata.get('job') %}{{ tr('Job') }}: {{ metadata.job }} · {{ tr(metadata.get('outcome', '')) }}{% elif metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
+  {% else %}<tr><td colspan="8">{{ tr('No entries.') }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if next_url %}<p class="pager"><a class="btn secondary" href="{{ next_url }}">{{ tr('More events') }}</a></p>{% endif %}
 {% endblock %}

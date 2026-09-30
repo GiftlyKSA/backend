@@ -2,17 +2,18 @@
 
 Server-rendered Jinja pages mounted at ``/v1/admin/admin``. Every route calls the admin
 services and never queries the DB directly. Reads are open to any authenticated
-admin; every mutating action requires CSRF and writes an audit row. Generic table
-maintenance also requires a fresh step-up grant. Normal money-moving resolutions
-remain in the ledger service; raw table maintenance does not run those transitions.
+admin; every mutating action requires CSRF and writes an audit row.
+Normal money-moving resolutions remain in the ledger service; raw table maintenance
+does not run those transitions.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -28,9 +29,9 @@ from app.admin.deps import (
     get_redis_from,
     get_settings_from,
     require_admin,
-    require_step_up,
     verify_csrf,
 )
+from app.admin.i18n import LANGUAGE_COOKIE, LANGUAGES, THEME_COOKIE, THEMES, template_context
 from app.admin.table_router import router as table_router
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.models.enums import UserRole
@@ -48,7 +49,10 @@ def _render(
 ) -> HTMLResponse:
     """Render a template with the request bound."""
     return _TEMPLATES.TemplateResponse(
-        request, template, {"request": request, **context}, status_code=status_code
+        request,
+        template,
+        {"request": request, **template_context(request), **context},
+        status_code=status_code,
     )
 
 
@@ -75,6 +79,49 @@ async def relationship_choices(
 
 
 # --- Authentication ----------------------------------------------------------
+
+
+@router.get("/preferences", include_in_schema=False)
+async def preferences(
+    request: Request,
+    lang: str | None = None,
+    theme: str | None = None,
+    next: str = "/v1/admin/admin",
+) -> RedirectResponse:
+    """Persist display preferences without changing authentication state."""
+    if lang is not None and lang not in LANGUAGES:
+        raise HTTPException(status_code=400, detail="Unsupported language.")
+    if theme is not None and theme not in THEMES:
+        raise HTTPException(status_code=400, detail="Unsupported theme.")
+    if (
+        not next.startswith("/v1/admin/admin")
+        or next.startswith("//")
+        or any(char in next for char in ("\\", "\r", "\n"))
+    ):
+        next = "/v1/admin/admin"
+    response = RedirectResponse(next, status_code=303, headers={"Cache-Control": "no-store"})
+    secure = get_settings_from(request).is_production
+    if lang is not None:
+        response.set_cookie(
+            LANGUAGE_COOKIE,
+            lang,
+            httponly=True,
+            secure=secure,
+            samesite="strict",
+            path="/v1/admin/admin",
+            max_age=31_536_000,
+        )
+    if theme is not None:
+        response.set_cookie(
+            THEME_COOKIE,
+            theme,
+            httponly=True,
+            secure=secure,
+            samesite="strict",
+            path="/v1/admin/admin",
+            max_age=31_536_000,
+        )
+    return response
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -111,6 +158,8 @@ async def login(
             error=exc.message,
             require_totp=settings.is_production,
         )
+    request.state.audit_actor_id = result.admin.id
+    request.state.audit_actor_category = "ADMIN"
     response = RedirectResponse("/v1/admin/admin", status_code=303)
     response.set_cookie(
         SESSION_COOKIE,
@@ -137,41 +186,6 @@ async def logout(
     response = RedirectResponse("/v1/admin/admin/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/v1/admin/admin")
     return response
-
-
-# --- Step-up re-authentication ----------------------------------------------
-
-
-@router.post("/step-up/request")
-async def step_up_request(
-    request: Request, db: DbDep, next_url: Annotated[str, Form(alias="next")]
-) -> HTMLResponse:
-    """Show password confirmation for a sensitive admin action."""
-    ctx = await _ctx(request, db)
-    return _render(request, "step_up.html", ctx=ctx, next_url=next_url)
-
-
-@router.post("/step-up")
-async def step_up_verify(
-    request: Request,
-    db: DbDep,
-    password: Annotated[str, Form(min_length=1, max_length=1024)],
-    next_url: Annotated[str, Form(alias="next")],
-    csrf_token: Annotated[str, Form()],
-) -> RedirectResponse:
-    """Verify the step-up OTP and grant a short-lived step-up window."""
-    ctx = await _ctx(request, db)
-    verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await ctx.auth.grant_step_up(
-        password=password,
-        session_token_hash=ctx.session_row.session_token_hash,
-        ip=client_ip(request),
-    )
-    admin_root = "/v1/admin/admin"
-    target = (
-        next_url if next_url == admin_root or next_url.startswith(f"{admin_root}/") else admin_root
-    )
-    return RedirectResponse(target, status_code=303)
 
 
 # --- Overview ----------------------------------------------------------------
@@ -295,7 +309,6 @@ async def courier_verify(
     """Approve or reject a courier's verification."""
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await require_step_up(ctx)
     await ctx.service.verify_courier(
         admin_id=ctx.admin.id,
         courier_user_id=courier_id,
@@ -310,10 +323,9 @@ async def courier_verify(
 async def courier_reveal(
     request: Request, db: DbDep, courier_id: uuid.UUID, csrf_token: Annotated[str, Form()]
 ) -> HTMLResponse:
-    """Reveal a courier's identity documents once (step-up + audit)."""
+    """Reveal a courier's identity documents once and record the audit event."""
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await require_step_up(ctx)
     revealed = await ctx.service.reveal_identity(
         admin_id=ctx.admin.id, courier_user_id=courier_id, ip=client_ip(request)
     )
@@ -432,7 +444,6 @@ async def order_detail(request: Request, db: DbDep, order_id: uuid.UUID) -> HTML
         "order_detail.html",
         ctx=ctx,
         order=order,
-        can_edit=await ctx.auth.has_step_up(ctx.session_row.session_token_hash),
         cities=await ctx.service.list_active_cities(),
     )
 
@@ -452,7 +463,6 @@ async def order_edit(
     """Update non-financial order details while the order is still editable."""
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await require_step_up(ctx)
     await ctx.service.update_order_details(
         admin_id=ctx.admin.id,
         order_id=order_id,
@@ -627,10 +637,9 @@ async def user_detail(request: Request, db: DbDep, user_id: uuid.UUID) -> HTMLRe
 async def user_ban(
     request: Request, db: DbDep, user_id: uuid.UUID, csrf_token: Annotated[str, Form()]
 ) -> RedirectResponse:
-    """Ban a user (step-up + CSRF + audit)."""
+    """Ban a user after CSRF validation and record the audit event."""
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await require_step_up(ctx)
     await ctx.service.set_user_banned(
         admin_id=ctx.admin.id, user_id=user_id, banned=True, ip=client_ip(request)
     )
@@ -641,10 +650,9 @@ async def user_ban(
 async def user_unban(
     request: Request, db: DbDep, user_id: uuid.UUID, csrf_token: Annotated[str, Form()]
 ) -> RedirectResponse:
-    """Unban a user (step-up + CSRF + audit)."""
+    """Unban a user after CSRF validation and record the audit event."""
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await require_step_up(ctx)
     await ctx.service.set_user_banned(
         admin_id=ctx.admin.id, user_id=user_id, banned=False, ip=client_ip(request)
     )
@@ -693,8 +701,50 @@ async def user_delete(
 
 
 @router.get("/audit-logs", response_class=HTMLResponse)
-async def audit_logs(request: Request, db: DbDep) -> HTMLResponse:
+async def audit_logs(
+    request: Request,
+    db: DbDep,
+    actor_category: str | None = Query(default=None, pattern="^(ADMIN|USER|SYSTEM|ANONYMOUS)$"),
+    actor_user_id: uuid.UUID | None = None,
+    action: str | None = Query(default=None, max_length=100),
+    entity_type: str | None = Query(default=None, max_length=50),
+    before_at: datetime | None = None,
+    before_id: uuid.UUID | None = None,
+) -> HTMLResponse:
     """List recent audit-log entries."""
     ctx = await _ctx(request, db)
-    rows = await ctx.service.list_audit_logs(limit=100)
-    return _render(request, "audit_logs.html", ctx=ctx, logs=rows)
+    if (before_at is None) != (before_id is None):
+        raise HTTPException(status_code=400, detail="Both audit cursor fields are required.")
+    rows = await ctx.service.list_audit_logs(
+        limit=101,
+        actor_category=actor_category,
+        actor_user_id=actor_user_id,
+        action=action or None,
+        entity_type=entity_type or None,
+        before_at=before_at,
+        before_id=before_id,
+    )
+    filters = {
+        "actor_category": actor_category or "",
+        "actor_user_id": str(actor_user_id) if actor_user_id else "",
+        "action": action or "",
+        "entity_type": entity_type or "",
+    }
+    next_url = None
+    if len(rows) > 100:
+        last = rows[99]
+        next_url = "/v1/admin/admin/audit-logs?" + urlencode(
+            {
+                **{key: value for key, value in filters.items() if value},
+                "before_at": last.created_at.isoformat(),
+                "before_id": str(last.id),
+            }
+        )
+    return _render(
+        request,
+        "audit_logs.html",
+        ctx=ctx,
+        logs=rows[:100],
+        next_url=next_url,
+        filters=filters,
+    )

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Invoices</h1>
+<h1>{{ tr('Invoices') }}</h1>
 <table class="list">
-  <thead><tr><th>Invoice</th><th>Status</th><th>Total</th><th>Created</th></tr></thead>
+  <thead><tr><th>{{ tr('Invoice') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Total') }}</th><th>{{ tr('Created') }}</th></tr></thead>
   <tbody>{% for i in invoices %}
-    <tr><td><a href="/v1/admin/admin/invoices/{{ i.id }}">{{ i.id }}</a> · <a href="/v1/admin/admin/tables/invoices/{{ i.id }}/edit">Edit / delete</a></td><td>{{ i.status }}</td>
+    <tr><td><a href="/v1/admin/admin/invoices/{{ i.id }}">{{ i.id }}</a> · <a href="/v1/admin/admin/tables/invoices/{{ i.id }}/edit">{{ tr('Edit / delete') }}</a></td><td>{{ tr(i.status) }}</td>
         <td class="num">{{ i.total_amount }}</td><td>{{ i.created_at }}</td></tr>
-  {% else %}<tr><td colspan="4">No invoices.</td></tr>{% endfor %}</tbody>
+  {% else %}<tr><td colspan="4">{{ tr('No invoices.') }}</td></tr>{% endfor %}</tbody>
 </table>
 {% endblock %}

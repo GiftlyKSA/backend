@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
 
 import pytest
 from app.admin import deps
@@ -108,7 +109,7 @@ async def test_admin_request_sliding_never_locks_a_session_before_a_mutation(
     settings = make_test_settings()
     row = SimpleNamespace(session_token_hash="test-session-hash")
     auth = SimpleNamespace(
-        load_session=AsyncMock(return_value=(row, SimpleNamespace())),
+        load_session=AsyncMock(return_value=(row, SimpleNamespace(id=uuid4()))),
         csrf_token_for=Mock(),
     )
     monkeypatch.setattr(deps, "build_auth_service", Mock(return_value=auth))
@@ -121,5 +122,7 @@ async def test_admin_request_sliding_never_locks_a_session_before_a_mutation(
             "app": SimpleNamespace(state=SimpleNamespace(settings=settings, redis=Mock())),
         }
     )
-    await deps.require_admin(request, AsyncMock())
+    db = AsyncMock()
+    db.info = {}
+    await deps.require_admin(request, db)
     auth.load_session.assert_awaited_once_with("test-session", extend_expiry=slides)

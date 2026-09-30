@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Promo {{ promo.code if promo else "" }}</h1>
-{% if not promo %}<p>Not found.</p>{% else %}
+<h1>{{ tr('Promo') }} {{ promo.code if promo else "" }}</h1>
+{% if not promo %}<p>{{ tr('Not found.') }}</p>{% else %}
 <section class="card"><table>
-  <tr><td>Description</td><td>{{ promo.description }}</td></tr>
-  <tr><td>Type</td><td>{{ promo.discount_type }}</td></tr>
-  <tr><td>Percent</td><td>{{ promo.percent_value }}</td></tr>
-  <tr><td>Fixed</td><td>{{ promo.fixed_amount }}</td></tr>
-  <tr><td>Used</td><td class="num">{{ promo.used_count }}</td></tr>
-  <tr><td>Active</td><td>{{ promo.is_active }}</td></tr>
+  <tr><td>{{ tr('Description') }}</td><td>{{ promo.description }}</td></tr>
+  <tr><td>{{ tr('Type') }}</td><td>{{ tr(promo.discount_type) }}</td></tr>
+  <tr><td>{{ tr('Percent') }}</td><td>{{ promo.percent_value }}</td></tr>
+  <tr><td>{{ tr('Fixed') }}</td><td>{{ promo.fixed_amount }}</td></tr>
+  <tr><td>{{ tr('Used') }}</td><td class="num">{{ promo.used_count }}</td></tr>
+  <tr><td>{{ tr('Active') }}</td><td>{{ tr(promo.is_active) }}</td></tr>
 </table></section>
 <div class="actions">
-  <a class="btn" href="/v1/admin/admin/promos/{{ promo.id }}/redemptions">Redemptions</a>
+  <a class="btn" href="/v1/admin/admin/promos/{{ promo.id }}/redemptions">{{ tr('Redemptions') }}</a>
 </div>
 {% endif %}
 {% endblock %}

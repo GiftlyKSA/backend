@@ -20,7 +20,7 @@ from httpx import ASGITransport, AsyncClient
 from tests.conftest import make_test_settings
 
 
-def make_app(monkeypatch, *, step_up=True):
+def make_app(monkeypatch):
     app = FastAPI()
     app.state.settings = settings = make_test_settings()
     app.include_router(router)
@@ -43,7 +43,7 @@ def make_app(monkeypatch, *, step_up=True):
         session_row=SimpleNamespace(id=uuid4(), session_token_hash="test-session-hash"),
         admin=SimpleNamespace(id=uuid4()),
         csrf_token=csrf,
-        auth=SimpleNamespace(has_step_up=AsyncMock(return_value=step_up)),
+        auth=SimpleNamespace(),
         tables=SimpleNamespace(save=AsyncMock(return_value=uuid4()), delete=AsyncMock()),
     )
     monkeypatch.setattr(table_router, "require_admin", AsyncMock(return_value=ctx))
@@ -89,6 +89,7 @@ async def test_overview_renders_at_new_admin_path_with_live_summary(monkeypatch)
                 open_disputes=1,
                 pending_withdrawals=4,
                 system_balances={"SYSTEM_ESCROW": 100},
+                daily_orders=[SimpleNamespace(date=datetime(2026, 9, 30).date(), count=2)],
             )
         ),
         list_orders=AsyncMock(return_value=[]),
@@ -101,20 +102,86 @@ async def test_overview_renders_at_new_admin_path_with_live_summary(monkeypatch)
     assert old.status_code == 404
     assert response.status_code == 200
     assert 'class="sidebar"' in response.text
-    assert "Recent orders" in response.text
+    assert '<html lang="ar" dir="rtl" data-theme="light">' in response.text
+    assert "أحدث الطلبات" in response.text
     assert "SAR 100.00" in response.text
+    assert "الطلبات المنشأة" in response.text
+    assert "2026-09-30: 2" in response.text
+    assert "حالة الطلبات" in response.text
     ctx.service.list_orders.assert_awaited_once_with(limit=5)
     ctx.service.list_audit_logs.assert_awaited_once_with(limit=5)
 
 
-async def test_mutations_require_recent_password_confirmation(monkeypatch):
-    app, ctx = make_app(monkeypatch, step_up=False)
+async def test_admin_display_preferences_persist_and_reject_unsafe_redirect(monkeypatch):
+    app, _ = make_app(monkeypatch)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        preference = await client.get(
+            "/v1/admin/admin/preferences",
+            params={"lang": "en", "theme": "dark", "next": "https://example.com"},
+        )
+        page = await client.get("/v1/admin/admin/login")
+        invalid = await client.get("/v1/admin/admin/preferences?lang=invalid")
+    assert preference.status_code == 303
+    assert preference.headers["location"] == "/v1/admin/admin"
+    assert 'lang="en" dir="ltr" data-theme="dark"' in page.text
+    assert "Admin sign in" in page.text
+    assert invalid.status_code == 400
+
+
+async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(monkeypatch):
+    app, ctx = make_app(monkeypatch)
+    actor_id = uuid4()
+    now = datetime(2026, 9, 30, 12, tzinfo=UTC)
+    rows = [
+        SimpleNamespace(
+            id=uuid4(),
+            created_at=now,
+            actor_user_id=actor_id,
+            action="SYSTEM_JOB_RUN",
+            entity_type="scheduled_job",
+            entity_id=None,
+            audit_metadata={"actor_category": "SYSTEM", "job": "example"},
+        )
+        for _ in range(101)
+    ]
+    ctx.service = SimpleNamespace(list_audit_logs=AsyncMock(return_value=rows))
+    monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/admin/admin/audit-logs?actor_category=SYSTEM")
+        invalid = await client.get("/v1/admin/admin/audit-logs?actor_category=UNKNOWN")
+    assert response.status_code == 200
+    assert response.text.count("تشغيل مهمة آلية") == 100
+    assert "before_at=" in response.text
+    assert "actor_category=SYSTEM" in response.text
+    assert invalid.status_code == 422
+    ctx.service.list_audit_logs.assert_awaited_once_with(
+        limit=101,
+        actor_category="SYSTEM",
+        actor_user_id=None,
+        action=None,
+        entity_type=None,
+        before_at=None,
+        before_id=None,
+    )
+
+
+async def test_authenticated_mutation_does_not_require_password_confirmation(monkeypatch):
+    app, ctx = make_app(monkeypatch)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/admin/admin/tables/users/new", data={"csrf_token": ctx.csrf_token}
         )
-    assert response.status_code == 403
-    ctx.tables.save.assert_not_awaited()
+    assert response.status_code == 303
+    ctx.tables.save.assert_awaited_once()
+
+
+async def test_step_up_routes_are_removed(monkeypatch):
+    app, _ = make_app(monkeypatch)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        request = await client.post("/v1/admin/admin/step-up/request", data={"next": "/"})
+        verify = await client.post("/v1/admin/admin/step-up", data={"password": "example"})
+    assert request.status_code == 404
+    assert verify.status_code == 404
 
 
 async def test_authenticated_create_passes_trusted_actor_and_session(monkeypatch):
@@ -141,6 +208,7 @@ async def test_all_table_forms_render_relationship_widgets_and_secret_fields(mon
             response = await client.get(f"/v1/admin/admin/tables/{table.name}/new")
             assert response.status_code == 200, table.name
             assert response.headers["cache-control"] == "no-store"
+            assert "/step-up/request" not in response.text
             assert 'name="null__' not in response.text
             for column in table.c:
                 if column.foreign_keys:

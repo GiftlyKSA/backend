@@ -21,7 +21,7 @@ from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, NotFoundError, ValidationDomainError
 from app.core.map_url import validate_delivery_map_url
 from app.core.security import hmac_hex
-from app.models import City, CourierProfile, User, Withdrawal
+from app.models import AuditLog, City, CourierProfile, User, Withdrawal
 from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.repositories.admin_read_repository import (
     AdminReadRepository,
@@ -39,6 +39,14 @@ from app.services.city_service import CityService
 
 
 @dataclass(frozen=True)
+class DailyOrderCount:
+    """Orders created on one UTC calendar day."""
+
+    date: date
+    count: int
+
+
+@dataclass(frozen=True)
 class Overview:
     """The dashboard landing summary."""
 
@@ -46,6 +54,7 @@ class Overview:
     open_disputes: int
     pending_withdrawals: int
     system_balances: dict[str, Decimal]
+    daily_orders: list[DailyOrderCount]
 
 
 class AdminService:
@@ -115,11 +124,21 @@ class AdminService:
 
     async def overview(self) -> Overview:
         """Aggregate the landing-page counters and system balances."""
+        today = self._now().date()
+        start_date = today - timedelta(days=13)
+        daily_counts = await self._reads.daily_order_counts(start_date, today)
         return Overview(
             order_counts=await self._reads.order_counts_by_status(),
             open_disputes=await self._reads.open_dispute_count(),
             pending_withdrawals=await self._reads.pending_withdrawal_count(),
             system_balances=await self._reads.system_wallet_balances(),
+            daily_orders=[
+                DailyOrderCount(
+                    start_date + timedelta(days=offset),
+                    daily_counts.get(start_date + timedelta(days=offset), 0),
+                )
+                for offset in range(14)
+            ],
         )
 
     # --- Read passthroughs (the dashboard never touches a repository directly) --
@@ -192,9 +211,29 @@ class AdminService:
         """Return wallet top-up intents."""
         return list(await self._reads.list_topups())
 
-    async def list_audit_logs(self, limit: int = 100) -> list[object]:
+    async def list_audit_logs(
+        self,
+        limit: int = 100,
+        *,
+        actor_user_id: uuid.UUID | None = None,
+        action: str | None = None,
+        actor_category: str | None = None,
+        entity_type: str | None = None,
+        before_at: datetime | None = None,
+        before_id: uuid.UUID | None = None,
+    ) -> list[AuditLog]:
         """Return recent audit-log entries."""
-        return list(await self._audit.list_recent(limit=limit))
+        return list(
+            await self._audit.list_recent(
+                limit=limit,
+                actor_user_id=actor_user_id,
+                action=action,
+                actor_category=actor_category,
+                entity_type=entity_type,
+                before_at=before_at,
+                before_id=before_id,
+            )
+        )
 
     def list_table_catalog(self) -> list[AdminTableInfo]:
         """Return every application table available through the read-only browser."""
@@ -249,7 +288,7 @@ class AdminService:
     async def reveal_identity(
         self, *, admin_id: uuid.UUID, courier_user_id: uuid.UUID, ip: str | None
     ) -> dict[str, str | None]:
-        """Decrypt a courier's identity documents (call only after step-up); audited."""
+        """Decrypt a courier's identity documents for an authenticated admin; audited."""
         profile = await self._couriers.get(courier_user_id)
         if profile is None:
             raise NotFoundError("Courier not found.")
@@ -279,7 +318,7 @@ class AdminService:
     async def reveal_iban(
         self, *, admin_id: uuid.UUID, withdrawal: Withdrawal, ip: str | None
     ) -> str:
-        """Decrypt a withdrawal IBAN (call only after step-up); audited."""
+        """Decrypt a withdrawal IBAN for an authenticated admin; audited."""
         cipher = build_cipher(
             self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
         )

@@ -8,6 +8,7 @@ the §8.16 error envelope and never leaks internals to the client.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from contextvars import ContextVar
 
@@ -20,6 +21,7 @@ from app.core.exceptions import DomainError, RateLimitedError
 
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 _logger = logging.getLogger("app.request")
+_SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 
 
 def current_request_id() -> str:
@@ -36,7 +38,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
         """Bind a request id, run the handler, and echo the id back."""
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        supplied = request.headers.get("X-Request-ID", "")
+        request_id = supplied if _SAFE_REQUEST_ID.fullmatch(supplied) else str(uuid.uuid4())
         token = _request_id_ctx.set(request_id)
         try:
             response = await call_next(request)

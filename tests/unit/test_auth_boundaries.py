@@ -32,8 +32,12 @@ def socket_context(monkeypatch):
     redis = AsyncMock()
     redis.get.return_value = None
     redis.eval.return_value = 0
+    session = AsyncMock()
+    session.info = {}
+    session.add = Mock()
+    session.__aenter__.return_value = session
     state = SimpleNamespace(
-        settings=settings, redis=redis, session_factory=Mock(return_value=AsyncMock())
+        settings=settings, redis=redis, session_factory=Mock(return_value=session)
     )
     websocket = SimpleNamespace(
         query_params={"token": token},

@@ -19,9 +19,9 @@ from app.admin.deps import (
     get_db,
     get_settings_from,
     require_admin,
-    require_step_up,
     verify_csrf,
 )
+from app.admin.i18n import template_context
 from app.core.exceptions import ConflictError, DomainError, ValidationDomainError
 
 router = APIRouter()
@@ -71,7 +71,12 @@ async def _form_response(
     return _TEMPLATES.TemplateResponse(
         request,
         "table_form.html",
-        {"ctx": ctx, "form": form, "error": error.message if error else None},
+        {
+            "ctx": ctx,
+            "form": form,
+            "error": error.message if error else None,
+            **template_context(request),
+        },
         status_code=error.status_code if error else 200,
         headers={"Cache-Control": "no-store"},
     )
@@ -104,7 +109,6 @@ async def _mutate(
     ctx = await require_admin(request, db)
     submitted = await _submitted(request)
     verify_csrf(ctx, submitted.pop("csrf_token", ""), get_settings_from(request))
-    await require_step_up(ctx)
     revision = submitted.pop("revision", "")
     try:
         if deleting:
@@ -139,7 +143,7 @@ async def _mutate(
 
 @router.post("/tables/{table_name}/new")
 async def create_record(request: Request, db: DbDep, table_name: str) -> Response:
-    """Create a row after admin authentication, CSRF, and password confirmation."""
+    """Create a row after admin authentication and CSRF validation."""
     return await _mutate(request, db, table_name, None)
 
 

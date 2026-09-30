@@ -1,4 +1,4 @@
-"""Admin dashboard request wiring: sessions, CSRF, step-up, and service assembly.
+"""Admin dashboard request wiring: sessions, CSRF, and service assembly.
 
 The dashboard is a browser surface with cookies, so CSRF protection is mandatory on
 every state-changing form (SPEC SECTION 18.2). Unauthenticated access raises
@@ -136,6 +136,9 @@ async def require_admin(request: Request, db: AsyncSession) -> AdminContext:
         )
     except Exception as exc:  # noqa: BLE001 — any auth failure means "go log in".
         raise AdminRedirect() from exc
+    request.state.audit_actor_id = admin.id
+    request.state.audit_actor_category = "ADMIN"
+    db.info["audit_actor_category"] = "ADMIN"
     return AdminContext(
         session_row=session_row,
         admin=admin,
@@ -166,16 +169,6 @@ def verify_csrf(ctx: AdminContext, submitted_token: str, settings: Settings) -> 
         submitted_token, ctx.session_row.session_token_hash, secret.get_secret_value()
     ):
         raise ForbiddenError("Invalid CSRF token.")
-
-
-async def require_step_up(ctx: AdminContext) -> None:
-    """Ensure the session holds a valid step-up grant, or raise 403.
-
-    Raises:
-        ForbiddenError: No current step-up grant.
-    """
-    if not await ctx.auth.has_step_up(ctx.session_row.session_token_hash):
-        raise ForbiddenError("This action requires step-up re-authentication.")
 
 
 def client_ip(request: Request) -> str | None:

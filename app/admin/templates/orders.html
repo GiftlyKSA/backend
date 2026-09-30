@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Orders</h1>
-<p><a class="btn" href="/v1/admin/admin/orders/new">Add order</a></p>
+<h1>{{ tr('Orders') }}</h1>
+<p><a class="btn" href="/v1/admin/admin/orders/new">{{ tr('Add order') }}</a></p>
 <table class="list">
-  <thead><tr><th>Order</th><th>Status</th><th>City</th><th>Total</th><th>Created</th></tr></thead>
+  <thead><tr><th>{{ tr('Order') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('City') }}</th><th>{{ tr('Total') }}</th><th>{{ tr('Created') }}</th></tr></thead>
   <tbody>{% for o in orders %}
-    <tr><td><a href="/v1/admin/admin/orders/{{ o.id }}">{{ o.id }}</a> · <a href="/v1/admin/admin/tables/orders/{{ o.id }}/edit">Edit / delete</a></td><td>{{ o.status }}</td>
+    <tr><td><a href="/v1/admin/admin/orders/{{ o.id }}">{{ o.id }}</a> · <a href="/v1/admin/admin/tables/orders/{{ o.id }}/edit">{{ tr('Edit / delete') }}</a></td><td>{{ tr(o.status) }}</td>
         <td>{{ o.delivery_city }}</td><td class="num">{{ o.total_amount }}</td><td>{{ o.created_at }}</td></tr>
-  {% else %}<tr><td colspan="5">No orders.</td></tr>{% endfor %}</tbody>
+  {% else %}<tr><td colspan="5">{{ tr('No orders.') }}</td></tr>{% endfor %}</tbody>
 </table>
 {% endblock %}

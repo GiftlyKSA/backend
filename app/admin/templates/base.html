@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang }}" dir="{{ 'rtl' if lang == 'ar' else 'ltr' }}" data-theme="{{ theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Giftly Admin{% endblock %}</title>
+  <title>{% block title %}{{ tr('Giftly Admin') }}{% endblock %}</title>
   <link rel="stylesheet" href="/v1/admin/admin/static/admin.css">
   <script src="/v1/admin/admin/static/relationships.js" defer></script>
   <script src="/v1/admin/admin/static/datetime-fields.js" defer></script>
@@ -11,49 +11,57 @@
 <body class="{% if ctx %}admin-app{% else %}auth-page{% endif %}">
 {% if ctx %}
 <aside class="sidebar">
-  <a class="brand" href="/v1/admin/admin" aria-label="Giftly admin overview">Giftly <span>Admin</span></a>
-  <nav aria-label="Admin sections">
+  <a class="brand" href="/v1/admin/admin" aria-label="{{ tr('Giftly Admin') }}">Giftly <span>{{ tr('Admin') }}</span></a>
+  <nav aria-label="{{ tr('Admin') }}">
     {% set path = request.url.path %}
-    <a class="{{ 'active' if path == '/v1/admin/admin' else '' }}" href="/v1/admin/admin"><span class="nav-icon">⌂</span>Overview</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/tables') else '' }}" href="/v1/admin/admin/tables"><span class="nav-icon">▤</span>Data tables</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/couriers') else '' }}" href="/v1/admin/admin/couriers"><span class="nav-icon">▣</span>Couriers</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/orders') else '' }}" href="/v1/admin/admin/orders"><span class="nav-icon">▢</span>Orders</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/invoices') else '' }}" href="/v1/admin/admin/invoices"><span class="nav-icon">≡</span>Invoices</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/promos') else '' }}" href="/v1/admin/admin/promos"><span class="nav-icon">◇</span>Promos</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/disputes') else '' }}" href="/v1/admin/admin/disputes"><span class="nav-icon">⬡</span>Disputes</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/withdrawals') else '' }}" href="/v1/admin/admin/withdrawals"><span class="nav-icon">⇥</span>Withdrawals</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/wallets') else '' }}" href="/v1/admin/admin/wallets"><span class="nav-icon">▭</span>Wallets</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/topups') else '' }}" href="/v1/admin/admin/topups"><span class="nav-icon">⊕</span>Top-ups</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs') else '' }}" href="/v1/admin/admin/audit-logs"><span class="nav-icon">▤</span>Audit</a>
+    <a class="{{ 'active' if path == '/v1/admin/admin' else '' }}" href="/v1/admin/admin"><span class="nav-icon">⌂</span>{{ tr('Overview') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/tables') else '' }}" href="/v1/admin/admin/tables"><span class="nav-icon">▤</span>{{ tr('Data tables') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/couriers') else '' }}" href="/v1/admin/admin/couriers"><span class="nav-icon">▣</span>{{ tr('Couriers') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/orders') else '' }}" href="/v1/admin/admin/orders"><span class="nav-icon">▢</span>{{ tr('Orders') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/invoices') else '' }}" href="/v1/admin/admin/invoices"><span class="nav-icon">≡</span>{{ tr('Invoices') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/promos') else '' }}" href="/v1/admin/admin/promos"><span class="nav-icon">◇</span>{{ tr('Promos') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/disputes') else '' }}" href="/v1/admin/admin/disputes"><span class="nav-icon">⬡</span>{{ tr('Disputes') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/withdrawals') else '' }}" href="/v1/admin/admin/withdrawals"><span class="nav-icon">⇥</span>{{ tr('Withdrawals') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/wallets') else '' }}" href="/v1/admin/admin/wallets"><span class="nav-icon">▭</span>{{ tr('Wallets') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/topups') else '' }}" href="/v1/admin/admin/topups"><span class="nav-icon">⊕</span>{{ tr('Top-ups') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs') else '' }}" href="/v1/admin/admin/audit-logs"><span class="nav-icon">▤</span>{{ tr('Audit') }}</a>
   </nav>
   <form method="post" action="/v1/admin/admin/logout" class="logout">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <button type="submit" class="secondary">Sign out</button>
+    <button type="submit" class="secondary">{{ tr('Sign out') }}</button>
   </form>
 </aside>
 <div class="workspace">
   <header class="workspace-header">
-    <span>Giftly operations</span>
+    <span>{{ tr('Giftly operations') }}</span>
     {% set parts = request.url.path.split('/') %}
     {% set section = parts[4] if parts|length > 4 else '' %}
     {% set table_names = {'users': 'users', 'couriers': 'courier_profiles', 'orders': 'orders', 'invoices': 'invoices', 'promos': 'promos', 'disputes': 'disputes', 'withdrawals': 'withdrawals', 'wallets': 'wallets', 'topups': 'wallet_topups', 'audit-logs': 'audit_logs'} %}
     {% set table_name = table_names.get(section) %}
     {% if table_name %}
-    <nav aria-label="Record actions">
-      <a href="/v1/admin/admin/tables/{{ table_name }}">View all</a>
-      <a href="/v1/admin/admin/tables/{{ table_name }}/new">Add record</a>
-      {% if parts|length == 6 and parts[5] != 'new' %}<a href="/v1/admin/admin/tables/{{ table_name }}/{{ parts[5] }}/edit">Edit or delete</a>{% endif %}
+    <nav aria-label="{{ tr('Actions') }}">
+      <a href="/v1/admin/admin/tables/{{ table_name }}">{{ tr('View all') }}</a>
+      <a href="/v1/admin/admin/tables/{{ table_name }}/new">{{ tr('Add record') }}</a>
+      {% if parts|length == 6 and parts[5] != 'new' %}<a href="/v1/admin/admin/tables/{{ table_name }}/{{ parts[5] }}/edit">{{ tr('Edit or delete') }}</a>{% endif %}
     </nav>
     {% endif %}
-    <span class="account-badge" aria-label="Admin account">Admin</span>
+    <div class="display-controls" aria-label="{{ tr('Appearance') }}">
+      <a href="/v1/admin/admin/preferences?lang={{ 'en' if lang == 'ar' else 'ar' }}&amp;next={{ request.url.path|urlencode }}" aria-label="{{ tr('Language') }}: {{ tr('English') if lang == 'ar' else tr('Arabic') }}">{{ 'EN' if lang == 'ar' else 'عربي' }}</a>
+      <a href="/v1/admin/admin/preferences?theme={{ 'dark' if theme == 'light' else 'light' }}&amp;next={{ request.url.path|urlencode }}" aria-label="{{ tr('Appearance') }}: {{ tr('Dark') if theme == 'light' else tr('Light') }}">{{ '☾' if theme == 'light' else '☀' }} {{ tr('Dark') if theme == 'light' else tr('Light') }}</a>
+    </div>
+    <span class="account-badge" aria-label="{{ tr('Admin') }}">{{ 'م' if lang == 'ar' else 'A' }}</span>
   </header>
 {% endif %}
+{% if not ctx %}<div class="auth-controls display-controls">
+  <a href="/v1/admin/admin/preferences?lang={{ 'en' if lang == 'ar' else 'ar' }}&amp;next={{ request.url.path|urlencode }}">{{ 'EN' if lang == 'ar' else 'عربي' }}</a>
+  <a href="/v1/admin/admin/preferences?theme={{ 'dark' if theme == 'light' else 'light' }}&amp;next={{ request.url.path|urlencode }}">{{ '☾' if theme == 'light' else '☀' }} {{ tr('Dark') if theme == 'light' else tr('Light') }}</a>
+</div>{% endif %}
 <main>
 {% if ctx and table_name %}
-<div class="actions" aria-label="Table actions">
-  <a class="btn" href="/v1/admin/admin/tables/{{ table_name }}/new">Add {{ table_name|replace('_', ' ') }}</a>
-  <a class="btn secondary" href="/v1/admin/admin/tables/{{ table_name }}">View all {{ table_name|replace('_', ' ') }}</a>
-  {% if parts|length == 6 and parts[5] != 'new' %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ table_name }}/{{ parts[5] }}/edit">Edit or delete this record</a>{% endif %}
+<div class="actions" aria-label="{{ tr('Actions') }}">
+  <a class="btn" href="/v1/admin/admin/tables/{{ table_name }}/new">{{ tr('Add') }} {{ tr(table_name|replace('_', ' ')|title) }}</a>
+  <a class="btn secondary" href="/v1/admin/admin/tables/{{ table_name }}">{{ tr('View all') }} {{ tr(table_name|replace('_', ' ')|title) }}</a>
+  {% if parts|length == 6 and parts[5] != 'new' %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ table_name }}/{{ parts[5] }}/edit">{{ tr('Edit or delete this record') }}</a>{% endif %}
 </div>
 {% endif %}
 {% block content %}{% endblock %}

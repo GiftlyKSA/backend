@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Withdrawals</h1>
+<h1>{{ tr('Withdrawals') }}</h1>
 <table class="list">
-  <thead><tr><th>Courier</th><th>Amount</th><th>IBAN</th><th>Status</th></tr></thead>
+  <thead><tr><th>{{ tr('Courier') }}</th><th>{{ tr('Amount') }}</th><th>{{ tr('IBAN') }}</th><th>{{ tr('Status') }}</th></tr></thead>
   <tbody>{% for w in withdrawals %}
-    <tr><td>{{ w.courier_id }} · <a href="/v1/admin/admin/tables/withdrawals/{{ w.id }}/edit">Edit / delete</a></td><td class="num">{{ w.amount }}</td>
-        <td>••••{{ w.iban_last4 }}</td><td>{{ w.status }}</td></tr>
-  {% else %}<tr><td colspan="4">No withdrawals.</td></tr>{% endfor %}</tbody>
+    <tr><td>{{ w.courier_id }} · <a href="/v1/admin/admin/tables/withdrawals/{{ w.id }}/edit">{{ tr('Edit / delete') }}</a></td><td class="num">{{ w.amount }}</td>
+        <td>••••{{ w.iban_last4 }}</td><td>{{ tr(w.status) }}</td></tr>
+  {% else %}<tr><td colspan="4">{{ tr('No withdrawals.') }}</td></tr>{% endfor %}</tbody>
 </table>
-<p class="note">Use the settlement API for normal payout processing. Table maintenance edits records directly and does not move money through the ledger. IBANs remain masked here.</p>
+<p class="note">{{ tr('Use the settlement API for normal payout processing. Table maintenance edits records directly and does not move money through the ledger. IBANs remain masked here.') }}</p>
 {% endblock %}

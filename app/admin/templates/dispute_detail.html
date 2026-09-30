@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Dispute</h1>
-{% if not dispute %}<p>Not found.</p>{% else %}
+<h1>{{ tr('Dispute') }}</h1>
+{% if not dispute %}<p>{{ tr('Not found.') }}</p>{% else %}
 <section class="card"><table>
-  <tr><td>Order</td><td>{{ dispute.order_id }}</td></tr>
-  <tr><td>Status</td><td>{{ dispute.status }}</td></tr>
-  <tr><td>Reason</td><td>{{ dispute.reason }}</td></tr>
+  <tr><td>{{ tr('Order') }}</td><td>{{ dispute.order_id }}</td></tr>
+  <tr><td>{{ tr('Status') }}</td><td>{{ tr(dispute.status) }}</td></tr>
+  <tr><td>{{ tr('Reason') }}</td><td>{{ dispute.reason }}</td></tr>
 </table></section>
-<p class="note">Use the settlement API for a normal escrow resolution. Table maintenance here edits records directly and does not run a settlement.</p>
+<p class="note">{{ tr('Use the settlement API for a normal escrow resolution. Table maintenance here edits records directly and does not run a settlement.') }}</p>
 {% endif %}
 {% endblock %}

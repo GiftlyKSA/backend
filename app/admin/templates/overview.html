@@ -1,37 +1,62 @@
 {% extends "base.html" %}
 {% block content %}
-<header class="overview-heading"><div><p class="eyebrow">Admin</p><h1>Overview</h1><p class="note">A current view of orders, attention items, and system balances.</p></div></header>
+<header class="overview-heading"><div><p class="eyebrow">{{ tr('Admin') }}</p><h1>{{ tr('Overview') }}</h1><p class="note">{{ tr('A current view of orders, attention items, and system balances.') }}</p></div></header>
 {% set counts = overview.order_counts %}
-<section class="metrics" aria-label="Order summary">
-  <article class="card metric"><span class="metric-icon indigo">▣</span><span>Total orders</span><strong>{{ counts.values()|sum }}</strong><small>All order statuses</small></article>
-  <article class="card metric"><span class="metric-icon amber">◷</span><span>Pending</span><strong>{{ counts.get('NEW', 0) + counts.get('ASSIGNED', 0) + counts.get('WAITING_PAYMENT', 0) }}</strong><small>New, assigned, or awaiting payment</small></article>
-  <article class="card metric"><span class="metric-icon blue">▰</span><span>In progress</span><strong>{{ counts.get('IN_PROGRESS', 0) + counts.get('DELIVERED', 0) }}</strong><small>In progress or delivered</small></article>
-  <article class="card metric"><span class="metric-icon green">✓</span><span>Completed</span><strong>{{ counts.get('COMPLETED', 0) }}</strong><small>Completed orders</small></article>
-  <article class="card metric"><span class="metric-icon red">×</span><span>Cancelled</span><strong>{{ counts.get('CANCELLED', 0) }}</strong><small>Cancelled orders</small></article>
+<section class="metrics" aria-label="{{ tr('Order summary') }}">
+  <article class="card metric"><span class="metric-icon indigo">▣</span><span>{{ tr('Total orders') }}</span><strong>{{ counts.values()|sum }}</strong><small>{{ tr('All order statuses') }}</small></article>
+  <article class="card metric"><span class="metric-icon amber">◷</span><span>{{ tr('Pending') }}</span><strong>{{ counts.get('NEW', 0) + counts.get('ASSIGNED', 0) + counts.get('WAITING_PAYMENT', 0) }}</strong><small>{{ tr('New, assigned, or awaiting payment') }}</small></article>
+  <article class="card metric"><span class="metric-icon blue">▰</span><span>{{ tr('In progress') }}</span><strong>{{ counts.get('IN_PROGRESS', 0) + counts.get('DELIVERED', 0) }}</strong><small>{{ tr('In progress or delivered') }}</small></article>
+  <article class="card metric"><span class="metric-icon green">✓</span><span>{{ tr('Completed') }}</span><strong>{{ counts.get('COMPLETED', 0) }}</strong><small>{{ tr('Completed orders') }}</small></article>
+  <article class="card metric"><span class="metric-icon red">×</span><span>{{ tr('Cancelled') }}</span><strong>{{ counts.get('CANCELLED', 0) }}</strong><small>{{ tr('Cancelled orders') }}</small></article>
 </section>
-<div class="overview-row">
-  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon red">▲</span>Attention</h2></div>
-    <div class="attention-grid">
-      <a class="attention-item dispute" href="/v1/admin/admin/disputes"><span>Open disputes</span><strong>{{ overview.open_disputes }}</strong><small>Review disputes →</small></a>
-      <a class="attention-item withdrawal" href="/v1/admin/admin/withdrawals"><span>Pending withdrawals</span><strong>{{ overview.pending_withdrawals }}</strong><small>Review withdrawals →</small></a>
+{% set total_orders = counts.values()|sum %}
+{% set peak_day = overview.daily_orders|map(attribute='count')|max if overview.daily_orders else 0 %}
+<div class="overview-charts">
+  <section class="card panel" aria-label="{{ tr('Daily orders chart') }}">
+    <div class="panel-heading"><h2>{{ tr('Orders created') }}</h2><span class="note">{{ tr('Last 14 UTC days') }}</span></div>
+    <div class="daily-chart">
+      {% for day in overview.daily_orders %}
+      {% set height = (day.count / peak_day * 100)|round|int if peak_day else 0 %}
+      <div class="day" title="{{ day.date.isoformat() }}: {{ day.count }} {{ tr('orders') }}">
+        <svg class="daily-bar" viewBox="0 0 20 100" preserveAspectRatio="none" role="img" aria-label="{{ day.count }} {{ tr('orders') }}"><rect x="0" y="{{ 100 - height }}" width="20" height="{{ height }}" /></svg>
+        <span class="value">{{ day.count }}</span><span class="label">{{ day.date.strftime('%d/%m') }}</span>
+      </div>
+      {% endfor %}
     </div>
   </section>
-  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">◉</span>System balances (SAR)</h2><a href="/v1/admin/admin/wallets">View wallets</a></div>
+  <section class="card panel" aria-label="{{ tr('Order status chart') }}">
+    <div class="panel-heading"><h2>{{ tr('Order status') }}</h2><span class="note">{{ tr('All time') }} · {{ total_orders }} {{ tr('orders') }}</span></div>
+    <div class="status-chart">
+      {% for status in ['NEW', 'ASSIGNED', 'WAITING_PAYMENT', 'IN_PROGRESS', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'DISPUTED', 'REFUNDED'] %}
+      {% set count = counts.get(status, 0) %}
+      <div class="status-row"><span>{{ tr(status|replace('_', ' ')|title) }}</span><progress value="{{ count }}" max="{{ total_orders or 1 }}">{{ count }}</progress><strong>{{ count }}</strong></div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+<div class="overview-row">
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon red">▲</span>{{ tr('Attention') }}</h2></div>
+    <div class="attention-grid">
+      <a class="attention-item dispute" href="/v1/admin/admin/disputes"><span>{{ tr('Open disputes') }}</span><strong>{{ overview.open_disputes }}</strong><small>{{ tr('Review disputes →') }}</small></a>
+      <a class="attention-item withdrawal" href="/v1/admin/admin/withdrawals"><span>{{ tr('Pending withdrawals') }}</span><strong>{{ overview.pending_withdrawals }}</strong><small>{{ tr('Review withdrawals →') }}</small></a>
+    </div>
+  </section>
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">◉</span>{{ tr('System balances (SAR)') }}</h2><a href="/v1/admin/admin/wallets">{{ tr('View wallets') }}</a></div>
     <div class="balance-grid">{% for wtype, balance in overview.system_balances.items() %}
-      <div class="balance-item"><span>{{ wtype|replace('_', ' ')|title }}</span><strong>SAR {{ '%.2f'|format(balance) }}</strong></div>
-    {% else %}<p class="note">No system wallets are available.</p>{% endfor %}</div>
+      <div class="balance-item"><span>{{ tr(wtype|replace('_', ' ')|title) }}</span><strong>SAR {{ '%.2f'|format(balance) }}</strong></div>
+    {% else %}<p class="note">{{ tr('No system wallets are available.') }}</p>{% endfor %}</div>
   </section>
 </div>
 <div class="overview-row lower">
-  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▣</span>Recent orders</h2><a href="/v1/admin/admin/orders">View all orders</a></div>
-    <div class="table-scroll"><table class="list"><thead><tr><th>Order</th><th>City</th><th class="num">Amount (SAR)</th><th>Status</th><th>Created</th></tr></thead><tbody>
-    {% for order in recent_orders %}<tr><td><a href="/v1/admin/admin/orders/{{ order.id }}">{{ order.id|string|truncate(13, True, '…') }}</a></td><td>{{ order.delivery_city }}</td><td class="num">{{ order.total_amount }}</td><td><span class="status-pill">{{ order.status|replace('_', ' ')|title }}</span></td><td>{{ order.created_at.strftime('%d %b %Y') }}</td></tr>
-    {% else %}<tr><td colspan="5" class="note">No orders yet.</td></tr>{% endfor %}
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▣</span>{{ tr('Recent orders') }}</h2><a href="/v1/admin/admin/orders">{{ tr('View all orders') }}</a></div>
+    <div class="table-scroll"><table class="list"><thead><tr><th>{{ tr('Order') }}</th><th>{{ tr('City') }}</th><th class="num">{{ tr('Amount (SAR)') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>
+    {% for order in recent_orders %}<tr><td><a href="/v1/admin/admin/orders/{{ order.id }}">{{ order.id|string|truncate(13, True, '…') }}</a></td><td>{{ order.delivery_city }}</td><td class="num">{{ order.total_amount }}</td><td><span class="status-pill">{{ tr(order.status|replace('_', ' ')|title) }}</span></td><td>{{ order.created_at.strftime('%d/%m/%Y') }}</td></tr>
+    {% else %}<tr><td colspan="5" class="note">{{ tr('No orders yet.') }}</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
-  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▤</span>Recent audit activity</h2><a href="/v1/admin/admin/audit-logs">View audit</a></div>
-    <ol class="activity-list">{% for log in recent_activity %}<li><strong>{{ log.action|replace('_', ' ')|title }}</strong><span>{{ log.entity_type|replace('_', ' ')|title }} · {{ log.created_at.strftime('%d %b %Y %H:%M') }}</span></li>
-    {% else %}<li class="empty-activity">No recent activity.</li>{% endfor %}</ol>
+  <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▤</span>{{ tr('Recent audit activity') }}</h2><a href="/v1/admin/admin/audit-logs">{{ tr('View audit') }}</a></div>
+    <ol class="activity-list">{% for log in recent_activity %}<li><strong>{{ tr(log.action|replace('_', ' ')|title) }}</strong><span>{{ tr(log.entity_type|replace('_', ' ')|title) }} · {{ log.created_at.strftime('%d/%m/%Y %H:%M') }}</span></li>
+    {% else %}<li class="empty-activity">{{ tr('No recent activity.') }}</li>{% endfor %}</ol>
   </section>
 </div>
 {% endblock %}

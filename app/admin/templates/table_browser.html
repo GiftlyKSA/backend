@@ -1,35 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
 {% if not data %}
-<h1>Table not found</h1>
-<p class="note">Choose a table from the <a href="/v1/admin/admin/tables">data catalog</a>.</p>
+<h1>{{ tr('Table not found') }}</h1>
+<p class="note">{{ tr('Choose a table from the') }} <a href="/v1/admin/admin/tables">{{ tr('data catalog') }}</a>.</p>
 {% else %}
 <div class="page-heading">
   <div>
-    <p class="eyebrow">Application data / {{ data.table.name }}</p>
-    <h1>{{ data.table.label }}</h1>
+    <p class="eyebrow">{{ tr('Application data') }} / {{ tr(data.table.label) }}</p>
+    <h1>{{ tr(data.table.label) }}</h1>
   </div>
   <span class="table-card__mode {% if data.table.editable %}is-editable{% endif %}">
-    Full admin access
+    {{ tr('Full admin access') }}
   </span>
 </div>
-<p><a class="btn" href="/v1/admin/admin/tables/{{ data.table.name }}/new">Add record</a></p>
+<p><a class="btn" href="/v1/admin/admin/tables/{{ data.table.name }}/new">{{ tr('Add record') }}</a></p>
 <p class="note">
-  Showing up to 50 records per page. Encrypted, credential, and token fields stay masked.
-  {% if data.table.name == "users" %}Signed-in dashboard admins can view user contact fields.{% else %}Personal-contact fields stay masked.{% endif %}
-  Open a record link to view, edit, or delete it.
+  {{ tr('Showing up to 50 records per page. Encrypted, credential, and token fields stay masked.') }}
+  {% if data.table.name == "users" %}{{ tr('Signed-in dashboard admins can view user contact fields.') }}{% else %}{{ tr('Personal-contact fields stay masked.') }}{% endif %}
+  {{ tr('Open a record link to view, edit, or delete it.') }}
 </p>
 <div class="table-scroll">
   <table class="list data-table">
-    <thead><tr>{% for column in data.columns %}<th>{{ column }}</th>{% endfor %}<th>Actions</th></tr></thead>
+    <thead><tr>{% for column in data.columns %}<th>{{ tr(column|replace('_', ' ')|title) }}</th>{% endfor %}<th>{{ tr('Actions') }}</th></tr></thead>
     <tbody>{% for row in data.rows %}
-      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}<td>{% if row.edit_url %}<a href="{{ row.edit_url }}">Edit / delete</a>{% endif %}</td></tr>
-    {% else %}<tr><td colspan="{{ data.columns|length + 1 }}">No records.</td></tr>{% endfor %}</tbody>
+      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}<td>{% if row.edit_url %}<a href="{{ row.edit_url }}">{{ tr('Edit / delete') }}</a>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="{{ data.columns|length + 1 }}">{{ tr('No records.') }}</td></tr>{% endfor %}</tbody>
   </table>
 </div>
 <div class="pager">
-  {% if data.previous_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?before={{ data.previous_cursor }}">Previous</a>{% endif %}
-  {% if data.next_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?after={{ data.next_cursor }}">Next</a>{% endif %}
+  {% if data.previous_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?before={{ data.previous_cursor }}">{{ tr('Previous') }}</a>{% endif %}
+  {% if data.next_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?after={{ data.next_cursor }}">{{ tr('Next') }}</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

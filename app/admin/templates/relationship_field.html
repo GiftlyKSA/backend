@@ -1,13 +1,13 @@
 {% macro relationship_field(table, field, label, required=true, value='', selected_label='', record_id='') %}
 <div class="relationship-field" data-url="/v1/admin/admin/relationships/{{ table }}/{{ field }}" data-record-id="{{ record_id }}">
-  <label for="{{ field }}-search">Search {{ label|lower }}</label>
-  <input id="{{ field }}-search" class="relationship-search" type="search" maxlength="100" autocomplete="off" placeholder="Search records…">
-  <label for="{{ field }}">{{ label }}</label>
+  <label for="{{ field }}-search">{{ tr('Search') }} {{ tr(label) }}</label>
+  <input id="{{ field }}-search" class="relationship-search" type="search" maxlength="100" autocomplete="off" placeholder="{{ tr('Search records…') }}">
+  <label for="{{ field }}">{{ tr(label) }}</label>
   <select id="{{ field }}" name="{{ field }}" {% if required %}required{% endif %}>
-    <option value="">{% if required %}Choose a record{% else %}None{% endif %}</option>
+    <option value="">{{ tr('Choose a record') if required else tr('None') }}</option>
     {% if value %}<option value="{{ value }}" selected>{{ selected_label or value }}</option>{% endif %}
   </select>
-  <button class="secondary relationship-more" type="button" hidden>Load more</button>
+  <button class="secondary relationship-more" type="button" hidden>{{ tr('Load more') }}</button>
   <p class="note relationship-status" role="status" aria-live="polite"></p>
 </div>
 {% endmacro %}

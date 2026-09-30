@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -97,6 +97,12 @@ async def test_overview_and_reads(db_session: AsyncSession, redis_client: Redis)
     service = _admin_service(db_session, _settings(), redis_client)
     overview = await service.overview()
     assert set(overview.system_balances) >= {"SYSTEM_ESCROW", "SYSTEM_GATEWAY"}
+    assert len(overview.daily_orders) == 14
+    assert [day.date for day in overview.daily_orders] == sorted(
+        day.date for day in overview.daily_orders
+    )
+    assert overview.daily_orders[-1].date == datetime.now(UTC).date()
+    assert all(day.count >= 0 for day in overview.daily_orders)
     assert await service.list_orders() is not None
     assert await service.list_invoices() is not None
     assert await service.list_disputes() is not None
@@ -375,9 +381,7 @@ async def test_admin_auth_session_and_logout(db_session: AsyncSession, redis_cli
     with pytest.raises(UnauthorizedError):
         await auth.load_session("not-a-real-token")
 
-    # Step-up grant/read round-trips through Redis.
     token_hash = sha256_hex("some-token")
-    assert await auth.has_step_up(token_hash) is False
     assert auth.csrf_token_for(token_hash)
     await auth.logout("not-a-real-token")  # no-op, must not raise
 

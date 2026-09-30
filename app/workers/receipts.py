@@ -18,6 +18,7 @@ from app.integrations.email.base import EmailClient
 from app.integrations.factory import build_clients
 from app.repositories.invoice_repository import InvoiceRepository
 from app.services.receipt_service import ReceiptService
+from app.workers.audit import audited_system_job
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.receipts")
@@ -80,6 +81,7 @@ async def send_pending_receipts(
 
 
 @broker.task(schedule=[{"cron": "*/5 * * * *"}])
+@audited_system_job("deliver_pending_receipts")
 async def deliver_pending_receipts() -> None:
     """Scheduled task: drain invoices not held by a live claim."""
     await send_pending_receipts()

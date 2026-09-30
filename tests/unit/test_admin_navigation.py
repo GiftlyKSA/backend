@@ -31,12 +31,14 @@ def test_section_has_table_crud_links(section: str, table: str) -> None:
     request = SimpleNamespace(url=SimpleNamespace(path=f"/v1/admin/admin/{section}/{record_id}"))
     ctx = SimpleNamespace(csrf_token="test")
 
-    html = environment.get_template("base.html").render(request=request, ctx=ctx)
+    html = environment.get_template("base.html").render(
+        request=request, ctx=ctx, lang="en", theme="light", tr=str
+    )
 
     assert f'/v1/admin/admin/tables/{table}"' in html
     assert f'/v1/admin/admin/tables/{table}/new"' in html
     assert f'/v1/admin/admin/tables/{table}/{record_id}/edit"' in html
-    assert f">Add {table.replace('_', ' ')}</a>" in html
+    assert f">Add {table.replace('_', ' ').title()}</a>" in html
     assert "Edit or delete this record" in html
 
 
@@ -59,7 +61,7 @@ def test_invoice_and_promo_pages_offer_crud(section: str, collection: str) -> No
     )
 
     html = environment.get_template(f"{section}.html").render(
-        request=request, ctx=ctx, **{collection: [row]}
+        request=request, ctx=ctx, lang="en", theme="light", tr=str, **{collection: [row]}
     )
 
     assert f'/v1/admin/admin/tables/{section}/new"' in html

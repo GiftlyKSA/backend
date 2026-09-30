@@ -247,12 +247,27 @@ application workers. Development and test logins do not require this code.
 
 `/v1/admin/admin/tables` provides paginated views and add/edit/delete forms for all mapped application
 tables in every environment, including production. Every write requires an active admin
-session, CSRF verification, and recent password confirmation. Each successful operation
+session and CSRF verification. Each successful operation
 records the actor, table, record, and changed field names without logging field values.
 Committed audit events also emit metadata-only `giftly.audit` log entries. Forward the
 application log stream to a restricted, independently retained sink in production; without
 that deployment control, database administrators can still alter local audit history.
 Deletion requires a confirmation checkbox and follows database cascade rules.
+
+The dashboard opens in Arabic with a right-to-left layout. Language and light/dark
+appearance controls are available on the login page and in the dashboard header.
+
+The Audit page shows recent activity across admins, customers/couriers, unauthenticated
+callers, and scheduled system jobs. It filters by actor category, actor ID, action, or
+entity and pages 100 entries at a time. Business and admin HTTP requests record the
+route template, method, result code, and request ID; chat WebSocket connections and
+sent messages and scheduled job outcomes also record metadata-only events. Bodies,
+query strings, tokens, and message text are never copied into the audit table.
+Health checks, static assets, documentation requests, and CORS preflight are excluded
+to avoid operational noise. A separate audit write failure is logged as an error;
+domain audit entries made inside business transactions still fail those transactions
+when they cannot be saved. Plan database retention and an independent log sink before
+the audit table grows large.
 
 Foreign-key inputs search related records in pages of 25 instead of asking for IDs.
 One-to-one choices exclude already-used records and preserve the current edit selection.

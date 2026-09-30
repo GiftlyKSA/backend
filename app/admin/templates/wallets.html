@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Wallets</h1>
+<h1>{{ tr('Wallets') }}</h1>
 <table class="list">
-  <thead><tr><th>Wallet</th><th>Type</th><th>Balance</th><th>Held</th></tr></thead>
+  <thead><tr><th>{{ tr('Wallet') }}</th><th>{{ tr('Type') }}</th><th>{{ tr('Balance') }}</th><th>{{ tr('Held') }}</th></tr></thead>
   <tbody>{% for w in wallets %}
-    <tr><td><a href="/v1/admin/admin/wallets/{{ w.id }}">{{ w.id }}</a> · <a href="/v1/admin/admin/tables/wallets/{{ w.id }}/edit">Edit / delete</a></td><td>{{ w.type }}</td>
+    <tr><td><a href="/v1/admin/admin/wallets/{{ w.id }}">{{ w.id }}</a> · <a href="/v1/admin/admin/tables/wallets/{{ w.id }}/edit">{{ tr('Edit / delete') }}</a></td><td>{{ tr(w.type) }}</td>
         <td class="num">{{ w.balance }}</td><td class="num">{{ w.held_balance }}</td></tr>
-  {% else %}<tr><td colspan="4">No wallets.</td></tr>{% endfor %}</tbody>
+  {% else %}<tr><td colspan="4">{{ tr('No wallets.') }}</td></tr>{% endfor %}</tbody>
 </table>
 {% endblock %}

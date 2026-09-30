@@ -27,6 +27,7 @@ from app.repositories.wallet_repository import WalletRepository
 from app.services.fulfillment_service import FulfillmentService
 from app.services.media_service import MediaService
 from app.services.money_service import MoneyService
+from app.workers.audit import audited_system_job
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.auto_approve")
@@ -103,6 +104,7 @@ async def auto_approve_delivered(
 
 
 @broker.task(schedule=[{"cron": "*/15 * * * *"}])
+@audited_system_job("run_auto_approve")
 async def run_auto_approve() -> None:
     """Scheduled task: acquire a lock and auto-approve overdue deliveries."""
     settings = get_settings()

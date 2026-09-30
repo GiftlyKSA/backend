@@ -2,8 +2,7 @@
 
 The username and password remain process environment secrets; the database stores only
 a stable internal actor for foreign keys/audit attribution and hashes of random session
-tokens. Sessions slide up to an absolute 12-hour cap. Sensitive actions require recent
-password step-up verification.
+tokens. Sessions slide up to an absolute 12-hour cap.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from cryptography.hazmat.primitives.twofactor.totp import TOTP
 from redis.asyncio import Redis
 
 from app.core.config import Settings
-from app.core.exceptions import ForbiddenError, RateLimitedError, UnauthorizedError
+from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.core.security import generate_session_token, make_csrf_token, sha256_hex
 from app.models import AdminSession, User
 from app.models.enums import UserRole, UserStatus
@@ -27,7 +26,6 @@ from app.repositories.admin_session_repository import AdminSessionRepository
 from app.repositories.user_repository import UserRepository
 
 _ABSOLUTE_CAP = timedelta(hours=12)
-_STEPUP_TTL_SECONDS = 300
 _LOGIN_WINDOW_SECONDS = 300
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_THROTTLE_LUA = """
@@ -188,34 +186,10 @@ class AdminAuthService:
         row = await self._sessions.get_active(sha256_hex(raw_token), now)
         if row is not None:
             await self._sessions.revoke(row, now)
-        await self._redis.delete(self._stepup_key(sha256_hex(raw_token)))
 
     def csrf_token_for(self, session_token_hash: str) -> str:
         """Return the CSRF token bound to a session hash."""
         return make_csrf_token(session_token_hash, self._session_secret())
-
-    async def grant_step_up(
-        self, *, password: str, session_token_hash: str, ip: str | None
-    ) -> None:
-        """Recheck the password and mark this session step-up-authorised briefly.
-
-        Raises:
-            ForbiddenError: The password did not verify.
-        """
-        username = self._settings.ADMIN_USERNAME or ""
-        keys = await self._check_login_throttle(username, ip)
-        if not self._credentials_match(username, password):
-            raise ForbiddenError("Step-up verification failed.")
-        await self._redis.delete(*keys)
-        await self._redis.set(self._stepup_key(session_token_hash), "1", ex=_STEPUP_TTL_SECONDS)
-
-    async def has_step_up(self, session_token_hash: str) -> bool:
-        """Return whether this session currently holds a valid step-up grant."""
-        return bool(await self._redis.get(self._stepup_key(session_token_hash)))
-
-    @staticmethod
-    def _stepup_key(session_token_hash: str) -> str:
-        return f"admin:stepup:{session_token_hash}"
 
     def _credentials_match(self, username: str, password: str) -> bool:
         configured_password = self._settings.ADMIN_PASSWORD

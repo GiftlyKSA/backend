@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -121,7 +121,7 @@ class AdminReadRepository:
 
         The table name is resolved only from SQLAlchemy metadata, never interpolated into
         SQL. Sensitive values remain hidden even from this broad administrative browser;
-        dedicated step-up flows are the sole path to reveal restricted identity/IBAN data.
+        dedicated audited admin actions reveal restricted identity/IBAN data.
         """
         table = Base.metadata.tables.get(table_name)
         if table is None:
@@ -197,6 +197,20 @@ class AdminReadRepository:
             select(Order.status, func.count()).group_by(Order.status)
         )
         return {str(status): count for status, count in rows.all()}
+
+    async def daily_order_counts(self, start_date: date, end_date: date) -> dict[date, int]:
+        """Count created orders by UTC day within an inclusive date range."""
+        utc_day = func.date(func.timezone("UTC", Order.created_at))
+        rows = await self._session.execute(
+            select(utc_day, func.count())
+            .where(
+                Order.created_at >= datetime.combine(start_date, time.min, UTC),
+                Order.created_at < datetime.combine(end_date + timedelta(days=1), time.min, UTC),
+            )
+            .group_by(utc_day)
+            .order_by(utc_day)
+        )
+        return {day: count for day, count in rows.all()}
 
     async def open_dispute_count(self) -> int:
         """Return the number of open disputes."""

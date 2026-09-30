@@ -1,35 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>User</h1>
-{% if not user %}<p>Not found.</p>{% else %}
+<h1>{{ tr('User') }}</h1>
+{% if not user %}<p>{{ tr('Not found.') }}</p>{% else %}
 <section class="card"><table>
-  <tr><td>ID</td><td>{{ user.id }}</td></tr>
-  <tr><td>Phone</td><td>{{ user.phone }}</td></tr>
-  <tr><td>Full name</td><td>{{ user.full_name or "—" }}</td></tr>
-  <tr><td>Email</td><td>{{ user.email or "—" }}</td></tr>
-  <tr><td>Role</td><td>{{ user.role }}</td></tr>
-  <tr><td>Status</td><td>{{ user.status }}</td></tr>
-  <tr><td>Rating</td><td>{{ user.rating }} ({{ user.rating_count }})</td></tr>
+  <tr><td>{{ tr('ID') }}</td><td>{{ user.id }}</td></tr>
+  <tr><td>{{ tr('Phone') }}</td><td>{{ user.phone }}</td></tr>
+  <tr><td>{{ tr('Full name') }}</td><td>{{ user.full_name or "—" }}</td></tr>
+  <tr><td>{{ tr('Email') }}</td><td>{{ user.email or "—" }}</td></tr>
+  <tr><td>{{ tr('Role') }}</td><td>{{ tr(user.role) }}</td></tr>
+  <tr><td>{{ tr('Status') }}</td><td>{{ tr(user.status) }}</td></tr>
+  <tr><td>{{ tr('Rating') }}</td><td>{{ user.rating }} ({{ user.rating_count }})</td></tr>
 </table></section>
 <section class="card edit-card">
-  <h2>Edit user profile</h2>
+  <h2>{{ tr('Edit user profile') }}</h2>
   <form method="post" action="/v1/admin/admin/users/{{ user.id }}/edit">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
-    <label>Phone<input name="phone" value="{{ user.phone }}" maxlength="20"></label>
-    <label>Full name<input name="full_name" value="{{ user.full_name or "" }}" maxlength="120"></label>
-    <label>Email<input name="email" type="email" value="{{ user.email or "" }}" maxlength="255"></label>
-    <button type="submit">Save user profile</button>
+    <label>{{ tr('Phone') }}<input name="phone" value="{{ user.phone }}" maxlength="20"></label>
+    <label>{{ tr('Full name') }}<input name="full_name" value="{{ user.full_name or "" }}" maxlength="120"></label>
+    <label>{{ tr('Email') }}<input name="email" type="email" value="{{ user.email or "" }}" maxlength="255"></label>
+    <button type="submit">{{ tr('Save user profile') }}</button>
   </form>
 </section>
 <div class="actions">
   <form method="post" action="/v1/admin/admin/users/{{ user.id }}/ban">
-    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit" class="danger">Ban</button></form>
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit" class="danger">{{ tr('Ban') }}</button></form>
   <form method="post" action="/v1/admin/admin/users/{{ user.id }}/unban">
-    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit">Unban</button></form>
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit">{{ tr('Unban') }}</button></form>
   <form method="post" action="/v1/admin/admin/users/{{ user.id }}/delete">
-    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit" class="danger">Delete user</button></form>
-  <form method="post" action="/v1/admin/admin/step-up/request">
-    <input type="hidden" name="next" value="/v1/admin/admin/users/{{ user.id }}"><button type="submit">Step-up</button></form>
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit" class="danger">{{ tr('Delete user') }}</button></form>
 </div>
 {% endif %}
 {% endblock %}

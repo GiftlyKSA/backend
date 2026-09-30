@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -20,12 +21,14 @@ from redis.asyncio.client import PubSub
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.core.db import emit_committed_audit_events
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
 from app.core.ws_connections import WebSocketLease
 from app.models.enums import UserRole
+from app.repositories.audit_repository import AuditRepository
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.device_token_repository import DeviceTokenRepository
@@ -44,6 +47,7 @@ from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/api", tags=["chat"])
+_audit_logger = logging.getLogger("app.chat.audit")
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
@@ -209,6 +213,7 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
     """
     actor = await _authenticate_ws(websocket)
     if actor is None:
+        await _record_ws_event(websocket, conversation_id, None, "WS_CONNECT_REJECTED")
         await websocket.close(code=4401)  # unauthenticated
         return
 
@@ -221,6 +226,7 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
         except (ForbiddenError, NotFoundError):
             conversation = None
     if conversation is None:
+        await _record_ws_event(websocket, conversation_id, actor, "WS_CONNECT_REJECTED")
         await websocket.close(code=4403)  # not a participant
         return
     recipient_id = (
@@ -234,18 +240,44 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
     try:
         admitted = await lease.acquire()
     except Exception:
+        await _record_ws_event(websocket, conversation_id, actor, "WS_CONNECT_REJECTED")
         await websocket.close(code=1013)
         return
     if not admitted:
+        await _record_ws_event(websocket, conversation_id, actor, "WS_CONNECT_REJECTED")
         await websocket.close(code=4429)
         return
+    await _record_ws_event(websocket, conversation_id, actor, "WS_CONNECTED")
     try:
         await _run_admitted_ws(
             websocket, conversation_id, actor, recipient_id, factory, redis, lease
         )
     finally:
+        await _record_ws_event(websocket, conversation_id, actor, "WS_DISCONNECTED")
         with contextlib.suppress(Exception):
             await lease.release()
+
+
+async def _record_ws_event(
+    websocket: WebSocket,
+    conversation_id: uuid.UUID,
+    actor: Actor | None,
+    action: str,
+) -> None:
+    """Record socket lifecycle metadata without copying the token or messages."""
+    try:
+        async with websocket.app.state.session_factory() as session:
+            session.info["audit_actor_category"] = "USER" if actor else "ANONYMOUS"
+            await AuditRepository(session).record(
+                actor_user_id=actor.id if actor else None,
+                action=action,
+                entity_type="conversations",
+                entity_id=conversation_id,
+            )
+            await session.commit()
+            emit_committed_audit_events(session)
+    except Exception:
+        _audit_logger.exception("Failed to save the chat socket audit event")
 
 
 async def _run_admitted_ws(
@@ -342,8 +374,16 @@ async def _pump_socket_to_chat(
             dto = await service.send_message(
                 conversation_id=conversation_id, sender_id=actor.id, text=text
             )
+            session.info["audit_actor_category"] = "USER"
+            await AuditRepository(session).record(
+                actor_user_id=actor.id,
+                action="WS_MESSAGE_SENT",
+                entity_type="messages",
+                entity_id=uuid.UUID(dto.id),
+            )
             # Commit before any external side effect or live event can expose the row.
             await session.commit()
+            emit_committed_audit_events(session)
             # Same best-effort push as the REST path; NO message text in the body.
             await NotificationService(
                 devices=DeviceTokenRepository(session), push=websocket.app.state.clients.push

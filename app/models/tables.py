@@ -389,6 +389,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="chk_courier_required_after_assignment",
         ),
         Index("idx_orders_city_status", "delivery_city_id", "status"),
+        Index("idx_orders_created_at", text("created_at DESC")),
         Index("idx_orders_customer_created", "customer_id", text("created_at DESC")),
         Index(
             "idx_orders_courier_created",
@@ -1205,6 +1206,13 @@ class AuditLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     __table_args__ = (
+        Index("idx_audit_logs_created_id", text("created_at DESC"), text("id DESC")),
+        Index(
+            "idx_audit_logs_category_created",
+            text("(metadata ->> 'actor_category')"),
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
         Index("idx_audit_logs_actor_created", "actor_user_id", text("created_at DESC")),
         Index("idx_audit_logs_entity", "entity_type", "entity_id"),
     )

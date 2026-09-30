@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% from "relationship_field.html" import relationship_field %}
+{% from "relationship_field.html" import relationship_field with context %}
 {% block content %}
-<h1>Add courier profile</h1>
-<p class="note">Choose a courier who does not yet have a profile. The identity document is encrypted immediately and remains masked after creation.</p>
+<h1>{{ tr('Add courier profile') }}</h1>
+<p class="note">{{ tr('Choose a courier who does not yet have a profile. The identity document is encrypted immediately and remains masked after creation.') }}</p>
 <section class="card edit-card">
   <form method="post" action="/v1/admin/admin/couriers">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     {{ relationship_field('courier_profiles', 'user_id', 'Courier') }}
-    <label>City<select name="city_of_residence" required><option value="">Select a city</option>{% for city in cities %}<option value="{{ city.name }}">{{ city.name }}</option>{% endfor %}</select></label>
-    <label>Identity document type<select name="identity_type"><option value="national_id">National ID</option><option value="passport_id">Passport</option></select></label>
-    <label>Identity document<input name="identity_document" type="password" maxlength="100" required></label>
-    <label>Bio<textarea name="bio" maxlength="1000"></textarea></label>
-    <button type="submit">Create courier profile</button>
+    <label>{{ tr('City') }}<select name="city_of_residence" required><option value="">{{ tr('Select a city') }}</option>{% for city in cities %}<option value="{{ city.name }}">{{ city.name }}</option>{% endfor %}</select></label>
+    <label>{{ tr('Identity document type') }}<select name="identity_type"><option value="national_id">{{ tr('National ID') }}</option><option value="passport_id">{{ tr('Passport') }}</option></select></label>
+    <label>{{ tr('Identity document') }}<input name="identity_document" type="password" maxlength="100" required></label>
+    <label>{{ tr('Bio') }}<textarea name="bio" maxlength="1000"></textarea></label>
+    <button type="submit">{{ tr('Create courier profile') }}</button>
   </form>
 </section>
 {% endblock %}
