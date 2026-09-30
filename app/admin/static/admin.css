@@ -45,6 +45,10 @@ code { background:#f0f0f5; padding:.1rem .3rem; border-radius:4px; }
 .audit-filters { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
 .audit-filters label { min-width:155px; flex:1 1 155px; margin:0; }
 .audit-filters button, .audit-filters .btn { flex:none; }
+.audit-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:.75rem 0; }
+.audit-tabs a { padding:.5rem .85rem; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--fg); font-weight:600; text-decoration:none; }
+.audit-tabs a:hover, .audit-tabs a.active { border-color:var(--accent); color:var(--accent); }
+.audit-tabs a.active { background:var(--soft); }
 .edit-card { max-width:720px; }
 @media (max-width:640px) { .page-heading { align-items:flex-start; flex-direction:column; } .topbar .logout { margin-left:0; } }
 .table-form-field { padding:.65rem 0; border-bottom:1px solid var(--line); margin-bottom:.65rem; }

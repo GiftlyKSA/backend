@@ -730,6 +730,18 @@ async def audit_logs(
         "action": action or "",
         "entity_type": entity_type or "",
     }
+    shared_filters = {
+        key: value for key, value in filters.items() if key != "actor_category" and value
+    }
+    tab_urls = {}
+    for category in ("ALL", "ADMIN", "USER", "SYSTEM", "ANONYMOUS"):
+        query = {**shared_filters, **({"actor_category": category} if category != "ALL" else {})}
+        tab_urls[category] = "/v1/admin/admin/audit-logs" + (
+            f"?{urlencode(query)}" if query else ""
+        )
+    clear_url = "/v1/admin/admin/audit-logs" + (
+        f"?{urlencode({'actor_category': actor_category})}" if actor_category else ""
+    )
     next_url = None
     if len(rows) > 100:
         last = rows[99]
@@ -747,4 +759,7 @@ async def audit_logs(
         logs=rows[:100],
         next_url=next_url,
         filters=filters,
+        active_category=actor_category or "ALL",
+        tab_urls=tab_urls,
+        clear_url=clear_url,
     )

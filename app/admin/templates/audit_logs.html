@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-heading"><h1>{{ tr('Audit trail') }}</h1></div>
+<nav class="audit-tabs" aria-label="{{ tr('Audit categories') }}">
+  {% for category, label in [('ALL', 'All activity'), ('ADMIN', 'Admin activity'), ('USER', 'User activity'), ('SYSTEM', 'System activity'), ('ANONYMOUS', 'Guest activity')] %}
+  <a href="{{ tab_urls[category] }}" class="{{ 'active' if active_category == category else '' }}" {% if active_category == category %}aria-current="page"{% endif %}>{{ tr(label) }}</a>
+  {% endfor %}
+</nav>
 <form class="audit-filters card" method="get" action="/v1/admin/admin/audit-logs">
-  <label>{{ tr('Actor') }}
-    <select name="actor_category">
-      <option value="">{{ tr('All actors') }}</option>
-      {% for category in ['ADMIN', 'USER', 'SYSTEM', 'ANONYMOUS'] %}<option value="{{ category }}" {% if filters.actor_category == category %}selected{% endif %}>{{ tr(category) }}</option>{% endfor %}
-    </select>
-  </label>
+  {% if filters.actor_category %}<input type="hidden" name="actor_category" value="{{ filters.actor_category }}">{% endif %}
   <label>{{ tr('Actor ID') }}<input name="actor_user_id" type="text" value="{{ filters.actor_user_id }}" placeholder="UUID"></label>
   <label>{{ tr('Action') }}<input name="action" type="text" maxlength="100" value="{{ filters.action }}"></label>
   <label>{{ tr('Entity') }}<input name="entity_type" type="text" maxlength="50" value="{{ filters.entity_type }}"></label>
   <button type="submit">{{ tr('Filter') }}</button>
-  <a class="btn secondary" href="/v1/admin/admin/audit-logs">{{ tr('Clear filters') }}</a>
+  <a class="btn secondary" href="{{ clear_url }}">{{ tr('Clear filters') }}</a>
 </form>
 <div class="table-scroll"><table class="list data-table">
   <thead><tr><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Route') }}</th><th>{{ tr('Result') }}</th><th>{{ tr('Details') }}</th></tr></thead>

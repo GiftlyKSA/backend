@@ -257,11 +257,11 @@ Deletion requires a confirmation checkbox and follows database cascade rules.
 The dashboard opens in Arabic with a right-to-left layout. Language and light/dark
 appearance controls are available on the login page and in the dashboard header.
 
-The Audit page shows recent activity across admins, customers/couriers, unauthenticated
-callers, and scheduled system jobs. It filters by actor category, actor ID, action, or
-entity and pages 100 entries at a time. Business and admin HTTP requests record the
-route template, method, result code, and request ID; chat WebSocket connections and
-sent messages and scheduled job outcomes also record metadata-only events. Bodies,
+The Audit page separates admin, customer/courier, system, and unauthenticated guest
+activity into tabs, with an All view for cross-category searches. Each view filters by
+actor ID, action, or entity and pages 100 entries at a time. Business and admin HTTP
+requests record the route template, method, result code, and request ID; chat WebSocket
+connections, sent messages, and scheduled job outcomes also record metadata-only events. Bodies,
 query strings, tokens, and message text are never copied into the audit table.
 Health checks, static assets, documentation requests, and CORS preflight are excluded
 to avoid operational noise. A separate audit write failure is logged as an error;

@@ -153,6 +153,12 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
     assert response.text.count("تشغيل مهمة آلية") == 100
     assert "before_at=" in response.text
     assert "actor_category=SYSTEM" in response.text
+    assert 'href="/v1/admin/admin/audit-logs?actor_category=ADMIN"' in response.text
+    assert 'href="/v1/admin/admin/audit-logs?actor_category=USER"' in response.text
+    assert 'href="/v1/admin/admin/audit-logs?actor_category=ANONYMOUS"' in response.text
+    assert 'href="/v1/admin/admin/audit-logs"' in response.text
+    assert 'name="actor_category" value="SYSTEM"' in response.text
+    assert 'href="/v1/admin/admin/audit-logs?actor_category=SYSTEM"' in response.text
     assert invalid.status_code == 422
     ctx.service.list_audit_logs.assert_awaited_once_with(
         limit=101,
@@ -163,6 +169,23 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
         before_at=None,
         before_id=None,
     )
+
+
+async def test_audit_tabs_keep_search_filters_and_clear_only_current_view(monkeypatch):
+    app, ctx = make_app(monkeypatch)
+    ctx.service = SimpleNamespace(list_audit_logs=AsyncMock(return_value=[]))
+    monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/v1/admin/admin/audit-logs?actor_category=USER&action=HTTP_POST"
+        )
+    assert response.status_code == 200
+    assert (
+        'href="/v1/admin/admin/audit-logs?action=HTTP_POST&amp;actor_category=ADMIN"'
+        in response.text
+    )
+    assert 'href="/v1/admin/admin/audit-logs?action=HTTP_POST"' in response.text
+    assert 'href="/v1/admin/admin/audit-logs?actor_category=USER"' in response.text
 
 
 async def test_authenticated_mutation_does_not_require_password_confirmation(monkeypatch):
