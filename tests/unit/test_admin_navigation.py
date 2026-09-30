@@ -81,10 +81,11 @@ def test_header_uses_accessible_icon_controls_and_account_menu() -> None:
     assert "View all" not in header
     assert "Add record" not in header
     assert '<button type="submit"' in header
-    assert 'name="theme" value="dark"' in header
+    assert 'type="button" class="secondary" data-theme-toggle' in header
+    assert 'name="theme"' not in header
     assert 'name="lang" value="en"' in header
-    assert header.count('class="display-icon"') == 2
-    assert header.count('width="19" height="19"') == 2
+    assert header.count('class="display-icon') == 3
+    assert header.count('width="19" height="19"') == 3
     assert 'aria-label="Language: English"' in header
     assert 'aria-label="Appearance: Dark"' in header
     assert ">English</button>" not in header

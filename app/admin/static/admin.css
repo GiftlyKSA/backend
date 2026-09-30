@@ -140,6 +140,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .display-controls form { margin:0; }
 .display-controls button { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--navy); }
 .display-icon { display:block; width:19px; height:19px; }
+.theme-sun, [data-theme="dark"] .theme-moon { display:none; }
+[data-theme="dark"] .theme-sun { display:block; }
 .display-controls button:hover { border-color:var(--accent); color:var(--accent); }
 .auth-controls { justify-content:flex-end; padding:16px 20px 0; }
 .workspace-header { gap:14px; }

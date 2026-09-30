@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from app.admin.assets import STYLESHEET_URL
+from app.admin.assets import STYLESHEET_URL, THEME_SCRIPT_URL
 
 LANGUAGE_COOKIE = "giftly_admin_language"
 THEME_COOKIE = "giftly_admin_theme"
@@ -564,6 +564,7 @@ def template_context(request: Request) -> dict[str, object]:
     selected_language = language(request)
     return {
         "stylesheet_url": STYLESHEET_URL,
+        "theme_script_url": THEME_SCRIPT_URL,
         "lang": selected_language,
         "theme": theme(request),
         "tr": lambda value: translate(value, selected_language),

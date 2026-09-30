@@ -259,6 +259,8 @@ Deletion requires a confirmation checkbox and follows database cascade rules.
 
 The dashboard opens in Arabic with a right-to-left layout. Language and light/dark
 appearance controls are available on the login page and in the dashboard header.
+Theme changes apply immediately without requests or page reloads. The browser saves
+the choice in local storage, restores it before rendering, and synchronizes open tabs.
 Dashboard HTML is served with `Cache-Control: no-store`. Its stylesheet URL includes
 the SHA-256 content version in the path so browsers and proxies fetch updated layout
 and theme rules after a deployment, even when they ignore query-string versions.

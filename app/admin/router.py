@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin.assets import STYLESHEET, STYLESHEET_VERSION
+from app.admin.assets import STYLESHEET, STYLESHEET_VERSION, THEME_SCRIPT, THEME_SCRIPT_VERSION
 from app.admin.deps import (
     SESSION_COOKIE,
     AdminContext,
@@ -72,6 +72,18 @@ async def dashboard_stylesheet(version: str) -> Response:
 
 async def _ctx(request: Request, db: AsyncSession) -> AdminContext:
     return await require_admin(request, db)
+
+
+@router.get("/assets/theme.{version}.js")
+async def dashboard_theme_script(version: str) -> Response:
+    """Serve the theme switcher associated with this application build."""
+    if version != THEME_SCRIPT_VERSION:
+        raise HTTPException(status_code=404, detail="Theme script version not found")
+    return Response(
+        THEME_SCRIPT,
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/relationships/{table_name}/{field}")

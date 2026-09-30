@@ -152,6 +152,8 @@ async def test_admin_html_loads_exact_stylesheet_from_content_versioned_path(
         page = await client.get("/v1/admin/admin/login")
         url = re.search(r'<link rel="stylesheet" href="([^"]+)"', page.text).group(1)
         stylesheet = await client.get(url)
+        script_url = re.search(r'<script src="([^"]+)"', page.text).group(1)
+        theme_script = await client.get(script_url)
         missing = await client.get("/v1/admin/admin/assets/admin.invalid.css")
     assert url == f"/v1/admin/admin/assets/admin.{digest}.css"
     assert page.headers["cache-control"] == "no-store"
@@ -160,6 +162,10 @@ async def test_admin_html_loads_exact_stylesheet_from_content_versioned_path(
     assert stylesheet.headers["content-type"].startswith("text/css")
     assert "immutable" in stylesheet.headers["cache-control"]
     assert missing.status_code == 404
+    assert theme_script.status_code == 200
+    assert theme_script.headers["content-type"].startswith("text/javascript")
+    assert "localStorage.setItem" in theme_script.text
+    assert page.text.index(script_url) < page.text.index(url)
 
 
 async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(monkeypatch):
