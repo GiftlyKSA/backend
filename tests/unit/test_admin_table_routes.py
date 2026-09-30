@@ -96,13 +96,17 @@ async def test_overview_renders_at_new_admin_path_with_live_summary(monkeypatch)
         list_audit_logs=AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        cookies={"giftly_admin_theme": "dark"},
+    ) as client:
         old = await client.get("/admin")
         response = await client.get("/v1/admin/admin")
     assert old.status_code == 404
     assert response.status_code == 200
     assert 'class="sidebar"' in response.text
-    assert '<html lang="ar" dir="rtl" data-theme="light">' in response.text
+    assert '<html lang="ar" dir="rtl" data-theme="dark">' in response.text
     assert "أحدث الطلبات" in response.text
     assert "SAR 100.00" in response.text
     assert "الطلبات المنشأة" in response.text

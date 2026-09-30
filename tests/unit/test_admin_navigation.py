@@ -68,7 +68,7 @@ def test_invoice_and_promo_pages_offer_crud(section: str, collection: str) -> No
     assert "Read-only" not in html
 
 
-def test_header_uses_preference_buttons_and_account_menu() -> None:
+def test_header_uses_accessible_icon_controls_and_account_menu() -> None:
     environment = Environment(loader=FileSystemLoader(_TEMPLATES), autoescape=True)
     request = SimpleNamespace(url=SimpleNamespace(path="/v1/admin/admin/orders"))
     ctx = SimpleNamespace(csrf_token="test")
@@ -83,5 +83,10 @@ def test_header_uses_preference_buttons_and_account_menu() -> None:
     assert '<button type="submit"' in header
     assert 'name="theme" value="dark"' in header
     assert 'name="lang" value="en"' in header
+    assert header.count('class="display-icon"') == 2
+    assert 'aria-label="Language: English"' in header
+    assert 'aria-label="Appearance: Dark"' in header
+    assert ">English</button>" not in header
+    assert ">☾ Dark</button>" not in header
     assert '<details class="account-menu">' in header
     assert 'action="/v1/admin/admin/logout"' in header
