@@ -265,9 +265,11 @@ Dashboard HTML is served with `Cache-Control: no-store`. Its stylesheet URL incl
 the SHA-256 content version in the path so browsers and proxies fetch updated layout
 and theme rules after a deployment, even when they ignore query-string versions.
 
-User, admin, and system audit activity have separate dashboard pages. User activity
-combines customer and courier changes. Each page filters by actor ID, action, or entity
-and pages 100 entries at a time. Reads, HTTP requests, WebSocket lifecycle events,
+Activity uses one dashboard page with System, Admin, and User tabs; System opens first.
+Only the selected tab is queried. User activity combines customer and courier changes.
+Filters include UTC date/time range, activity ID, activity name (action-name substring),
+actor ID, exact action, and entity type. Sort by newest or oldest, select 25 (default),
+50, or 100 rows per page, and use Next for stable cursor pagination. Reads, HTTP requests, WebSocket lifecycle events,
 login/logout, and scheduled-job start/completion are not database audit actions.
 Migration `0009_action_only_audit` removes existing `HTTP_*` audit rows; restore a
 database backup if those historical rows are needed. Other old operational rows are

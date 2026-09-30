@@ -1,12 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-heading"><h1>{{ tr({'users': 'User activity', 'admin': 'Admin activity', 'system': 'System activity'}[active_view]) }}</h1></div>
+<div class="page-heading"><h1>{{ tr('Activity') }}</h1></div>
 <nav class="audit-tabs" aria-label="{{ tr('Audit categories') }}">
-  {% for view, label in [('users', 'User activity'), ('admin', 'Admin activity'), ('system', 'System activity')] %}
+  {% for view, label in [('system', 'System activity'), ('admin', 'Admin activity'), ('users', 'User activity')] %}
   <a href="{{ view_urls[view] }}" class="{{ 'active' if active_view == view else '' }}" {% if active_view == view %}aria-current="page"{% endif %}>{{ tr(label) }}</a>
   {% endfor %}
 </nav>
-<form class="audit-filters card" method="get" action="/v1/admin/admin/audit-logs/{{ active_view }}">
+<form class="audit-filters card" method="get" action="/v1/admin/admin/audit-logs">
+  <input type="hidden" name="view" value="{{ active_view }}">
+  <label>{{ tr('From (UTC)') }}<input name="start_at" type="datetime-local" step="1" value="{{ filters.start_at }}"></label>
+  <label>{{ tr('To (UTC)') }}<input name="end_at" type="datetime-local" step="1" value="{{ filters.end_at }}"></label>
+  <label>{{ tr('Activity ID') }}<input name="activity_id" value="{{ filters.activity_id }}" placeholder="UUID"></label>
+  <label>{{ tr('Activity name') }}<input name="activity_name" maxlength="100" value="{{ filters.activity_name }}"></label>
+  <label>{{ tr('Sort by') }}<select name="sort"><option value="newest" {% if filters.sort == 'newest' %}selected{% endif %}>{{ tr('Newest first') }}</option><option value="oldest" {% if filters.sort == 'oldest' %}selected{% endif %}>{{ tr('Oldest first') }}</option></select></label>
+  <label>{{ tr('Per page') }}<select name="page_size">{% for size in [25, 50, 100] %}<option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>{% endfor %}</select></label>
   <label>{{ tr('Actor ID') }}<input name="actor_user_id" type="text" value="{{ filters.actor_user_id }}" placeholder="UUID"></label>
   <label>{{ tr('Action') }}<input name="action" type="text" maxlength="100" value="{{ filters.action }}"></label>
   <label>{{ tr('Entity') }}<input name="entity_type" type="text" maxlength="50" value="{{ filters.entity_type }}"></label>
@@ -14,11 +21,11 @@
   <a class="btn secondary" href="{{ clear_url }}">{{ tr('Clear filters') }}</a>
 </form>
 <div class="table-scroll"><table class="list data-table">
-  <thead><tr><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Details') }}</th></tr></thead>
+  <thead><tr><th>{{ tr('Activity ID') }}</th><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Details') }}</th></tr></thead>
   <tbody>{% for l in logs %}
     {% set metadata = l.audit_metadata or {} %}
-    <tr><td>{{ l.created_at }}</td><td>{{ tr(metadata.get('actor_category', 'Unclassified')) }}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{% if metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
-  {% else %}<tr><td colspan="6">{{ tr('No entries.') }}</td></tr>{% endfor %}</tbody>
+    <tr><td>{{ l.id }}</td><td>{{ l.created_at }}</td><td>{{ tr(metadata.get('actor_category', 'Unclassified')) }}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{% if metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7">{{ tr('No entries.') }}</td></tr>{% endfor %}</tbody>
 </table></div>
-{% if next_url %}<p class="pager"><a class="btn secondary" href="{{ next_url }}">{{ tr('More events') }}</a></p>{% endif %}
+{% if next_url %}<p class="pager"><a class="btn secondary" href="{{ next_url }}">{{ tr('Next') }}</a></p>{% endif %}
 {% endblock %}

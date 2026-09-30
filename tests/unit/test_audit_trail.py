@@ -61,6 +61,28 @@ async def test_audit_repository_tags_actor_and_supports_stable_filters() -> None
     assert " IN " in grouped
     assert "HTTP" in grouped
 
+    await repository.list_recent(
+        activity_id=actor_id,
+        activity_name="UPDATE_%",
+        action="UPDATE",
+        entity_type="users",
+        start_at=before_at,
+        end_at=before_at,
+        before_at=before_at,
+        before_id=actor_id,
+        oldest_first=True,
+        limit=26,
+    )
+    statement = session.scalars.call_args.args[0].compile(dialect=postgresql.dialect())
+    sql = str(statement)
+    assert "audit_logs.created_at ASC, audit_logs.id ASC" in sql
+    assert "(audit_logs.created_at, audit_logs.id) >" in sql
+    assert "audit_logs.created_at >=" in sql
+    assert "audit_logs.created_at <=" in sql
+    assert "ILIKE" in sql
+    assert "%UPDATE\\_\\%%" in statement.params.values()
+    assert 26 in statement.params.values()
+
 
 async def test_http_requests_do_not_create_database_audit_rows() -> None:
     factory_calls = 0

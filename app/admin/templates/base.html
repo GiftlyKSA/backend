@@ -25,9 +25,7 @@
     <a class="{{ 'active' if path.startswith('/v1/admin/admin/withdrawals') else '' }}" href="/v1/admin/admin/withdrawals"><span class="nav-icon">⇥</span>{{ tr('Withdrawals') }}</a>
     <a class="{{ 'active' if path.startswith('/v1/admin/admin/wallets') else '' }}" href="/v1/admin/admin/wallets"><span class="nav-icon">▭</span>{{ tr('Wallets') }}</a>
     <a class="{{ 'active' if path.startswith('/v1/admin/admin/topups') else '' }}" href="/v1/admin/admin/topups"><span class="nav-icon">⊕</span>{{ tr('Top-ups') }}</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs/users') else '' }}" href="/v1/admin/admin/audit-logs/users"><span class="nav-icon">▤</span>{{ tr('User activity') }}</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs/admin') else '' }}" href="/v1/admin/admin/audit-logs/admin"><span class="nav-icon">▤</span>{{ tr('Admin activity') }}</a>
-    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs/system') else '' }}" href="/v1/admin/admin/audit-logs/system"><span class="nav-icon">▤</span>{{ tr('System activity') }}</a>
+    <a class="{{ 'active' if path.startswith('/v1/admin/admin/audit-logs') else '' }}" href="/v1/admin/admin/audit-logs"><span class="nav-icon">▤</span>{{ tr('Activity') }}</a>
   </nav>
 </aside>
 <div class="workspace">

@@ -66,6 +66,11 @@ class AuditRepository:
         before_at: datetime | None = None,
         before_id: uuid.UUID | None = None,
         limit: int = 50,
+        activity_id: uuid.UUID | None = None,
+        activity_name: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        oldest_first: bool = False,
     ) -> list[AuditLog]:
         """Return recent audit rows, newest first, with optional filters."""
         query = (
@@ -73,20 +78,35 @@ class AuditRepository:
             .where(AuditLog.action.not_like("HTTP\\_%", escape="\\"))
             .where(AuditLog.action.not_like("WS\\_%", escape="\\"))
             .where(AuditLog.action != "SYSTEM_JOB_RUN")
-            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .order_by(
+                AuditLog.created_at.asc() if oldest_first else AuditLog.created_at.desc(),
+                AuditLog.id.asc() if oldest_first else AuditLog.id.desc(),
+            )
             .limit(max(1, min(limit, 101)))
         )
-        if actor_user_id is not None:
-            query = query.where(AuditLog.actor_user_id == actor_user_id)
-        if action is not None:
-            query = query.where(AuditLog.action == action)
-        if entity_type is not None:
-            query = query.where(AuditLog.entity_type == entity_type)
+        for column, value in (
+            (AuditLog.actor_user_id, actor_user_id),
+            (AuditLog.id, activity_id),
+            (AuditLog.action, action),
+            (AuditLog.entity_type, entity_type),
+        ):
+            if value is not None:
+                query = query.where(column == value)
+        if activity_name:
+            escaped = activity_name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            query = query.where(AuditLog.action.ilike(f"%{escaped}%", escape="\\"))
+        if start_at is not None:
+            query = query.where(AuditLog.created_at >= start_at)
+        if end_at is not None:
+            query = query.where(AuditLog.created_at <= end_at)
         category = AuditLog.audit_metadata.op("->>")(literal_column("'actor_category'"))
         if actor_categories is not None:
             query = query.where(category.in_(actor_categories))
         elif actor_category is not None:
             query = query.where(category == actor_category)
         if before_at is not None and before_id is not None:
-            query = query.where(tuple_(AuditLog.created_at, AuditLog.id) < (before_at, before_id))
+            cursor = tuple_(AuditLog.created_at, AuditLog.id)
+            query = query.where(
+                cursor > (before_at, before_id) if oldest_first else cursor < (before_at, before_id)
+            )
         return list(await self._session.scalars(query))

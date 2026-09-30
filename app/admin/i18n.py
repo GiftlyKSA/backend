@@ -12,6 +12,15 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Activity": "النشاط",
+    "Activity ID": "معرّف النشاط",
+    "Activity name": "اسم النشاط",
+    "From (UTC)": "من (التوقيت العالمي)",
+    "To (UTC)": "إلى (التوقيت العالمي)",
+    "Sort by": "الترتيب حسب",
+    "Newest first": "الأحدث أولًا",
+    "Oldest first": "الأقدم أولًا",
+    "Per page": "عدد السجلات في الصفحة",
     "Admin": "المشرف",
     "Giftly Admin": "إدارة قفتلي",
     "Overview": "نظرة عامة",

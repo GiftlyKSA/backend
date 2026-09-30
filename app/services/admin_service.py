@@ -222,6 +222,11 @@ class AdminService:
         entity_type: str | None = None,
         before_at: datetime | None = None,
         before_id: uuid.UUID | None = None,
+        activity_id: uuid.UUID | None = None,
+        activity_name: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        oldest_first: bool = False,
     ) -> list[AuditLog]:
         """Return recent audit-log entries."""
         return list(
@@ -234,6 +239,11 @@ class AdminService:
                 entity_type=entity_type,
                 before_at=before_at,
                 before_id=before_id,
+                activity_id=activity_id,
+                activity_name=activity_name,
+                start_at=start_at,
+                end_at=end_at,
+                oldest_first=oldest_first,
             )
         )
 

@@ -10,7 +10,7 @@ does not run those transitions.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlencode
@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.assets import STYLESHEET, STYLESHEET_VERSION, THEME_SCRIPT, THEME_SCRIPT_VERSION
@@ -43,6 +44,8 @@ router.include_router(table_router)
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+OptionalFilterUuid = Annotated[uuid.UUID | None, BeforeValidator(lambda value: value or None)]
+OptionalFilterDatetime = Annotated[datetime | None, BeforeValidator(lambda value: value or None)]
 
 
 def _render(
@@ -727,37 +730,50 @@ async def user_delete(
 
 
 @router.get("/audit-logs", response_class=HTMLResponse)
-async def audit_logs_home() -> RedirectResponse:
-    """Open the user action audit page."""
-    return RedirectResponse("/v1/admin/admin/audit-logs/users", status_code=303)
-
-
 @router.get("/audit-logs/{view}", response_class=HTMLResponse)
 async def audit_logs(
     request: Request,
     db: DbDep,
-    view: Literal["users", "admin", "system"],
-    actor_user_id: uuid.UUID | None = None,
+    view: Literal["users", "admin", "system"] = "system",
+    actor_user_id: OptionalFilterUuid = None,
     action: str | None = Query(default=None, max_length=100),
     entity_type: str | None = Query(default=None, max_length=50),
+    activity_id: OptionalFilterUuid = None,
+    activity_name: str | None = Query(default=None, max_length=100),
+    start_at: OptionalFilterDatetime = None,
+    end_at: OptionalFilterDatetime = None,
+    sort: Literal["newest", "oldest"] = "newest",
+    page_size: int = Query(default=25, ge=25, le=100),
     before_at: datetime | None = None,
     before_id: uuid.UUID | None = None,
 ) -> HTMLResponse:
-    """List user, admin, or system actions on separate pages."""
+    """Load only the selected activity tab with bounded cursor pagination."""
     ctx = await _ctx(request, db)
+    if page_size not in {25, 50, 100}:
+        raise HTTPException(status_code=422, detail="Page size must be 25, 50, or 100.")
     if (before_at is None) != (before_id is None):
         raise HTTPException(status_code=400, detail="Both audit cursor fields are required.")
+    start_at = start_at.replace(tzinfo=UTC) if start_at and not start_at.tzinfo else start_at
+    end_at = end_at.replace(tzinfo=UTC) if end_at and not end_at.tzinfo else end_at
+    before_at = before_at.replace(tzinfo=UTC) if before_at and not before_at.tzinfo else before_at
+    if start_at and end_at and start_at > end_at:
+        raise HTTPException(status_code=400, detail="Start time must not exceed end time.")
     categories = {
         "users": ("USER", "CUSTOMER", "COURIER"),
         "admin": ("ADMIN",),
         "system": ("SYSTEM",),
     }[view]
     rows = await ctx.service.list_audit_logs(
-        limit=101,
+        limit=page_size + 1,
         actor_categories=categories,
         actor_user_id=actor_user_id,
         action=action or None,
         entity_type=entity_type or None,
+        activity_id=activity_id,
+        activity_name=activity_name or None,
+        start_at=start_at,
+        end_at=end_at,
+        oldest_first=sort == "oldest",
         before_at=before_at,
         before_id=before_id,
     )
@@ -765,23 +781,29 @@ async def audit_logs(
         "actor_user_id": str(actor_user_id) if actor_user_id else "",
         "action": action or "",
         "entity_type": entity_type or "",
+        "activity_id": str(activity_id) if activity_id else "",
+        "activity_name": activity_name or "",
+        "start_at": start_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S") if start_at else "",
+        "end_at": end_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S") if end_at else "",
+        "sort": sort,
+        "page_size": page_size,
     }
+    base_url = "/v1/admin/admin/audit-logs"
     shared_filters = {key: value for key, value in filters.items() if value}
-    base_url = f"/v1/admin/admin/audit-logs/{view}"
     view_urls = {
-        name: f"/v1/admin/admin/audit-logs/{name}"
-        + (f"?{urlencode(shared_filters)}" if shared_filters else "")
-        for name in ("users", "admin", "system")
+        name: base_url + "?" + urlencode({**shared_filters, "view": name})
+        for name in ("system", "admin", "users")
     }
     next_url = None
-    if len(rows) > 100:
-        last = rows[99]
+    if len(rows) > page_size:
+        last = rows[page_size - 1]
         next_url = (
             base_url
             + "?"
             + urlencode(
                 {
-                    **{key: value for key, value in filters.items() if value},
+                    **shared_filters,
+                    "view": view,
                     "before_at": last.created_at.isoformat(),
                     "before_id": str(last.id),
                 }
@@ -791,10 +813,10 @@ async def audit_logs(
         request,
         "audit_logs.html",
         ctx=ctx,
-        logs=rows[:100],
+        logs=rows[:page_size],
         next_url=next_url,
         filters=filters,
         active_view=view,
         view_urls=view_urls,
-        clear_url=base_url,
+        clear_url=base_url + "?" + urlencode({"view": view}),
     )

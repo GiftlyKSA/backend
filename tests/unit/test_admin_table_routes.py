@@ -190,21 +190,26 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
         response = await client.get("/v1/admin/admin/audit-logs/system")
         invalid = await client.get("/v1/admin/admin/audit-logs/unknown")
     assert response.status_code == 200
-    assert response.text.count("تعديل") >= 100
+    assert response.text.count("تعديل") == 25
     assert "before_at=" in response.text
-    assert 'href="/v1/admin/admin/audit-logs/admin"' in response.text
-    assert 'href="/v1/admin/admin/audit-logs/users"' in response.text
-    assert 'href="/v1/admin/admin/audit-logs/system"' in response.text
+    assert "view=admin" in response.text
+    assert "view=users" in response.text
+    assert "view=system" in response.text
     assert "HTTP_GET" not in response.text
     assert invalid.status_code == 422
     ctx.service.list_audit_logs.assert_awaited_once_with(
-        limit=101,
+        limit=26,
         actor_categories=("SYSTEM",),
         actor_user_id=None,
         action=None,
         entity_type=None,
         before_at=None,
         before_id=None,
+        activity_id=None,
+        activity_name=None,
+        start_at=None,
+        end_at=None,
+        oldest_first=False,
     )
 
 
@@ -215,9 +220,39 @@ async def test_audit_pages_keep_search_filters_and_clear_only_current_view(monke
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/admin/admin/audit-logs/users?action=USER_BAN")
     assert response.status_code == 200
-    assert 'href="/v1/admin/admin/audit-logs/admin?action=USER_BAN"' in response.text
-    assert 'href="/v1/admin/admin/audit-logs/system?action=USER_BAN"' in response.text
-    assert 'href="/v1/admin/admin/audit-logs/users"' in response.text
+    assert "action=USER_BAN&amp;sort=newest&amp;page_size=25&amp;view=admin" in response.text
+    assert "action=USER_BAN&amp;sort=newest&amp;page_size=25&amp;view=system" in response.text
+    assert 'href="/v1/admin/admin/audit-logs?view=users"' in response.text
+
+
+@pytest.mark.parametrize("page_size", [25, 50, 100])
+async def test_unified_activity_defaults_to_system_and_validates_filters(monkeypatch, page_size):
+    app, ctx = make_app(monkeypatch)
+    ctx.service = SimpleNamespace(list_audit_logs=AsyncMock(return_value=[]))
+    monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/v1/admin/admin/audit-logs",
+            params={
+                "page_size": page_size,
+                "sort": "oldest",
+                "activity_id": "",
+                "actor_user_id": "",
+                "start_at": "",
+                "end_at": "",
+            },
+        )
+        invalid = await client.get("/v1/admin/admin/audit-logs?page_size=1000")
+        reversed_dates = await client.get(
+            "/v1/admin/admin/audit-logs?start_at=2026-10-02T00:00&end_at=2026-10-01T00:00"
+        )
+    assert response.status_code == 200
+    assert invalid.status_code == 422
+    assert reversed_dates.status_code == 400
+    ctx.service.list_audit_logs.assert_awaited_once()
+    assert ctx.service.list_audit_logs.call_args.kwargs["limit"] == page_size + 1
+    assert ctx.service.list_audit_logs.call_args.kwargs["actor_categories"] == ("SYSTEM",)
+    assert ctx.service.list_audit_logs.call_args.kwargs["oldest_first"] is True
 
 
 async def test_authenticated_mutation_does_not_require_password_confirmation(monkeypatch):
