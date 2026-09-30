@@ -16,7 +16,7 @@ def test_only_persisted_audit_metadata_is_logged(caplog) -> None:
         action="ADMIN_TABLE_UPDATE",
         entity_type="users",
         entity_id=uuid4(),
-        audit_metadata={"phone": "+966500000000"},
+        audit_metadata={"phone": "+966500000000", "actor_category": "ADMIN"},
     )
     rolled_back = AuditLog(action="ADMIN_TABLE_DELETE", entity_type="users")
     session = Mock()
@@ -36,5 +36,6 @@ def test_only_persisted_audit_metadata_is_logged(caplog) -> None:
         "actor_user_id": str(actor_id),
         "entity_type": "users",
         "entity_id": str(row.entity_id),
+        "actor_category": "ADMIN",
     }
     assert "phone" not in str(fields)

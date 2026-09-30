@@ -11,8 +11,12 @@ from app.admin.i18n import ARABIC
 from app.core.middleware import RequestIdMiddleware
 from app.models import Base
 from app.repositories.audit_repository import AuditRepository
+from app.routers import auth as auth_routes
+from app.schemas.auth import RefreshRequest, RegisterRequest, VerifyOtpRequest
+from app.services.auth_service import TokenPair, VerifyResult
 from app.workers import audit as worker_audit
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi import Request as FastAPIRequest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.dialects import postgresql
 from starlette.requests import Request
@@ -88,6 +92,84 @@ async def test_http_audit_records_route_template_without_query_or_body(monkeypat
     assert "private-id" not in str(saved)
     assert session.info["audit_actor_category"] == "USER"
     session.commit.assert_awaited_once()
+
+
+async def test_http_audit_middleware_records_reads_and_rejections(monkeypatch) -> None:
+    captured = AsyncMock()
+    monkeypatch.setattr(main, "AuditRepository", lambda _session: SimpleNamespace(record=captured))
+    monkeypatch.setattr(main, "emit_committed_audit_events", lambda _session: None)
+
+    class SessionContext:
+        async def __aenter__(self):
+            return SimpleNamespace(info={}, commit=AsyncMock())
+
+        async def __aexit__(self, *_args):
+            return None
+
+    app = FastAPI()
+    app.state.session_factory = SessionContext
+    main._install_audit(app)
+
+    @app.get("/api/items/{item_id}")
+    async def read_item(request: FastAPIRequest, item_id: str) -> dict[str, str]:
+        request.state.audit_actor_id = uuid4()
+        request.state.audit_actor_category = "USER"
+        return {"id": item_id}
+
+    @app.post("/api/items/{item_id}")
+    async def reject_item(item_id: str) -> None:
+        raise HTTPException(status_code=403)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        read = await client.get("/api/items/private-id?token=secret")
+        denied = await client.post("/api/items/private-id", content=b"secret")
+        health = await client.get("/api/health")
+
+    assert (read.status_code, denied.status_code, health.status_code) == (200, 403, 404)
+    assert captured.await_count == 2
+    read_record, denied_record = [call.kwargs for call in captured.await_args_list]
+    assert read_record["action"] == "HTTP_GET"
+    assert read_record["metadata"]["route"] == "/api/items/{item_id}"
+    assert denied_record["action"] == "HTTP_POST"
+    assert denied_record["metadata"]["status"] == 403
+    assert "private-id" not in str(captured.await_args_list)
+    assert "secret" not in str(captured.await_args_list)
+
+
+@pytest.mark.parametrize("operation", ["verify", "register", "refresh"])
+async def test_successful_auth_operation_is_attributed_to_issued_user(
+    monkeypatch, operation
+) -> None:
+    user_id = uuid4()
+    tokens = TokenPair(
+        access_token="secret-access",
+        refresh_token="secret-refresh",
+        role="CUSTOMER",
+        user_id=user_id,
+    )
+    service = SimpleNamespace(
+        verify_otp=AsyncMock(return_value=VerifyResult(False, tokens, None)),
+        register=AsyncMock(return_value=tokens),
+        refresh=AsyncMock(return_value=tokens),
+    )
+    monkeypatch.setattr(auth_routes, "_service", lambda *_args: service)
+    request = Request({"type": "http", "app": SimpleNamespace()})
+
+    if operation == "verify":
+        await auth_routes.verify_otp(
+            request, None, VerifyOtpRequest(phone="0501234567", otp="123456")
+        )
+    elif operation == "register":
+        await auth_routes.register(
+            request,
+            None,
+            RegisterRequest(registration_token="secret-registration", role="CUSTOMER"),
+        )
+    else:
+        await auth_routes.refresh(request, None, RefreshRequest(refresh_token="secret-refresh"))
+
+    assert request.state.audit_actor_id == user_id
+    assert request.state.audit_actor_category == "USER"
 
 
 async def test_scheduled_job_outcome_is_recorded_on_failure(monkeypatch) -> None:

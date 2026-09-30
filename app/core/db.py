@@ -37,6 +37,7 @@ def emit_committed_audit_events(session: AsyncSession) -> None:
                 "extra_fields": {
                     "action": row.action,
                     "actor_user_id": str(row.actor_user_id) if row.actor_user_id else None,
+                    "actor_category": (row.audit_metadata or {}).get("actor_category"),
                     "entity_type": row.entity_type,
                     "entity_id": str(row.entity_id) if row.entity_id else None,
                 },

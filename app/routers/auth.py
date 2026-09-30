@@ -27,7 +27,7 @@ from app.schemas.auth import (
     VerifyOtpRequest,
     VerifyOtpResponse,
 )
-from app.services.auth_service import AuthService
+from app.services.auth_service import AuthService, TokenPair
 from app.services.otp_service import OtpService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -49,6 +49,12 @@ def _service(request: Request, db: AsyncSession) -> AuthService:
     )
 
 
+def _attribute_issued_tokens(request: Request, tokens: TokenPair) -> None:
+    """Identify a successful auth operation without recording token values."""
+    request.state.audit_actor_id = tokens.user_id
+    request.state.audit_actor_category = "ADMIN" if tokens.role == UserRole.ADMIN else "USER"
+
+
 @router.post(
     "/send-otp", response_model=SendOtpResponse, response_model_exclude_none=True, status_code=202
 )
@@ -63,6 +69,7 @@ async def verify_otp(request: Request, db: DbDep, body: VerifyOtpRequest) -> Ver
     """Verify an OTP, returning tokens for an existing user or a registration token."""
     result = await _service(request, db).verify_otp(body.phone, body.otp)
     if result.tokens is not None:
+        _attribute_issued_tokens(request, result.tokens)
         return VerifyOtpResponse(
             is_new_user=False,
             role=result.tokens.role,
@@ -86,6 +93,7 @@ async def register(request: Request, db: DbDep, body: RegisterRequest) -> TokenR
         national_id=body.national_id,
         passport_id=body.passport_id,
     )
+    _attribute_issued_tokens(request, tokens)
     return TokenResponse(
         access_token=tokens.access_token, refresh_token=tokens.refresh_token, role=tokens.role
     )
@@ -95,6 +103,7 @@ async def register(request: Request, db: DbDep, body: RegisterRequest) -> TokenR
 async def refresh(request: Request, db: DbDep, body: RefreshRequest) -> TokenResponse:
     """Rotate a refresh token, returning a new pair (reuse revokes the family)."""
     tokens = await _service(request, db).refresh(body.refresh_token)
+    _attribute_issued_tokens(request, tokens)
     return TokenResponse(
         access_token=tokens.access_token, refresh_token=tokens.refresh_token, role=tokens.role
     )

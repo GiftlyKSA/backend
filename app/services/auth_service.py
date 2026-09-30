@@ -55,11 +55,12 @@ async def validate_access_claims(
 
 @dataclass(frozen=True)
 class TokenPair:
-    """An issued access + refresh token pair with the caller's role."""
+    """Issued tokens and internal actor identity; responses expose only tokens and role."""
 
     access_token: str
     refresh_token: str
     role: str
+    user_id: uuid.UUID
 
 
 @dataclass(frozen=True)
@@ -263,7 +264,12 @@ class AuthService:
             self._settings, user_id=user.id, role=user.role.value, auth_version=user.auth_version
         )
         new_refresh = await self._new_refresh(user.id, row.family_id)
-        return TokenPair(access_token=access, refresh_token=new_refresh, role=user.role.value)
+        return TokenPair(
+            access_token=access,
+            refresh_token=new_refresh,
+            role=user.role.value,
+            user_id=user.id,
+        )
 
     async def logout(self, *, user_id: uuid.UUID, jti: str, remaining_ttl_seconds: int) -> None:
         """Sign out every device, serializing credential revocation against rotation."""
@@ -284,7 +290,7 @@ class AuthService:
             self._settings, user_id=user_id, role=role, auth_version=auth_version
         )
         refresh = await self._new_refresh(user_id, uuid.uuid4())
-        return TokenPair(access_token=access, refresh_token=refresh, role=role)
+        return TokenPair(access_token=access, refresh_token=refresh, role=role, user_id=user_id)
 
     async def _new_refresh(self, user_id: uuid.UUID, family_id: uuid.UUID) -> str:
         raw = generate_session_token()
