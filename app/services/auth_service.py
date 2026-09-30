@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_context import set_audit_actor
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, UnauthorizedError, ValidationDomainError
@@ -151,9 +152,11 @@ class AuthService:
             raise ConflictError("This phone is already registered.")
 
         if role is UserRole.CUSTOMER:
+            await set_audit_actor(self._session, category=role.value, actor_user_id=None)
             user = await self._repo.create_customer(
                 phone=phone, full_name=full_name, email=email, dob=dob
             )
+            await set_audit_actor(self._session, category=role.value, actor_user_id=user.id)
             return await self._issue_tokens(user.id, user.role.value)
 
         if role is UserRole.COURIER:
@@ -198,9 +201,11 @@ class AuthService:
         if await self._repo.fingerprint_exists(fingerprint):
             raise ConflictError("This identity document is already registered.")
 
+        await set_audit_actor(self._session, category=UserRole.COURIER.value, actor_user_id=None)
         user = await self._repo.create_courier_user(
             phone=phone, full_name=full_name, email=email, dob=dob
         )
+        await set_audit_actor(self._session, category=UserRole.COURIER.value, actor_user_id=user.id)
         cipher = build_cipher(
             self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
         )

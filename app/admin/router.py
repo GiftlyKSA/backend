@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
@@ -701,23 +701,34 @@ async def user_delete(
 
 
 @router.get("/audit-logs", response_class=HTMLResponse)
+async def audit_logs_home() -> RedirectResponse:
+    """Open the user action audit page."""
+    return RedirectResponse("/v1/admin/admin/audit-logs/users", status_code=303)
+
+
+@router.get("/audit-logs/{view}", response_class=HTMLResponse)
 async def audit_logs(
     request: Request,
     db: DbDep,
-    actor_category: str | None = Query(default=None, pattern="^(ADMIN|USER|SYSTEM|ANONYMOUS)$"),
+    view: Literal["users", "admin", "system"],
     actor_user_id: uuid.UUID | None = None,
     action: str | None = Query(default=None, max_length=100),
     entity_type: str | None = Query(default=None, max_length=50),
     before_at: datetime | None = None,
     before_id: uuid.UUID | None = None,
 ) -> HTMLResponse:
-    """List recent audit-log entries."""
+    """List user, admin, or system actions on separate pages."""
     ctx = await _ctx(request, db)
     if (before_at is None) != (before_id is None):
         raise HTTPException(status_code=400, detail="Both audit cursor fields are required.")
+    categories = {
+        "users": ("USER", "CUSTOMER", "COURIER"),
+        "admin": ("ADMIN",),
+        "system": ("SYSTEM",),
+    }[view]
     rows = await ctx.service.list_audit_logs(
         limit=101,
-        actor_category=actor_category,
+        actor_categories=categories,
         actor_user_id=actor_user_id,
         action=action or None,
         entity_type=entity_type or None,
@@ -725,32 +736,30 @@ async def audit_logs(
         before_id=before_id,
     )
     filters = {
-        "actor_category": actor_category or "",
         "actor_user_id": str(actor_user_id) if actor_user_id else "",
         "action": action or "",
         "entity_type": entity_type or "",
     }
-    shared_filters = {
-        key: value for key, value in filters.items() if key != "actor_category" and value
+    shared_filters = {key: value for key, value in filters.items() if value}
+    base_url = f"/v1/admin/admin/audit-logs/{view}"
+    view_urls = {
+        name: f"/v1/admin/admin/audit-logs/{name}"
+        + (f"?{urlencode(shared_filters)}" if shared_filters else "")
+        for name in ("users", "admin", "system")
     }
-    tab_urls = {}
-    for category in ("ALL", "ADMIN", "USER", "SYSTEM", "ANONYMOUS"):
-        query = {**shared_filters, **({"actor_category": category} if category != "ALL" else {})}
-        tab_urls[category] = "/v1/admin/admin/audit-logs" + (
-            f"?{urlencode(query)}" if query else ""
-        )
-    clear_url = "/v1/admin/admin/audit-logs" + (
-        f"?{urlencode({'actor_category': actor_category})}" if actor_category else ""
-    )
     next_url = None
     if len(rows) > 100:
         last = rows[99]
-        next_url = "/v1/admin/admin/audit-logs?" + urlencode(
-            {
-                **{key: value for key, value in filters.items() if value},
-                "before_at": last.created_at.isoformat(),
-                "before_id": str(last.id),
-            }
+        next_url = (
+            base_url
+            + "?"
+            + urlencode(
+                {
+                    **{key: value for key, value in filters.items() if value},
+                    "before_at": last.created_at.isoformat(),
+                    "before_id": str(last.id),
+                }
+            )
         )
     return _render(
         request,
@@ -759,7 +768,7 @@ async def audit_logs(
         logs=rows[:100],
         next_url=next_url,
         filters=filters,
-        active_category=actor_category or "ALL",
-        tab_urls=tab_urls,
-        clear_url=clear_url,
+        active_view=view,
+        view_urls=view_urls,
+        clear_url=base_url,
     )

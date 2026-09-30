@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy import literal_column, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditLog
+from app.models import AuditLog, User
 
 
 class AuditRepository:
@@ -34,8 +34,14 @@ class AuditRepository:
     ) -> AuditLog:
         """Append one audit row and flush it."""
         actor_category = self._session.info.get("audit_actor_category")
-        if actor_category not in {"ADMIN", "USER", "SYSTEM", "ANONYMOUS"}:
-            actor_category = "USER" if actor_user_id else "SYSTEM"
+        if actor_category not in {"ADMIN", "CUSTOMER", "COURIER", "SYSTEM"}:
+            if actor_user_id is None:
+                actor_category = "SYSTEM"
+            else:
+                role = await self._session.scalar(select(User.role).where(User.id == actor_user_id))
+                if role is None:
+                    raise ValueError("Audit actor was not found.")
+                actor_category = role.value
         row = AuditLog(
             actor_user_id=actor_user_id,
             action=action,
@@ -56,6 +62,7 @@ class AuditRepository:
         action: str | None = None,
         entity_type: str | None = None,
         actor_category: str | None = None,
+        actor_categories: tuple[str, ...] | None = None,
         before_at: datetime | None = None,
         before_id: uuid.UUID | None = None,
         limit: int = 50,
@@ -63,6 +70,9 @@ class AuditRepository:
         """Return recent audit rows, newest first, with optional filters."""
         query = (
             select(AuditLog)
+            .where(AuditLog.action.not_like("HTTP\\_%", escape="\\"))
+            .where(AuditLog.action.not_like("WS\\_%", escape="\\"))
+            .where(AuditLog.action != "SYSTEM_JOB_RUN")
             .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
             .limit(max(1, min(limit, 101)))
         )
@@ -72,11 +82,11 @@ class AuditRepository:
             query = query.where(AuditLog.action == action)
         if entity_type is not None:
             query = query.where(AuditLog.entity_type == entity_type)
-        if actor_category is not None:
-            query = query.where(
-                AuditLog.audit_metadata.op("->>")(literal_column("'actor_category'"))
-                == actor_category
-            )
+        category = AuditLog.audit_metadata.op("->>")(literal_column("'actor_category'"))
+        if actor_categories is not None:
+            query = query.where(category.in_(actor_categories))
+        elif actor_category is not None:
+            query = query.where(category == actor_category)
         if before_at is not None and before_id is not None:
             query = query.where(tuple_(AuditLog.created_at, AuditLog.id) < (before_at, before_id))
         return list(await self._session.scalars(query))

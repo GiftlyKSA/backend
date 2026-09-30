@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-heading"><h1>{{ tr('Audit trail') }}</h1></div>
+<div class="page-heading"><h1>{{ tr({'users': 'User activity', 'admin': 'Admin activity', 'system': 'System activity'}[active_view]) }}</h1></div>
 <nav class="audit-tabs" aria-label="{{ tr('Audit categories') }}">
-  {% for category, label in [('ALL', 'All activity'), ('ADMIN', 'Admin activity'), ('USER', 'User activity'), ('SYSTEM', 'System activity'), ('ANONYMOUS', 'Guest activity')] %}
-  <a href="{{ tab_urls[category] }}" class="{{ 'active' if active_category == category else '' }}" {% if active_category == category %}aria-current="page"{% endif %}>{{ tr(label) }}</a>
+  {% for view, label in [('users', 'User activity'), ('admin', 'Admin activity'), ('system', 'System activity')] %}
+  <a href="{{ view_urls[view] }}" class="{{ 'active' if active_view == view else '' }}" {% if active_view == view %}aria-current="page"{% endif %}>{{ tr(label) }}</a>
   {% endfor %}
 </nav>
-<form class="audit-filters card" method="get" action="/v1/admin/admin/audit-logs">
-  {% if filters.actor_category %}<input type="hidden" name="actor_category" value="{{ filters.actor_category }}">{% endif %}
+<form class="audit-filters card" method="get" action="/v1/admin/admin/audit-logs/{{ active_view }}">
   <label>{{ tr('Actor ID') }}<input name="actor_user_id" type="text" value="{{ filters.actor_user_id }}" placeholder="UUID"></label>
   <label>{{ tr('Action') }}<input name="action" type="text" maxlength="100" value="{{ filters.action }}"></label>
   <label>{{ tr('Entity') }}<input name="entity_type" type="text" maxlength="50" value="{{ filters.entity_type }}"></label>
@@ -15,11 +14,11 @@
   <a class="btn secondary" href="{{ clear_url }}">{{ tr('Clear filters') }}</a>
 </form>
 <div class="table-scroll"><table class="list data-table">
-  <thead><tr><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Route') }}</th><th>{{ tr('Result') }}</th><th>{{ tr('Details') }}</th></tr></thead>
+  <thead><tr><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Details') }}</th></tr></thead>
   <tbody>{% for l in logs %}
     {% set metadata = l.audit_metadata or {} %}
-    <tr><td>{{ l.created_at }}</td><td>{{ tr(metadata.get('actor_category', 'Unclassified')) }}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{{ metadata.get('route', '—') }}</td><td>{{ metadata.get('status', '—') }}</td><td>{% if metadata.get('job') %}{{ tr('Job') }}: {{ metadata.job }} · {{ tr(metadata.get('outcome', '')) }}{% elif metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
-  {% else %}<tr><td colspan="8">{{ tr('No entries.') }}</td></tr>{% endfor %}</tbody>
+    <tr><td>{{ l.created_at }}</td><td>{{ tr(metadata.get('actor_category', 'Unclassified')) }}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{% if metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6">{{ tr('No entries.') }}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% if next_url %}<p class="pager"><a class="btn secondary" href="{{ next_url }}">{{ tr('More events') }}</a></p>{% endif %}
 {% endblock %}

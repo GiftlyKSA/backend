@@ -16,7 +16,6 @@ from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
 from app.repositories.wallet_repository import WalletRepository
 from app.services.money_service import MoneyService, ReconcileReport
-from app.workers.audit import audited_system_job
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.reconciliation")
@@ -48,7 +47,6 @@ async def run_reconciliation() -> ReconcileReport:
 
 
 @broker.task(schedule=[{"cron": "0 3 * * *"}])
-@audited_system_job("reconcile_ledger")
 async def reconcile_ledger() -> None:
     """Nightly task: acquire a lock, reconcile, and page on drift."""
     settings = get_settings()

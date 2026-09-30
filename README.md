@@ -249,28 +249,25 @@ application workers. Development and test logins do not require this code.
 tables in every environment, including production. Every write requires an active admin
 session and CSRF verification. Each successful operation
 records the actor, table, record, and changed field names without logging field values.
-Committed audit events also emit metadata-only `giftly.audit` log entries with actor
-category. Forward the application log stream to a restricted, independently retained
-sink in production. Without that deployment control, database administrators can still
-alter local audit history.
+Database triggers also record committed changes to application tables, including direct
+SQL writes, in the same transaction. The log contains actor category, record ID, and
+operation, never row values. Explicit service audit events emit metadata-only
+`giftly.audit` application log entries; trigger-generated rows are not forwarded by
+that mechanism. Database administrators can still alter local audit history, so an
+independent retention destination remains necessary.
 Deletion requires a confirmation checkbox and follows database cascade rules.
 
 The dashboard opens in Arabic with a right-to-left layout. Language and light/dark
 appearance controls are available on the login page and in the dashboard header.
 
-The Audit page separates admin, customer/courier, system, and unauthenticated guest
-activity into tabs, with an All view for cross-category searches. Each view filters by
-actor ID, action, or entity and pages 100 entries at a time. Business and admin HTTP
-requests record the route template, method, result code, and request ID; chat WebSocket
-connections, sent messages, and scheduled job outcomes also record metadata-only events.
-Bodies, query strings, tokens, and message text are never copied into the audit table.
-Successful OTP sign-in, registration, and token refresh are attributed to the issued user;
-failed or pre-account authentication attempts remain guest events without a phone number.
-Health checks, static assets, documentation requests, and CORS preflight are excluded
-to avoid operational noise. A separate audit write failure is logged as an error;
-domain audit entries made inside business transactions still fail those transactions
-when they cannot be saved. Plan database retention and an independent log sink before
-the audit table grows large.
+User, admin, and system audit activity have separate dashboard pages. User activity
+combines customer and courier changes. Each page filters by actor ID, action, or entity
+and pages 100 entries at a time. Reads, HTTP requests, WebSocket lifecycle events,
+login/logout, and scheduled-job start/completion are not database audit actions.
+Migration `0009_action_only_audit` removes existing `HTTP_*` audit rows; restore a
+database backup if those historical rows are needed. Other old operational rows are
+hidden from the action pages. An audit write failure rolls back its data change. Plan
+retention and measure audit-table growth before production use.
 
 Foreign-key inputs search related records in pages of 25 instead of asking for IDs.
 One-to-one choices exclude already-used records and preserve the current edit selection.

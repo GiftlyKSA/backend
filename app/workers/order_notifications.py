@@ -5,14 +5,12 @@ from __future__ import annotations
 import logging
 
 from app.services.order_notification_service import send_pending_order_notifications
-from app.workers.audit import audited_system_job
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.order_notifications")
 
 
 @broker.task(schedule=[{"cron": "* * * * *"}])
-@audited_system_job("deliver_order_notifications")
 async def deliver_order_notifications() -> None:
     """Drain a bounded portion of the committed outbox every minute."""
     sent = await send_pending_order_notifications()

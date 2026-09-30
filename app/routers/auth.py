@@ -52,7 +52,7 @@ def _service(request: Request, db: AsyncSession) -> AuthService:
 def _attribute_issued_tokens(request: Request, tokens: TokenPair) -> None:
     """Identify a successful auth operation without recording token values."""
     request.state.audit_actor_id = tokens.user_id
-    request.state.audit_actor_category = "ADMIN" if tokens.role == UserRole.ADMIN else "USER"
+    request.state.audit_actor_category = tokens.role
 
 
 @router.post(

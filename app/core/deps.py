@@ -16,6 +16,7 @@ from fastapi import Depends, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_context import mark_request_transaction, set_audit_actor
 from app.core.config import Settings
 from app.core.db import emit_committed_audit_events
 from app.core.exceptions import ForbiddenError, UnauthorizedError
@@ -51,6 +52,7 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
     factory = request.app.state.session_factory
     async with factory() as session:
         try:
+            await mark_request_transaction(session)
             yield session
             await session.commit()
             emit_committed_audit_events(session)
@@ -86,8 +88,8 @@ async def require_auth(request: Request, db: AsyncSession = Depends(get_db)) -> 
         raise UnauthorizedError("Malformed token role.") from exc
     actor = Actor(id=uuid.UUID(claims.sub), role=role, jti=claims.jti)
     request.state.audit_actor_id = actor.id
-    request.state.audit_actor_category = "ADMIN" if role is UserRole.ADMIN else "USER"
-    db.info["audit_actor_category"] = request.state.audit_actor_category
+    request.state.audit_actor_category = role.value
+    await set_audit_actor(db, category=role.value, actor_user_id=actor.id)
     return actor
 
 

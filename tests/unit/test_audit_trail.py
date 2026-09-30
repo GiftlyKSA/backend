@@ -14,12 +14,13 @@ from app.repositories.audit_repository import AuditRepository
 from app.routers import auth as auth_routes
 from app.schemas.auth import RefreshRequest, RegisterRequest, VerifyOtpRequest
 from app.services.auth_service import TokenPair, VerifyResult
-from app.workers import audit as worker_audit
 from fastapi import FastAPI, HTTPException
 from fastapi import Request as FastAPIRequest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.dialects import postgresql
 from starlette.requests import Request
+
+from tests.conftest import make_test_settings
 
 
 async def test_audit_repository_tags_actor_and_supports_stable_filters() -> None:
@@ -51,55 +52,24 @@ async def test_audit_repository_tags_actor_and_supports_stable_filters() -> None
     assert "audit_logs.id" in compiled
     assert "LIMIT" in compiled
 
-
-async def test_http_audit_records_route_template_without_query_or_body(monkeypatch) -> None:
-    actor_id = uuid4()
-    session = SimpleNamespace(info={}, commit=AsyncMock())
-
-    class SessionContext:
-        async def __aenter__(self):
-            return session
-
-        async def __aexit__(self, *_args):
-            return None
-
-    captured = AsyncMock()
-    monkeypatch.setattr(main, "AuditRepository", lambda _session: SimpleNamespace(record=captured))
-    monkeypatch.setattr(main, "emit_committed_audit_events", lambda _session: None)
-    app = SimpleNamespace(state=SimpleNamespace(session_factory=SessionContext))
-    request = Request(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/api/users/private-id",
-            "query_string": b"token=private-value",
-            "headers": [],
-            "client": ("127.0.0.1", 1234),
-            "route": SimpleNamespace(path="/api/users/{user_id}"),
-            "app": app,
-        }
+    await repository.list_recent(actor_categories=("USER", "CUSTOMER", "COURIER"))
+    grouped = str(
+        session.scalars.call_args.args[0].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
     )
-    request.state.audit_actor_id = actor_id
-    request.state.audit_actor_category = "USER"
-
-    await main._record_http_audit(request, 200)
-
-    saved = captured.call_args.kwargs
-    assert saved["actor_user_id"] == actor_id
-    assert saved["metadata"]["route"] == "/api/users/{user_id}"
-    assert saved["metadata"]["status"] == 200
-    assert "private-value" not in str(saved)
-    assert "private-id" not in str(saved)
-    assert session.info["audit_actor_category"] == "USER"
-    session.commit.assert_awaited_once()
+    assert " IN " in grouped
+    assert "HTTP" in grouped
 
 
-async def test_http_audit_middleware_records_reads_and_rejections(monkeypatch) -> None:
-    captured = AsyncMock()
-    monkeypatch.setattr(main, "AuditRepository", lambda _session: SimpleNamespace(record=captured))
-    monkeypatch.setattr(main, "emit_committed_audit_events", lambda _session: None)
+async def test_http_requests_do_not_create_database_audit_rows() -> None:
+    factory_calls = 0
 
     class SessionContext:
+        def __init__(self):
+            nonlocal factory_calls
+            factory_calls += 1
+
         async def __aenter__(self):
             return SimpleNamespace(info={}, commit=AsyncMock())
 
@@ -108,7 +78,7 @@ async def test_http_audit_middleware_records_reads_and_rejections(monkeypatch) -
 
     app = FastAPI()
     app.state.session_factory = SessionContext
-    main._install_audit(app)
+    main._install_middleware(app, make_test_settings(RATE_LIMIT_ENABLED=False))
 
     @app.get("/api/items/{item_id}")
     async def read_item(request: FastAPIRequest, item_id: str) -> dict[str, str]:
@@ -126,14 +96,7 @@ async def test_http_audit_middleware_records_reads_and_rejections(monkeypatch) -
         health = await client.get("/api/health")
 
     assert (read.status_code, denied.status_code, health.status_code) == (200, 403, 404)
-    assert captured.await_count == 2
-    read_record, denied_record = [call.kwargs for call in captured.await_args_list]
-    assert read_record["action"] == "HTTP_GET"
-    assert read_record["metadata"]["route"] == "/api/items/{item_id}"
-    assert denied_record["action"] == "HTTP_POST"
-    assert denied_record["metadata"]["status"] == 403
-    assert "private-id" not in str(captured.await_args_list)
-    assert "secret" not in str(captured.await_args_list)
+    assert factory_calls == 0
 
 
 @pytest.mark.parametrize("operation", ["verify", "register", "refresh"])
@@ -169,23 +132,7 @@ async def test_successful_auth_operation_is_attributed_to_issued_user(
         await auth_routes.refresh(request, None, RefreshRequest(refresh_token="secret-refresh"))
 
     assert request.state.audit_actor_id == user_id
-    assert request.state.audit_actor_category == "USER"
-
-
-async def test_scheduled_job_outcome_is_recorded_on_failure(monkeypatch) -> None:
-    record = AsyncMock()
-    monkeypatch.setattr(worker_audit, "_record_job_outcome", record)
-
-    @worker_audit.audited_system_job("example_job")
-    async def failing_job() -> None:
-        raise RuntimeError("job failed")
-
-    with pytest.raises(RuntimeError, match="job failed"):
-        await failing_job()
-    assert [call.args for call in record.await_args_list] == [
-        ("example_job", "STARTED"),
-        ("example_job", "FAILED"),
-    ]
+    assert request.state.audit_actor_category == "CUSTOMER"
 
 
 async def test_untrusted_request_id_is_bounded_before_logging() -> None:

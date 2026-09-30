@@ -61,7 +61,7 @@ code { background:#f0f0f5; padding:.1rem .3rem; border-radius:4px; }
 :root { --surface:#fff; --soft:#f6f8fd; --navy:#111b4b; --border:#e2e8f4; }
 body { background:#fbfcff; color:var(--navy); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
 a { color:#273aae; }
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #7d8ce3; outline-offset:2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #7d8ce3; outline-offset:2px; }
 .admin-app { display:flex; min-height:100vh; }
 .sidebar { width:250px; flex:none; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:25px 13px; }
 .brand { display:block; padding:0 14px 34px; color:#15257c; font-size:29px; font-weight:800; letter-spacing:-.055em; text-decoration:none; white-space:nowrap; }
@@ -70,11 +70,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .sidebar nav a { display:flex; align-items:center; gap:15px; min-height:47px; padding:8px 14px; border-radius:9px; color:#25345d; font-weight:500; text-decoration:none; }
 .sidebar nav a:hover, .sidebar nav a.active { background:#eef0ff; color:#2435a2; }
 .nav-icon { width:23px; text-align:center; font-size:23px; font-weight:400; line-height:1; }
-.sidebar .logout { margin-top:auto; padding:20px 13px 0; }
-.sidebar .logout button { width:100%; }
 .workspace { min-width:0; width:100%; }
 .workspace-header { height:69px; padding:0 32px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:#fff; color:#697797; font-size:13px; }
 .account-badge { display:grid; place-items:center; width:42px; height:42px; border-radius:50%; background:#6f76d9; color:#fff; font-weight:700; }
+.header-tools { display:flex; align-items:center; gap:12px; margin-inline-start:auto; }
+.account-menu { position:relative; }
+.account-menu summary { cursor:pointer; list-style:none; }
+.account-menu summary::-webkit-details-marker { display:none; }
+.account-menu-panel { position:absolute; z-index:20; inset-inline-end:0; top:calc(100% + 8px); min-width:145px; padding:8px; border:1px solid var(--border); border-radius:9px; background:var(--surface); box-shadow:0 8px 24px #111b4b24; }
+.account-menu-panel button { width:100%; white-space:nowrap; }
 .admin-app main { max-width:none; margin:0; padding:32px; }
 .auth-page main { max-width:480px; margin:7vh auto; }
 .overview-heading { margin:0 0 27px; }
@@ -126,16 +130,16 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .activity-list li:last-child { margin-bottom:3px; }.activity-list li span { color:#74809a; }
 @media (max-width:1200px) { .metrics { grid-template-columns:repeat(3,minmax(0,1fr)); } .overview-row, .overview-row.lower { grid-template-columns:1fr; } }
 @media (max-width:900px) { .overview-charts { grid-template-columns:1fr; } }
-@media (max-width:750px) { .admin-app { display:block; }.sidebar { width:auto; padding:13px; }.brand { padding:0 8px 12px; }.sidebar nav { display:flex; overflow-x:auto; }.sidebar nav a { white-space:nowrap; min-height:40px; }.sidebar .logout { position:absolute; right:12px; top:8px; padding:0; }.workspace-header { height:48px; padding:0 16px; }.admin-app main { padding:20px 14px; }.metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:750px) { .admin-app { display:block; }.sidebar { width:auto; padding:13px; }.brand { padding:0 8px 12px; }.sidebar nav { display:flex; overflow-x:auto; }.sidebar nav a { white-space:nowrap; min-height:40px; }.workspace-header { height:48px; padding:0 16px; }.admin-app main { padding:20px 14px; }.metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:480px) { .metrics, .attention-grid { grid-template-columns:1fr; } }
 
 /* Display preferences share the existing dashboard palette and layout. */
 .display-controls { display:flex; align-items:center; gap:8px; margin-inline-start:auto; }
-.display-controls a { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:5px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--navy); font-weight:600; text-decoration:none; white-space:nowrap; }
-.display-controls a:hover { border-color:var(--accent); color:var(--accent); }
+.display-controls form { margin:0; }
+.display-controls button { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:5px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--navy); font-weight:600; white-space:nowrap; }
+.display-controls button:hover { border-color:var(--accent); color:var(--accent); }
 .auth-controls { justify-content:flex-end; padding:16px 20px 0; }
 .workspace-header { gap:14px; }
-.workspace-header nav { display:flex; gap:12px; margin-inline-start:auto; }
 [dir="rtl"] body { font-family:Tahoma,"Segoe UI",Arial,sans-serif; }
 [dir="rtl"] .sidebar { border-right:0; border-left:1px solid var(--border); }
 [dir="rtl"] .table-card { border-left:1px solid var(--line); border-right:3px solid #a0a4b8; }
@@ -161,4 +165,7 @@ input[type="url"], input[type="email"], input[type="tel"], input[type="datetime-
 [data-theme="dark"] .attention-item small, [data-theme="dark"] .balance-item span { color:var(--muted); }
 [data-theme="dark"] .panel .list th, [data-theme="dark"] code, [data-theme="dark"] .daily-chart .track, [data-theme="dark"] .status-chart .track { background:#2b3858; color:var(--fg); }
 [data-theme="dark"] .status-pill { background:#334679; color:#e6ebff; }
-@media (max-width:750px) { .workspace-header { flex-wrap:wrap; height:auto; min-height:48px; padding-block:8px; } .workspace-header nav { order:3; width:100%; overflow-x:auto; } [dir="rtl"] .sidebar .logout { left:12px; right:auto; } }
+[data-theme="dark"] .display-controls button, [data-theme="dark"] .account-menu-panel { background:var(--surface); color:var(--fg); border-color:var(--border); }
+[data-theme="dark"] .table-card:hover, [data-theme="dark"] .audit-tabs a { background:var(--soft); color:var(--fg); }
+[data-theme="dark"] .daily-chart .daily-bar { background:#2b3858; }
+@media (max-width:750px) { .workspace-header { flex-wrap:wrap; height:auto; min-height:48px; padding-block:8px; } .header-tools { gap:8px; } .display-controls { gap:5px; } .display-controls button { padding:5px 7px; } }

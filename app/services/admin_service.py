@@ -218,6 +218,7 @@ class AdminService:
         actor_user_id: uuid.UUID | None = None,
         action: str | None = None,
         actor_category: str | None = None,
+        actor_categories: tuple[str, ...] | None = None,
         entity_type: str | None = None,
         before_at: datetime | None = None,
         before_id: uuid.UUID | None = None,
@@ -229,6 +230,7 @@ class AdminService:
                 actor_user_id=actor_user_id,
                 action=action,
                 actor_category=actor_category,
+                actor_categories=actor_categories,
                 entity_type=entity_type,
                 before_at=before_at,
                 before_id=before_id,
@@ -306,31 +308,17 @@ class AdminService:
                 profile.passport_id_encrypted,
                 build_aad("courier_profiles", "passport_id", str(courier_user_id)),
             )
-        await self._audit.record(
-            actor_user_id=admin_id,
-            action="IDENTITY_REVEAL",
-            entity_type="courier_profiles",
-            entity_id=courier_user_id,
-            ip_address=ip,
-        )
         return result
 
     async def reveal_iban(
         self, *, admin_id: uuid.UUID, withdrawal: Withdrawal, ip: str | None
     ) -> str:
-        """Decrypt a withdrawal IBAN for an authenticated admin; audited."""
+        """Decrypt a withdrawal IBAN for an authenticated admin."""
         cipher = build_cipher(
             self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
         )
         iban = cipher.decrypt(
             withdrawal.iban_encrypted, build_aad("withdrawals", "iban", str(withdrawal.id))
-        )
-        await self._audit.record(
-            actor_user_id=admin_id,
-            action="IBAN_REVEAL",
-            entity_type="withdrawals",
-            entity_id=withdrawal.id,
-            ip_address=ip,
         )
         return iban
 

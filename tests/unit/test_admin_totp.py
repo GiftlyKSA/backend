@@ -56,6 +56,7 @@ async def test_production_login_requires_totp_before_session() -> None:
             user_agent=None,
         )
     create.assert_not_awaited()
+    service._users.ensure_dashboard_admin.assert_not_awaited()
 
 
 async def test_production_login_accepts_valid_totp_once(monkeypatch: pytest.MonkeyPatch) -> None:

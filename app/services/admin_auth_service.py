@@ -97,6 +97,8 @@ class AdminAuthService:
         keys = await self._check_login_throttle(username, ip)
         if not self._credentials_match(username, password):
             raise generic
+        if self._settings.is_production:
+            await self._verify_totp(totp_code)
         user = await self._users.ensure_dashboard_admin(username)
         if (
             user is None
@@ -105,8 +107,6 @@ class AdminAuthService:
             or user.deleted_at is not None
         ):
             raise generic
-        if self._settings.is_production:
-            await self._verify_totp(totp_code)
         await self._redis.delete(*keys)
 
         raw = generate_session_token()

@@ -8,7 +8,6 @@ unrestricted only in development; dev-only routes are registered only in develop
 
 from __future__ import annotations
 
-import ipaddress
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -18,19 +17,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app.core.config import Settings, get_settings
-from app.core.db import build_engine, build_session_factory, emit_committed_audit_events
+from app.core.db import build_engine, build_session_factory
 from app.core.jwt import JwtError, decode_access_token
 from app.core.logging import configure_logging
 from app.core.middleware import (
     RequestIdMiddleware,
-    current_request_id,
     error_response,
     register_exception_handlers,
 )
 from app.core.ratelimit import RateLimiter
 from app.core.redis import build_redis
 from app.integrations.factory import build_clients
-from app.repositories.audit_repository import AuditRepository
 from app.routers import health
 
 logger = logging.getLogger(__name__)
@@ -198,66 +195,11 @@ def _install_middleware(app: FastAPI, settings: Settings) -> None:
     """
     _install_request_guards(app, settings)
 
-    _install_audit(app)
-
     app.add_middleware(RequestIdMiddleware)
 
     _install_cors(app, settings)
 
     _install_security_headers(app)
-
-
-def _install_audit(app: FastAPI) -> None:
-    """Persist one metadata-only record for each business or admin HTTP request."""
-
-    @app.middleware("http")
-    async def _audit_request(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        path = request.url.path
-        if request.method == "OPTIONS" or path.startswith(
-            ("/api/health", "/v1/admin/admin/static", "/docs", "/redoc", "/openapi.json")
-        ):
-            return await call_next(request)
-
-        try:
-            response = await call_next(request)
-        except Exception:
-            await _record_http_audit(request, 500)
-            raise
-        await _record_http_audit(request, response.status_code)
-        return response
-
-
-async def _record_http_audit(request: Request, status_code: int) -> None:
-    """Store route metadata only; never persist query strings, bodies, or credentials."""
-    route = request.scope.get("route")
-    route_path = getattr(route, "path", None) or "<unmatched>"
-    actor_id = getattr(request.state, "audit_actor_id", None)
-    category = getattr(request.state, "audit_actor_category", "ANONYMOUS")
-    try:
-        ip = str(ipaddress.ip_address(request.client.host)) if request.client else None
-    except ValueError:
-        ip = None
-    try:
-        async with request.app.state.session_factory() as session:
-            session.info["audit_actor_category"] = category
-            await AuditRepository(session).record(
-                actor_user_id=actor_id,
-                action=f"HTTP_{request.method[:16]}",
-                entity_type="http_request",
-                entity_id=None,
-                ip_address=ip,
-                metadata={
-                    "route": route_path,
-                    "status": status_code,
-                    "request_id": current_request_id(),
-                },
-            )
-            await session.commit()
-            emit_committed_audit_events(session)
-    except Exception:
-        logger.exception("Failed to save the HTTP audit event for %s", route_path)
 
 
 def _guard_body_size(

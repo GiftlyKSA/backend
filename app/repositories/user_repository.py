@@ -11,6 +11,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_context import set_audit_actor
 from app.models import City, Conversation, CourierProfile, Order, User
 from app.models.enums import UserRole, UserStatus
 
@@ -150,6 +151,7 @@ class UserRepository:
         """
         admin_id = uuid.uuid5(_DASHBOARD_ADMIN_NAMESPACE, username)
         internal_phone = f"admin:{hashlib.sha256(username.encode()).hexdigest()[:14]}"
+        await set_audit_actor(self._session, category="ADMIN", actor_user_id=admin_id)
         await self._session.execute(
             insert(User)
             .values(

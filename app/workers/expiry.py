@@ -29,7 +29,6 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.services.expiry_service import ExpiryService
-from app.workers.audit import audited_system_job
 from app.workers.broker import broker
 
 _logger = logging.getLogger("app.workers.expiry")
@@ -110,7 +109,6 @@ async def _expire_topup_intent(session: AsyncSession, intent_id: uuid.UUID) -> b
 
 
 @broker.task(schedule=[{"cron": "*/10 * * * *"}])
-@audited_system_job("run_expire_stale")
 async def run_expire_stale() -> None:
     """Scheduled task: acquire a lock and expire lapsed invoices/intents."""
     settings = get_settings()
@@ -163,7 +161,6 @@ async def purge_refresh_tokens(
 
 
 @broker.task(schedule=[{"cron": "0 * * * *"}])
-@audited_system_job("run_purge_refresh_tokens")
 async def run_purge_refresh_tokens() -> None:
     """Nightly task: acquire a lock and purge long-expired refresh tokens."""
     settings = get_settings()
