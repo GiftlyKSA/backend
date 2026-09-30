@@ -14,8 +14,19 @@
   </span>
 </div>
 <p><a class="btn" href="/v1/admin/admin/tables/{{ data.table.name }}/new">{{ tr('Add record') }}</a></p>
+<form class="audit-filters card" method="get" action="{{ browser_url }}">
+  <label>{{ tr('Sort by') }}<select name="sort_by">{% for field in data.sort_fields %}<option value="{{ field }}" {% if filters.sort_by == field %}selected{% endif %}>{{ tr(field|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Direction') }}<select name="direction"><option value="desc" {% if filters.direction == 'desc' %}selected{% endif %}>{{ tr('Descending') }}</option><option value="asc" {% if filters.direction == 'asc' %}selected{% endif %}>{{ tr('Ascending') }}</option></select></label>
+  <label>{{ tr('From (UTC)') }}<input type="datetime-local" step="1" name="start_at" value="{{ filters.start_at }}"></label>
+  <label>{{ tr('To (UTC)') }}<input type="datetime-local" step="1" name="end_at" value="{{ filters.end_at }}"></label>
+  <label>{{ tr('Filter field') }}<select name="filter_field"><option value="">{{ tr('All records') }}</option>{% for field in data.filter_fields %}<option value="{{ field }}" {% if filters.filter_field == field %}selected{% endif %}>{{ tr(field|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Exact value') }}<input name="filter_value" maxlength="255" value="{{ filters.filter_value }}"><small class="note">{{ tr('Use true or false for boolean fields.') }}</small></label>
+  <label>{{ tr('Per page') }}<select name="page_size">{% for size in [25, 50, 100] %}<option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>{% endfor %}</select></label>
+  <button type="submit">{{ tr('Filter') }}</button>
+  <a class="btn secondary" href="{{ browser_url }}">{{ tr('Clear filters') }}</a>
+</form>
 <p class="note">
-  {{ tr('Showing up to 50 records per page. Encrypted, credential, and token fields stay masked.') }}
+  {{ tr('Records per page') }}: {{ filters.page_size }}. {{ tr('Encrypted, credential, and token fields stay masked.') }}
   {% if data.table.name == "users" %}{{ tr('Signed-in dashboard admins can view user contact fields.') }}{% else %}{{ tr('Personal-contact fields stay masked.') }}{% endif %}
   {{ tr('Open a record link to view, edit, or delete it.') }}
 </p>
@@ -23,13 +34,13 @@
   <table class="list data-table">
     <thead><tr>{% for column in data.columns %}<th>{{ tr(column|replace('_', ' ')|title) }}</th>{% endfor %}<th>{{ tr('Actions') }}</th></tr></thead>
     <tbody>{% for row in data.rows %}
-      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}<td>{% if row.edit_url %}<a href="{{ row.edit_url }}">{{ tr('Edit / delete') }}</a>{% endif %}</td></tr>
+      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.detail_url or row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}<td>{% if row.edit_url %}<a href="{{ row.edit_url }}">{{ tr('Edit / delete') }}</a>{% endif %}</td></tr>
     {% else %}<tr><td colspan="{{ data.columns|length + 1 }}">{{ tr('No records.') }}</td></tr>{% endfor %}</tbody>
   </table>
 </div>
 <div class="pager">
-  {% if data.previous_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?before={{ data.previous_cursor }}">{{ tr('Previous') }}</a>{% endif %}
-  {% if data.next_cursor %}<a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}?after={{ data.next_cursor }}">{{ tr('Next') }}</a>{% endif %}
+  {% if previous_url %}<a class="btn secondary" href="{{ previous_url }}">{{ tr('Previous') }}</a>{% endif %}
+  {% if next_url %}<a class="btn secondary" href="{{ next_url }}">{{ tr('Next') }}</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

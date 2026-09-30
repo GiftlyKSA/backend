@@ -14,6 +14,7 @@ from app.admin.router import router
 from app.core.exceptions import ConflictError, DomainError
 from app.core.security import make_csrf_token
 from app.models import Base
+from app.repositories.admin_read_repository import AdminTableInfo, AdminTablePage
 from app.services.admin_table_fields import form_fields
 from app.services.admin_table_service import TableForm
 from fastapi import FastAPI
@@ -51,6 +52,63 @@ def make_app(monkeypatch):
     )
     monkeypatch.setattr(table_router, "require_admin", AsyncMock(return_value=ctx))
     return app, ctx
+
+
+@pytest.mark.parametrize(
+    "path,table",
+    [
+        ("orders", "orders"),
+        ("couriers", "courier_profiles"),
+        ("invoices", "invoices"),
+        ("promos", "promos"),
+        ("disputes", "disputes"),
+        ("withdrawals", "withdrawals"),
+        ("wallets", "wallets"),
+        ("topups", "wallet_topups"),
+        ("tables/users", "users"),
+        ("users", "users"),
+    ],
+)
+async def test_every_list_uses_shared_filters_and_page_sizes(monkeypatch, path, table):
+    app, ctx = make_app(monkeypatch)
+    page = AdminTablePage(
+        AdminTableInfo(table, True),
+        ["id"],
+        "id",
+        [],
+        None,
+        None,
+        sort_fields=["created_at", "id"],
+        filter_fields=["id"],
+        sort_by="created_at",
+    )
+    ctx.service = SimpleNamespace(browse_table=AsyncMock(return_value=page))
+    monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/v1/admin/admin/{path}?page_size=50&direction=asc")
+    assert response.status_code == 200
+    assert 'name="filter_field"' in response.text
+    assert 'name="sort_by"' in response.text
+    assert 'value="50" selected' in response.text
+    called_table, options = ctx.service.browse_table.call_args.args
+    assert called_table == table
+    assert options.page_size == 50
+    assert options.direction == "asc"
+
+
+async def test_promo_redemptions_keep_promo_scope_with_filters(monkeypatch):
+    app, ctx = make_app(monkeypatch)
+    ctx.service = SimpleNamespace(browse_table=AsyncMock(return_value=None))
+    monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
+    promo_id = uuid4()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/v1/admin/admin/promos/{promo_id}/redemptions?page_size=100")
+    assert response.status_code == 200
+    table, options = ctx.service.browse_table.call_args.args
+    assert table == "promo_redemptions"
+    assert options.scope_field == "promo_id"
+    assert options.scope_value == str(promo_id)
+    assert options.page_size == 100
 
 
 @pytest.mark.parametrize("operation", ["new", "edit", "delete"])

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
@@ -31,6 +31,12 @@ from app.models.enums import (
     DisputeStatus,
     OrderStatus,
     WithdrawalStatus,
+)
+from app.repositories.admin_browse_query import (
+    BrowseOptions,
+    browse_query,
+    date_columns,
+    scalar_column,
 )
 
 _PAGE_SIZE = 50
@@ -75,6 +81,7 @@ class AdminTableRow:
 
     cells: list[str]
     edit_url: str | None
+    detail_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +94,11 @@ class AdminTablePage:
     rows: list[AdminTableRow]
     next_cursor: uuid.UUID | None
     previous_cursor: uuid.UUID | None
+    next_at: str = ""
+    previous_at: str = ""
+    sort_fields: list[str] = field(default_factory=list)
+    filter_fields: list[str] = field(default_factory=list)
+    sort_by: str = ""
 
 
 def table_page_query(
@@ -113,6 +125,65 @@ class AdminReadRepository:
     def list_table_catalog(self) -> list[AdminTableInfo]:
         """Return every application-owned table, excluding database extension tables."""
         return [AdminTableInfo(name=name, editable=True) for name in sorted(Base.metadata.tables)]
+
+    async def browse_table(self, table_name: str, options: BrowseOptions) -> AdminTablePage | None:
+        """Fetch one filtered page and preserve redaction on every table."""
+        table = Base.metadata.tables.get(table_name)
+        if table is None:
+            return None
+        key = next(iter(table.primary_key.columns)).name
+        fields = [
+            c.name
+            for c in table.columns
+            if scalar_column(c) and self._display_value(table_name, c.name, "x") != "••••••"
+        ]
+        dates = date_columns(table)
+        sort_by = options.sort_by or ("created_at" if "created_at" in dates else key)
+        result = await self._session.execute(browse_query(table, options, fields))
+        mappings = list(result.mappings())
+        has_more = len(mappings) > options.page_size
+        visible = mappings[: options.page_size]
+        if options.before:
+            visible.reverse()
+        columns = [c.name for c in table.columns]
+        sections = {
+            "users": "users",
+            "courier_profiles": "couriers",
+            "orders": "orders",
+            "invoices": "invoices",
+            "promos": "promos",
+            "disputes": "disputes",
+            "wallets": "wallets",
+        }
+        rows = [
+            AdminTableRow(
+                cells=[self._display_value(table_name, c, row[c]) for c in columns],
+                edit_url=self._edit_url(table_name, row),
+                detail_url=f"/v1/admin/admin/{sections[table_name]}/{row[key]}"
+                if table_name in sections
+                else None,
+            )
+            for row in visible
+        ]
+        next_row = visible[-1] if visible and (has_more or options.before) else None
+        previous_row = (
+            visible[0] if visible and (options.after or (options.before and has_more)) else None
+        )
+        return AdminTablePage(
+            table=AdminTableInfo(table_name, True),
+            columns=columns,
+            edit_column=key,
+            rows=rows,
+            next_cursor=next_row[key] if next_row is not None else None,
+            previous_cursor=previous_row[key] if previous_row is not None else None,
+            next_at=str(next_row[sort_by]) if next_row is not None and sort_by != key else "",
+            previous_at=str(previous_row[sort_by])
+            if previous_row is not None and sort_by != key
+            else "",
+            sort_fields=[*dates, key],
+            filter_fields=fields,
+            sort_by=sort_by,
+        )
 
     async def list_table_page(
         self, table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None

@@ -261,6 +261,12 @@ The dashboard opens in Arabic with a right-to-left layout. Language and light/da
 appearance controls are available on the login page and in the dashboard header.
 Theme changes apply immediately without requests or page reloads. The browser saves
 the choice in local storage, restores it before rendering, and synchronizes open tabs.
+All table lists and the existing collection pages share date/ID sorting (ascending or
+descending), UTC date/time range filters, and an exact-match filter selected from that
+table's visible scalar fields. Boolean filters accept `true` or `false`; status/role
+filters use the stored enum value. Masked secrets and unsupported field types cannot
+be filtered. Lists default to the latest 25 rows, offer 50 or 100, and preserve filters
+through Next/Previous cursor pagination. Record details and CRUD actions remain available.
 Dashboard HTML is served with `Cache-Control: no-store`. Its stylesheet URL includes
 the SHA-256 content version in the path so browsers and proxies fetch updated layout
 and theme rules after a deployment, even when they ignore query-string versions.

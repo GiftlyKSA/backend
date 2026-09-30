@@ -10,6 +10,7 @@ does not run those transitions.
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -37,6 +38,7 @@ from app.admin.i18n import LANGUAGE_COOKIE, LANGUAGES, THEME_COOKIE, THEMES, tem
 from app.admin.table_router import router as table_router
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.models.enums import UserRole
+from app.repositories.admin_browse_query import BrowseOptions
 
 router = APIRouter(prefix="/v1/admin/admin", tags=["admin"], include_in_schema=False)
 router.include_router(table_router)
@@ -46,6 +48,40 @@ _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 OptionalFilterUuid = Annotated[uuid.UUID | None, BeforeValidator(lambda value: value or None)]
 OptionalFilterDatetime = Annotated[datetime | None, BeforeValidator(lambda value: value or None)]
+
+
+def browse_options(
+    page_size: int = Query(default=25, ge=25, le=100),
+    sort_by: str = Query(default="", max_length=100),
+    direction: Literal["asc", "desc"] = "desc",
+    filter_field: str = Query(default="", max_length=100),
+    filter_value: str = Query(default="", max_length=255),
+    start_at: OptionalFilterDatetime = None,
+    end_at: OptionalFilterDatetime = None,
+    after: OptionalFilterUuid = None,
+    before: OptionalFilterUuid = None,
+    cursor_at: OptionalFilterDatetime = None,
+) -> BrowseOptions:
+    """Parse bounded browser options; datetime picker input uses UTC."""
+    dates = [start_at, end_at, cursor_at]
+    start_at, end_at, cursor_at = [
+        value.replace(tzinfo=UTC) if value and value.tzinfo is None else value for value in dates
+    ]
+    return BrowseOptions(
+        page_size=page_size,
+        sort_by=sort_by,
+        direction=direction,
+        filter_field=filter_field,
+        filter_value=filter_value,
+        start_at=start_at,
+        end_at=end_at,
+        after=after,
+        before=before,
+        cursor_at=cursor_at,
+    )
+
+
+BrowseDep = Annotated[BrowseOptions, Depends(browse_options)]
 
 
 def _render(
@@ -251,16 +287,53 @@ async def table_browser(
     request: Request,
     db: DbDep,
     table_name: str,
-    after: uuid.UUID | None = None,
-    before: uuid.UUID | None = None,
+    options: BrowseDep,
     page: Annotated[int, Query(ge=1, le=1)] = 1,
 ) -> HTMLResponse:
     """Render one bounded, redacted page from an application table."""
     ctx = await _ctx(request, db)
-    if after is not None and before is not None:
-        raise HTTPException(status_code=422, detail="Choose one table cursor.")
-    data = await ctx.service.get_table_page(table_name, after=after, before=before)
-    return _render(request, "table_browser.html", ctx=ctx, data=data)
+    data = await ctx.service.browse_table(table_name, options)
+    filters = {
+        "page_size": options.page_size,
+        "sort_by": data.sort_by if data else options.sort_by,
+        "direction": options.direction,
+        "filter_field": options.filter_field,
+        "filter_value": options.filter_value,
+        "start_at": options.start_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        if options.start_at
+        else "",
+        "end_at": options.end_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        if options.end_at
+        else "",
+    }
+    base_url = request.url.path
+    next_url = previous_url = None
+    if data:
+        shared = {key: value for key, value in filters.items() if value != ""}
+        if data.next_cursor:
+            next_url = (
+                base_url
+                + "?"
+                + urlencode({**shared, "after": str(data.next_cursor), "cursor_at": data.next_at})
+            )
+        if data.previous_cursor:
+            previous_url = (
+                base_url
+                + "?"
+                + urlencode(
+                    {**shared, "before": str(data.previous_cursor), "cursor_at": data.previous_at}
+                )
+            )
+    return _render(
+        request,
+        "table_browser.html",
+        ctx=ctx,
+        data=data,
+        filters=filters,
+        next_url=next_url,
+        previous_url=previous_url,
+        browser_url=base_url,
+    )
 
 
 # --- Couriers ----------------------------------------------------------------
@@ -302,11 +375,9 @@ async def courier_create(
 
 
 @router.get("/couriers", response_class=HTMLResponse)
-async def couriers(request: Request, db: DbDep) -> HTMLResponse:
-    """List couriers pending verification."""
-    ctx = await _ctx(request, db)
-    pending = await ctx.service.list_pending_couriers()
-    return _render(request, "couriers.html", ctx=ctx, pending=pending)
+async def couriers(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "courier_profiles", options)
 
 
 @router.get("/couriers/{courier_id}", response_class=HTMLResponse)
@@ -456,11 +527,9 @@ async def order_create(
 
 
 @router.get("/orders", response_class=HTMLResponse)
-async def orders(request: Request, db: DbDep) -> HTMLResponse:
-    """List recent orders."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_orders()
-    return _render(request, "orders.html", ctx=ctx, orders=rows)
+async def orders(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "orders", options)
 
 
 @router.get("/orders/{order_id}", response_class=HTMLResponse)
@@ -520,11 +589,9 @@ async def order_delete(
 
 
 @router.get("/invoices", response_class=HTMLResponse)
-async def invoices(request: Request, db: DbDep) -> HTMLResponse:
-    """List recent invoices with links to authenticated table maintenance."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_invoices()
-    return _render(request, "invoices.html", ctx=ctx, invoices=rows)
+async def invoices(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "invoices", options)
 
 
 @router.get("/invoices/{invoice_id}", response_class=HTMLResponse)
@@ -539,11 +606,9 @@ async def invoice_detail(request: Request, db: DbDep, invoice_id: uuid.UUID) -> 
 
 
 @router.get("/promos", response_class=HTMLResponse)
-async def promos(request: Request, db: DbDep) -> HTMLResponse:
-    """List promos."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_promos()
-    return _render(request, "promos.html", ctx=ctx, promos=rows)
+async def promos(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "promos", options)
 
 
 @router.get("/promos/{promo_id}", response_class=HTMLResponse)
@@ -555,22 +620,21 @@ async def promo_detail(request: Request, db: DbDep, promo_id: uuid.UUID) -> HTML
 
 
 @router.get("/promos/{promo_id}/redemptions", response_class=HTMLResponse)
-async def promo_redemptions(request: Request, db: DbDep, promo_id: uuid.UUID) -> HTMLResponse:
+async def promo_redemptions(
+    request: Request, db: DbDep, promo_id: uuid.UUID, options: BrowseDep
+) -> HTMLResponse:
     """List a promo's redemptions."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_promo_redemptions(promo_id)
-    return _render(request, "promo_redemptions.html", ctx=ctx, redemptions=rows, promo_id=promo_id)
+    scoped = replace(options, scope_field="promo_id", scope_value=str(promo_id))
+    return await table_browser(request, db, "promo_redemptions", scoped)
 
 
 # --- Disputes / withdrawals / wallets / topups -------------------------------
 
 
 @router.get("/disputes", response_class=HTMLResponse)
-async def disputes(request: Request, db: DbDep) -> HTMLResponse:
-    """List disputes."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_disputes()
-    return _render(request, "disputes.html", ctx=ctx, disputes=rows)
+async def disputes(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "disputes", options)
 
 
 @router.get("/disputes/{dispute_id}", response_class=HTMLResponse)
@@ -582,19 +646,15 @@ async def dispute_detail(request: Request, db: DbDep, dispute_id: uuid.UUID) -> 
 
 
 @router.get("/withdrawals", response_class=HTMLResponse)
-async def withdrawals(request: Request, db: DbDep) -> HTMLResponse:
-    """List withdrawals (IBANs masked; processing moves money via the ledger)."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_withdrawals()
-    return _render(request, "withdrawals.html", ctx=ctx, withdrawals=rows)
+async def withdrawals(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "withdrawals", options)
 
 
 @router.get("/wallets", response_class=HTMLResponse)
-async def wallets(request: Request, db: DbDep) -> HTMLResponse:
-    """List system and user wallets."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_wallets()
-    return _render(request, "wallets.html", ctx=ctx, wallets=rows)
+async def wallets(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "wallets", options)
 
 
 @router.get("/wallets/{wallet_id}", response_class=HTMLResponse)
@@ -606,14 +666,18 @@ async def wallet_detail(request: Request, db: DbDep, wallet_id: uuid.UUID) -> HT
 
 
 @router.get("/topups", response_class=HTMLResponse)
-async def topups(request: Request, db: DbDep) -> HTMLResponse:
-    """List wallet top-up intents."""
-    ctx = await _ctx(request, db)
-    rows = await ctx.service.list_topups()
-    return _render(request, "topups.html", ctx=ctx, topups=rows)
+async def topups(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List records with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "wallet_topups", options)
 
 
 # --- Users -------------------------------------------------------------------
+
+
+@router.get("/users", response_class=HTMLResponse)
+async def users(request: Request, db: DbDep, options: BrowseDep) -> HTMLResponse:
+    """List users with shared filters, sorting, and pagination."""
+    return await table_browser(request, db, "users", options)
 
 
 @router.get("/users/new", response_class=HTMLResponse)

@@ -23,6 +23,7 @@ from app.core.map_url import validate_delivery_map_url
 from app.core.security import hmac_hex
 from app.models import AuditLog, City, CourierProfile, User, Withdrawal
 from app.models.enums import OrderStatus, UserRole, UserStatus
+from app.repositories.admin_browse_query import BrowseOptions
 from app.repositories.admin_read_repository import (
     AdminReadRepository,
     AdminTableInfo,
@@ -256,6 +257,10 @@ class AdminService:
     ) -> AdminTablePage | None:
         """Return a bounded redacted table-browser page."""
         return await self._reads.list_table_page(table_name, after=after, before=before)
+
+    async def browse_table(self, table_name: str, options: BrowseOptions) -> AdminTablePage | None:
+        """Return one allowlisted, filtered dashboard table page."""
+        return await self._reads.browse_table(table_name, options)
 
     # --- Courier verification (no money) --------------------------------------
 

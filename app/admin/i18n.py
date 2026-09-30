@@ -12,6 +12,17 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Direction": "اتجاه الترتيب",
+    "Ascending": "تصاعدي",
+    "Descending": "تنازلي",
+    "Filter field": "حقل التصفية",
+    "All records": "جميع السجلات",
+    "Exact value": "القيمة المطابقة",
+    "Use true or false for boolean fields.": "استخدم true أو false للحقول المنطقية.",
+    "Records per page": "عدد السجلات في الصفحة",
+    "Encrypted, credential, and token fields stay masked.": (
+        "تبقى الحقول المشفرة وبيانات الاعتماد والرموز مخفية."
+    ),
     "Activity": "النشاط",
     "Activity ID": "معرّف النشاط",
     "Activity name": "اسم النشاط",
