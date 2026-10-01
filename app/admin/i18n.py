@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 
 from fastapi import Request
 
-from app.admin.assets import STYLESHEET_URL, THEME_SCRIPT_URL
+from app.admin.assets import DATETIME_SCRIPT_URL, STYLESHEET_URL, THEME_SCRIPT_URL
+from app.core.admin_time import admin_datetime
 
 LANGUAGE_COOKIE = "giftly_admin_language"
 THEME_COOKIE = "giftly_admin_theme"
@@ -14,6 +15,16 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "When (UTC+3)": "الوقت (UTC+3)",
+    "From (UTC+3)": "من (UTC+3)",
+    "To (UTC+3)": "إلى (UTC+3)",
+    "Unavailable record": "سجل محذوف أو غير متاح",
+    "Stored in UTC. Displayed and entered in Riyadh time (UTC+3).": (
+        "تُحفظ الأوقات بالتوقيت العالمي UTC، وتُعرض وتُدخل بتوقيت الرياض (UTC+3)."
+    ),
+    "Choose the date and time in Riyadh time (UTC+3).": (
+        "اختر التاريخ والوقت بتوقيت الرياض (UTC+3)."
+    ),
     "When (UTC)": "الوقت (UTC)",
     "Unknown user": "مستخدم غير موجود",
     "Direction": "اتجاه الترتيب",
@@ -588,8 +599,10 @@ def template_context(request: Request) -> dict[str, object]:
     selected_language = language(request)
     return {
         "utc_datetime": utc_datetime,
+        "admin_datetime": admin_datetime,
         "stylesheet_url": STYLESHEET_URL,
         "theme_script_url": THEME_SCRIPT_URL,
+        "datetime_script_url": DATETIME_SCRIPT_URL,
         "lang": selected_language,
         "theme": theme(request),
         "tr": lambda value: translate(value, selected_language),

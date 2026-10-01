@@ -22,7 +22,14 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BeforeValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin.assets import STYLESHEET, STYLESHEET_VERSION, THEME_SCRIPT, THEME_SCRIPT_VERSION
+from app.admin.assets import (
+    DATETIME_SCRIPT,
+    DATETIME_SCRIPT_VERSION,
+    STYLESHEET,
+    STYLESHEET_VERSION,
+    THEME_SCRIPT,
+    THEME_SCRIPT_VERSION,
+)
 from app.admin.deps import (
     SESSION_COOKIE,
     AdminContext,
@@ -36,6 +43,7 @@ from app.admin.deps import (
 )
 from app.admin.i18n import LANGUAGE_COOKIE, LANGUAGES, THEME_COOKIE, THEMES, template_context
 from app.admin.table_router import router as table_router
+from app.core.admin_time import ADMIN_TIMEZONE, admin_input, finalize_admin_value
 from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.models.enums import UserRole
 from app.repositories.admin_browse_query import BrowseOptions
@@ -44,6 +52,7 @@ router = APIRouter(prefix="/v1/admin/admin", tags=["admin"], include_in_schema=F
 router.include_router(table_router)
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+_TEMPLATES.env.finalize = finalize_admin_value
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 OptionalFilterUuid = Annotated[uuid.UUID | None, BeforeValidator(lambda value: value or None)]
@@ -62,11 +71,11 @@ def browse_options(
     before: OptionalFilterUuid = None,
     cursor_at: OptionalFilterDatetime = None,
 ) -> BrowseOptions:
-    """Parse bounded browser options; datetime picker input uses UTC."""
-    dates = [start_at, end_at, cursor_at]
-    start_at, end_at, cursor_at = [
-        value.replace(tzinfo=UTC) if value and value.tzinfo is None else value for value in dates
-    ]
+    """Parse browser options; picker input uses Riyadh, cursors retain their offset."""
+    start_at, end_at = admin_input(start_at), admin_input(end_at)
+    cursor_at = (
+        cursor_at.replace(tzinfo=UTC) if cursor_at and cursor_at.tzinfo is None else cursor_at
+    )
     return BrowseOptions(
         page_size=page_size,
         sort_by=sort_by,
@@ -120,6 +129,18 @@ async def dashboard_theme_script(version: str) -> Response:
         raise HTTPException(status_code=404, detail="Theme script version not found")
     return Response(
         THEME_SCRIPT,
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@router.get("/assets/datetime.{version}.js")
+async def dashboard_datetime_script(version: str) -> Response:
+    """Serve timezone conversion code for this build without stale cached assets."""
+    if version != DATETIME_SCRIPT_VERSION:
+        raise HTTPException(status_code=404, detail="Datetime script version not found")
+    return Response(
+        DATETIME_SCRIPT,
         media_type="text/javascript",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
@@ -299,10 +320,10 @@ async def table_browser(
         "direction": options.direction,
         "filter_field": options.filter_field,
         "filter_value": options.filter_value,
-        "start_at": options.start_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        "start_at": options.start_at.astimezone(ADMIN_TIMEZONE).strftime("%Y-%m-%dT%H:%M:%S")
         if options.start_at
         else "",
-        "end_at": options.end_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        "end_at": options.end_at.astimezone(ADMIN_TIMEZONE).strftime("%Y-%m-%dT%H:%M:%S")
         if options.end_at
         else "",
     }
@@ -817,8 +838,7 @@ async def audit_logs(
         raise HTTPException(status_code=422, detail="Page size must be 25, 50, or 100.")
     if (before_at is None) != (before_id is None):
         raise HTTPException(status_code=400, detail="Both audit cursor fields are required.")
-    start_at = start_at.replace(tzinfo=UTC) if start_at and not start_at.tzinfo else start_at
-    end_at = end_at.replace(tzinfo=UTC) if end_at and not end_at.tzinfo else end_at
+    start_at, end_at = admin_input(start_at), admin_input(end_at)
     before_at = before_at.replace(tzinfo=UTC) if before_at and not before_at.tzinfo else before_at
     if start_at and end_at and start_at > end_at:
         raise HTTPException(status_code=400, detail="Start time must not exceed end time.")
@@ -847,8 +867,10 @@ async def audit_logs(
         "entity_type": entity_type or "",
         "activity_id": str(activity_id) if activity_id else "",
         "activity_name": activity_name or "",
-        "start_at": start_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S") if start_at else "",
-        "end_at": end_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S") if end_at else "",
+        "start_at": start_at.astimezone(ADMIN_TIMEZONE).strftime("%Y-%m-%dT%H:%M:%S")
+        if start_at
+        else "",
+        "end_at": end_at.astimezone(ADMIN_TIMEZONE).strftime("%Y-%m-%dT%H:%M:%S") if end_at else "",
         "sort": sort,
         "page_size": page_size,
     }
@@ -879,6 +901,7 @@ async def audit_logs(
         ctx=ctx,
         logs=rows[:page_size],
         actors=await ctx.service.audit_actors(rows[:page_size]),
+        entities=await ctx.service.audit_entities(rows[:page_size]),
         next_url=next_url,
         filters=filters,
         active_view=view,

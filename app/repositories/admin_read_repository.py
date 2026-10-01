@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -15,9 +16,11 @@ from enum import Enum
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from app.core.admin_time import admin_datetime
 from app.models import (
     Dispute,
     Invoice,
@@ -38,6 +41,7 @@ from app.repositories.admin_browse_query import (
     date_columns,
     scalar_column,
 )
+from app.repositories.admin_table_repository import AdminTableRepository, record_label
 
 _PAGE_SIZE = 50
 _ADMIN_VISIBLE_USER_COLUMNS = {"phone", "email", "full_name", "date_of_birth"}
@@ -146,6 +150,7 @@ class AdminReadRepository:
         if options.before:
             visible.reverse()
         columns = [c.name for c in table.columns]
+        related = await self._related_labels(table_name, visible)
         sections = {
             "users": "users",
             "courier_profiles": "couriers",
@@ -157,7 +162,7 @@ class AdminReadRepository:
         }
         rows = [
             AdminTableRow(
-                cells=[self._display_value(table_name, c, row[c]) for c in columns],
+                cells=[self._browse_cell(table_name, c, row, key, related) for c in columns],
                 edit_url=self._edit_url(table_name, row),
                 detail_url=f"/v1/admin/admin/{sections[table_name]}/{row[key]}"
                 if table_name in sections
@@ -184,6 +189,42 @@ class AdminReadRepository:
             filter_fields=fields,
             sort_by=sort_by,
         )
+
+    def _browse_cell(
+        self,
+        table_name: str,
+        column: str,
+        row: RowMapping,
+        key: str,
+        related: dict[tuple[str, uuid.UUID], str],
+    ) -> str:
+        if column == key:
+            return record_label(Base.metadata.tables[table_name], dict(row))
+        value = row[column]
+        if isinstance(value, uuid.UUID) and (column, value) in related:
+            return related[(column, value)]
+        return self._display_value(table_name, column, value)
+
+    async def _related_labels(
+        self, table_name: str, rows: Sequence[RowMapping]
+    ) -> dict[tuple[str, uuid.UUID], str]:
+        targets = {
+            c.name: next(iter(c.foreign_keys)).column.table.name
+            for c in Base.metadata.tables[table_name].columns
+            if c.foreign_keys
+        }
+        records: dict[str, set[uuid.UUID]] = {}
+        for name, target in targets.items():
+            records.setdefault(target, set()).update(
+                value for row in rows if isinstance(value := row[name], uuid.UUID)
+            )
+        labels = await AdminTableRepository(self._session).labels_for_records(records)
+        return {
+            (name, record_id): label
+            for name, target in targets.items()
+            for (table, record_id), label in labels.items()
+            if target == table
+        }
 
     async def list_table_page(
         self, table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None
@@ -251,7 +292,9 @@ class AdminReadRepository:
             return "—"
         if isinstance(value, Enum):
             return str(value.value)
-        if isinstance(value, (date, datetime, uuid.UUID, Decimal)):
+        if isinstance(value, datetime):
+            return admin_datetime(value)
+        if isinstance(value, (date, uuid.UUID, Decimal)):
             return str(value)
         if isinstance(value, (dict, list)):
             return AdminReadRepository._truncate(json.dumps(value, default=str, ensure_ascii=False))

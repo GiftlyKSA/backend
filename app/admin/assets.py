@@ -9,3 +9,6 @@ STYLESHEET_URL = f"/v1/admin/admin/assets/admin.{STYLESHEET_VERSION}.css"
 THEME_SCRIPT = (Path(__file__).parent / "static" / "theme.js").read_bytes()
 THEME_SCRIPT_VERSION = sha256(THEME_SCRIPT).hexdigest()[:16]
 THEME_SCRIPT_URL = f"/v1/admin/admin/assets/theme.{THEME_SCRIPT_VERSION}.js"
+DATETIME_SCRIPT = (Path(__file__).parent / "static" / "datetime-fields.js").read_bytes()
+DATETIME_SCRIPT_VERSION = sha256(DATETIME_SCRIPT).hexdigest()[:16]
+DATETIME_SCRIPT_URL = f"/v1/admin/admin/assets/datetime.{DATETIME_SCRIPT_VERSION}.js"

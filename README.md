@@ -262,7 +262,7 @@ appearance controls are available on the login page and in the dashboard header.
 Theme changes apply immediately without requests or page reloads. The browser saves
 the choice in local storage, restores it before rendering, and synchronizes open tabs.
 All table lists and the existing collection pages share date/ID sorting (ascending or
-descending), UTC date/time range filters, and an exact-match filter selected from that
+descending), Riyadh date/time range filters, and an exact-match filter selected from that
 table's visible scalar fields. Boolean filters accept `true` or `false`; status/role
 filters use the stored enum value. Masked secrets and unsupported field types cannot
 be filtered. Lists default to the latest 25 rows, offer 50 or 100, and preserve filters
@@ -274,10 +274,15 @@ and theme rules after a deployment, even when they ignore query-string versions.
 Activity uses one dashboard page with System, Admin, and User tabs; System opens first.
 Only the selected tab is queried. User activity combines customer and courier changes.
 Activity actors show their current full name, optional email, role, and profile link;
-actor IDs remain visible. Missing users retain their ID, and system events are labeled
-as system activity. Actor display fields are fetched once per page and are not copied
-into audit metadata. Activity timestamps are explicitly displayed in UTC.
-Filters include UTC date/time range, activity ID, activity name (action-name substring),
+Raw actor/object UUIDs are replaced with current readable names, emails, or safe record
+descriptions; deleted/unavailable objects are labeled accordingly. Object IDs remain
+in stored audit records and links. Names/emails are batched per target table rather
+than queried per row, and are not copied into audit metadata.
+The dashboard states that storage uses UTC while display, pickers, and date/time
+filters use Riyadh time (UTC+3), independently of the browser timezone. Date-only
+values are unchanged. Public API timestamp serialization remains ISO-8601 with an
+explicit offset, normally UTC (`+00:00`); clients should convert instants for display.
+Filters include Riyadh date/time range, activity ID, activity name (action-name substring),
 actor ID, exact action, and entity type. Sort by newest or oldest, select 25 (default),
 50, or 100 rows per page, and use Next for stable cursor pagination. Reads, HTTP requests, WebSocket lifecycle events,
 login/logout, and scheduled-job start/completion are not database audit actions.

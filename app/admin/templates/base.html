@@ -7,7 +7,7 @@
   <script src="{{ theme_script_url }}"></script>
   <link rel="stylesheet" href="{{ stylesheet_url }}">
   <script src="/v1/admin/admin/static/relationships.js" defer></script>
-  <script src="/v1/admin/admin/static/datetime-fields.js" defer></script>
+  <script src="{{ datetime_script_url }}" defer></script>
 </head>
 <body class="{% if ctx %}admin-app{% else %}auth-page{% endif %}">
 {% if ctx %}
@@ -71,6 +71,7 @@
 </button>
 </div>{% endif %}
 <main>
+<p class="note">{{ tr('Stored in UTC. Displayed and entered in Riyadh time (UTC+3).') }}</p>
 {% if ctx and table_name %}
 <div class="actions" aria-label="{{ tr('Actions') }}">
   <a class="btn" href="/v1/admin/admin/tables/{{ table_name }}/new">{{ tr('Add') }} {{ tr(table_name|replace('_', ' ')|title) }}</a>

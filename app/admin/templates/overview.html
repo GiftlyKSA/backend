@@ -50,12 +50,12 @@
 <div class="overview-row lower">
   <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▣</span>{{ tr('Recent orders') }}</h2><a href="/v1/admin/admin/orders">{{ tr('View all orders') }}</a></div>
     <div class="table-scroll"><table class="list"><thead><tr><th>{{ tr('Order') }}</th><th>{{ tr('City') }}</th><th class="num">{{ tr('Amount (SAR)') }}</th><th>{{ tr('Status') }}</th><th>{{ tr('Created') }}</th></tr></thead><tbody>
-    {% for order in recent_orders %}<tr><td><a href="/v1/admin/admin/orders/{{ order.id }}">{{ order.id|string|truncate(13, True, '…') }}</a></td><td>{{ order.delivery_city }}</td><td class="num">{{ order.total_amount }}</td><td><span class="status-pill">{{ tr(order.status|replace('_', ' ')|title) }}</span></td><td>{{ order.created_at.strftime('%d/%m/%Y') }}</td></tr>
+    {% for order in recent_orders %}<tr><td><a href="/v1/admin/admin/orders/{{ order.id }}">{{ order.id|string|truncate(13, True, '…') }}</a></td><td>{{ order.delivery_city }}</td><td class="num">{{ order.total_amount }}</td><td><span class="status-pill">{{ tr(order.status|replace('_', ' ')|title) }}</span></td><td>{{ admin_datetime(order.created_at) }}</td></tr>
     {% else %}<tr><td colspan="5" class="note">{{ tr('No orders yet.') }}</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
   <section class="card panel"><div class="panel-heading"><h2><span class="panel-icon indigo">▤</span>{{ tr('Recent audit activity') }}</h2><a href="/v1/admin/admin/audit-logs">{{ tr('View audit') }}</a></div>
-    <ol class="activity-list">{% for log in recent_activity %}<li><strong>{{ tr(log.action|replace('_', ' ')|title) }}</strong><span>{{ tr(log.entity_type|replace('_', ' ')|title) }} · {{ log.created_at.strftime('%d/%m/%Y %H:%M') }}</span></li>
+    <ol class="activity-list">{% for log in recent_activity %}<li><strong>{{ tr(log.action|replace('_', ' ')|title) }}</strong><span>{{ tr(log.entity_type|replace('_', ' ')|title) }} · {{ admin_datetime(log.created_at) }}</span></li>
     {% else %}<li class="empty-activity">{{ tr('No recent activity.') }}</li>{% endfor %}</ol>
   </section>
 </div>

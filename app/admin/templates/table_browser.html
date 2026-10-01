@@ -17,8 +17,8 @@
 <form class="audit-filters card" method="get" action="{{ browser_url }}">
   <label>{{ tr('Sort by') }}<select name="sort_by">{% for field in data.sort_fields %}<option value="{{ field }}" {% if filters.sort_by == field %}selected{% endif %}>{{ tr(field|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
   <label>{{ tr('Direction') }}<select name="direction"><option value="desc" {% if filters.direction == 'desc' %}selected{% endif %}>{{ tr('Descending') }}</option><option value="asc" {% if filters.direction == 'asc' %}selected{% endif %}>{{ tr('Ascending') }}</option></select></label>
-  <label>{{ tr('From (UTC)') }}<input type="datetime-local" step="1" name="start_at" value="{{ filters.start_at }}"></label>
-  <label>{{ tr('To (UTC)') }}<input type="datetime-local" step="1" name="end_at" value="{{ filters.end_at }}"></label>
+  <label>{{ tr('From (UTC+3)') }}<input type="datetime-local" step="1" name="start_at" value="{{ filters.start_at }}"></label>
+  <label>{{ tr('To (UTC+3)') }}<input type="datetime-local" step="1" name="end_at" value="{{ filters.end_at }}"></label>
   <label>{{ tr('Filter field') }}<select name="filter_field"><option value="">{{ tr('All records') }}</option>{% for field in data.filter_fields %}<option value="{{ field }}" {% if filters.filter_field == field %}selected{% endif %}>{{ tr(field|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
   <label>{{ tr('Exact value') }}<input name="filter_value" maxlength="255" value="{{ filters.filter_value }}"><small class="note">{{ tr('Use true or false for boolean fields.') }}</small></label>
   <label>{{ tr('Per page') }}<select name="page_size">{% for size in [25, 50, 100] %}<option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>{% endfor %}</select></label>

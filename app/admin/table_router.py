@@ -22,10 +22,12 @@ from app.admin.deps import (
     verify_csrf,
 )
 from app.admin.i18n import template_context
+from app.core.admin_time import finalize_admin_value
 from app.core.exceptions import ConflictError, DomainError, ValidationDomainError
 
 router = APIRouter()
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+_TEMPLATES.env.finalize = finalize_admin_value
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _MAX_FORM_BYTES = 262_144
 

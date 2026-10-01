@@ -29,7 +29,16 @@ from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.models import Base
 
 CHOICE_LIMIT = 25
-_LABEL_COLUMNS = ("full_name", "phone", "title", "code", "name", "delivery_city", "type", "status")
+_LABEL_COLUMNS = (
+    "full_name",
+    "email",
+    "public_identifier",
+    "title",
+    "code",
+    "name",
+    "type",
+    "status",
+)
 
 
 def get_table(name: str) -> Table:
@@ -59,9 +68,13 @@ def label_columns(table: Table) -> list[Column[Any]]:
 
 
 def record_label(table: Table, row: Mapping[str, Any]) -> str:
-    """Describe a choice with readable values and an unambiguous key."""
-    values = [str(row[column.name])[:80] for column in label_columns(table) if row[column.name]]
-    return " · ".join([*values, str(row[primary_key(table).name])])
+    """Prefer readable labels; use a short reference only for unnamed records."""
+    values = [str(row[column.name])[:255] for column in label_columns(table) if row[column.name]]
+    return (
+        " · ".join(values)
+        if values
+        else (f"{table.name.replace('_', ' ').title()} · {str(row[primary_key(table).name])[:8]}")
+    )
 
 
 def active_city_choices(query: Select[Any], target: Column[Any]) -> Select[Any]:
@@ -148,6 +161,25 @@ class AdminTableRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Bind the request transaction."""
         self.session = session
+
+    async def labels_for_records(
+        self, records: dict[str, set[uuid.UUID]]
+    ) -> dict[tuple[str, uuid.UUID], str]:
+        """Batch readable, non-secret labels by target table rather than by row."""
+        if sum(len(ids) for ids in records.values()) > 1000:
+            raise ValueError("Record labels must be limited to one dashboard page.")
+        labels: dict[tuple[str, uuid.UUID], str] = {}
+        for name, ids in records.items():
+            table = Base.metadata.tables.get(name)
+            if table is None or not ids:
+                continue
+            key = primary_key(table)
+            result = await self.session.execute(
+                select(key, *label_columns(table)).where(key.in_(ids))
+            )
+            for row in result.mappings():
+                labels[(name, row[key.name])] = record_label(table, dict(row))
+        return labels
 
     async def authorize_maintenance(self, admin_id: uuid.UUID, session_id: uuid.UUID) -> None:
         """Enable trigger exceptions locally; the database independently checks the session."""

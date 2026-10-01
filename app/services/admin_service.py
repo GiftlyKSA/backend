@@ -258,6 +258,16 @@ class AdminService:
             {row.actor_user_id for row in logs if row.actor_user_id is not None}
         )
 
+    async def audit_entities(self, logs: list[AuditLog]) -> dict[tuple[str, uuid.UUID], str]:
+        """Resolve current safe labels without storing personal-data snapshots."""
+        if self._tables is None:
+            raise RuntimeError("Admin table repository is not configured.")
+        records: dict[str, set[uuid.UUID]] = {}
+        for row in logs:
+            if row.entity_id is not None:
+                records.setdefault(row.entity_type, set()).add(row.entity_id)
+        return await self._tables.labels_for_records(records)
+
     async def get_table_page(
         self, table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None
     ) -> AdminTablePage | None:

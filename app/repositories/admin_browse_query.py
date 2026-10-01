@@ -2,7 +2,7 @@
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
@@ -23,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.schema import Column, Table
 
+from app.core.admin_time import ADMIN_TIMEZONE
 from app.core.exceptions import ValidationDomainError
 
 
@@ -60,7 +61,7 @@ def filter_value(column: Column[Any], value: str) -> object:
             return uuid.UUID(value)
         if isinstance(column.type, DateTime):
             parsed = datetime.fromisoformat(value)
-            return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+            return parsed.replace(tzinfo=ADMIN_TIMEZONE) if parsed.tzinfo is None else parsed
         if isinstance(column.type, Date):
             return date.fromisoformat(value)
         if isinstance(column.type, Enum):

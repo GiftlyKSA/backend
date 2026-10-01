@@ -12,7 +12,7 @@
     {% for field in form.fields %}
     <div class="table-form-field">
       {% if field.readonly %}
-        <label>{{ tr(field.label) }}<input value="{{ field.selected_label or field.value }}" readonly></label>
+        <label>{{ tr(field.label) }}<input value="{{ admin_datetime(field.value) if field.kind == 'datetime' and field.value else field.selected_label or field.value }}" readonly></label>
       {% elif field.kind == 'relationship' %}
         {{ relationship_field(form.table_name, field.name, field.label, field.required, field.value, field.selected_label, form.record_id or '') }}
       {% elif field.secret %}
@@ -29,7 +29,7 @@
         <label>{{ tr(field.label) }}<textarea name="{{ field.name }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}>{{ field.value }}</textarea></label>
       {% elif field.kind == 'datetime' %}
         <label>{{ tr(field.label) }}<input type="datetime-local" step="1" data-iso="{{ field.value }}" {% if field.required %}required{% endif %}><input name="{{ field.name }}" type="hidden" data-datetime-value></label>
-        <p class="note">{{ tr('Choose the date and time in your local timezone.') }}</p>
+        <p class="note">{{ tr('Choose the date and time in Riyadh time (UTC+3).') }}</p>
       {% else %}
         <label>{{ tr(field.label) }}<input name="{{ field.name }}" type="{{ 'date' if field.kind == 'date' else 'text' }}" value="{{ field.value }}" maxlength="{{ field.maxlength }}" {% if field.required %}required{% endif %}></label>
       {% endif %}
