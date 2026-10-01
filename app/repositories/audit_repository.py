@@ -7,6 +7,7 @@ scrubbed of Restricted data before it reaches this layer.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import literal_column, select, tuple_
@@ -15,12 +16,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AuditLog, User
 
 
+@dataclass(frozen=True)
+class AuditActor:
+    """Current actor identity shown only to authenticated dashboard administrators."""
+
+    id: uuid.UUID
+    full_name: str | None
+    email: str | None
+
+
 class AuditRepository:
     """Reads and appends audit-log rows."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""
         self._session = session
+
+    async def list_actors(self, actor_ids: set[uuid.UUID]) -> dict[uuid.UUID, AuditActor]:
+        """Fetch the visible page's actor labels in one bounded query."""
+        if not actor_ids:
+            return {}
+        if len(actor_ids) > 100:
+            raise ValueError("Audit actor lookup is limited to one page.")
+        result = await self._session.execute(
+            select(User.id, User.full_name, User.email).where(User.id.in_(actor_ids))
+        )
+        return {
+            actor_id: AuditActor(actor_id, full_name, email)
+            for actor_id, full_name, email in result
+        }
 
     async def record(
         self,

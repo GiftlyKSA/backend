@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from app import main
-from app.admin.i18n import ARABIC
+from app.admin.i18n import ARABIC, utc_datetime
 from app.core.middleware import RequestIdMiddleware
 from app.models import Base
 from app.repositories.audit_repository import AuditRepository
@@ -82,6 +82,27 @@ async def test_audit_repository_tags_actor_and_supports_stable_filters() -> None
     assert "ILIKE" in sql
     assert "%UPDATE\\_\\%%" in statement.params.values()
     assert 26 in statement.params.values()
+
+
+async def test_audit_actor_lookup_is_batched_and_selects_only_display_fields():
+    actor_id = uuid4()
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=[(actor_id, "Full Name", "name@example.com")])
+    )
+    repository = AuditRepository(session)
+    assert await repository.list_actors(set()) == {}
+    actors = await repository.list_actors({actor_id})
+    assert actors[actor_id].full_name == "Full Name"
+    assert actors[actor_id].email == "name@example.com"
+    session.execute.assert_awaited_once()
+    sql = str(session.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "users.full_name" in sql and "users.email" in sql
+    assert "users.phone" not in sql
+
+
+def test_activity_timestamp_is_explicitly_normalized_to_utc():
+    value = datetime.fromisoformat("2026-10-01T15:30:00+03:00")
+    assert utc_datetime(value) == "2026-10-01 12:30:00 UTC"
 
 
 async def test_http_requests_do_not_create_database_audit_rows() -> None:

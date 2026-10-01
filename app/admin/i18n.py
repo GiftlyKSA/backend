@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import Request
 
 from app.admin.assets import STYLESHEET_URL, THEME_SCRIPT_URL
@@ -12,6 +14,8 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "When (UTC)": "الوقت (UTC)",
+    "Unknown user": "مستخدم غير موجود",
     "Direction": "اتجاه الترتيب",
     "Ascending": "تصاعدي",
     "Descending": "تنازلي",
@@ -583,9 +587,16 @@ def template_context(request: Request) -> dict[str, object]:
     """Expose the chosen display preferences and translation helper to Jinja."""
     selected_language = language(request)
     return {
+        "utc_datetime": utc_datetime,
         "stylesheet_url": STYLESHEET_URL,
         "theme_script_url": THEME_SCRIPT_URL,
         "lang": selected_language,
         "theme": theme(request),
         "tr": lambda value: translate(value, selected_language),
     }
+
+
+def utc_datetime(value: datetime) -> str:
+    """Display an audit instant with an explicit UTC label."""
+    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    return aware.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")

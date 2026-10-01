@@ -30,7 +30,7 @@ from app.repositories.admin_read_repository import (
     AdminTablePage,
 )
 from app.repositories.admin_table_repository import AdminTableRepository
-from app.repositories.audit_repository import AuditRepository
+from app.repositories.audit_repository import AuditActor, AuditRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
@@ -251,6 +251,12 @@ class AdminService:
     def list_table_catalog(self) -> list[AdminTableInfo]:
         """Return every application table available through the read-only browser."""
         return self._reads.list_table_catalog()
+
+    async def audit_actors(self, logs: list[AuditLog]) -> dict[uuid.UUID, AuditActor]:
+        """Resolve current names/emails without per-entry queries or stored PII copies."""
+        return await self._audit.list_actors(
+            {row.actor_user_id for row in logs if row.actor_user_id is not None}
+        )
 
     async def get_table_page(
         self, table_name: str, *, after: uuid.UUID | None = None, before: uuid.UUID | None = None

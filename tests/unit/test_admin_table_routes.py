@@ -242,13 +242,27 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
         )
         for _ in range(101)
     ]
-    ctx.service = SimpleNamespace(list_audit_logs=AsyncMock(return_value=rows))
+    ctx.service = SimpleNamespace(
+        list_audit_logs=AsyncMock(return_value=rows),
+        audit_actors=AsyncMock(
+            return_value={
+                actor_id: SimpleNamespace(
+                    id=actor_id, full_name="<Full Name>", email="actor@example.com"
+                ),
+            }
+        ),
+    )
     monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/admin/admin/audit-logs/system")
         invalid = await client.get("/v1/admin/admin/audit-logs/unknown")
     assert response.status_code == 200
     assert response.text.count("تعديل") == 25
+    assert "&lt;Full Name&gt;" in response.text
+    assert "actor@example.com" in response.text
+    assert f"/v1/admin/admin/users/{actor_id}" in response.text
+    assert "2026-09-30 12:00:00 UTC" in response.text
+    ctx.service.audit_actors.assert_awaited_once_with(rows[:25])
     assert "before_at=" in response.text
     assert "view=admin" in response.text
     assert "view=users" in response.text
@@ -273,7 +287,9 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
 
 async def test_audit_pages_keep_search_filters_and_clear_only_current_view(monkeypatch):
     app, ctx = make_app(monkeypatch)
-    ctx.service = SimpleNamespace(list_audit_logs=AsyncMock(return_value=[]))
+    ctx.service = SimpleNamespace(
+        list_audit_logs=AsyncMock(return_value=[]), audit_actors=AsyncMock(return_value={})
+    )
     monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/admin/admin/audit-logs/users?action=USER_BAN")
@@ -286,7 +302,9 @@ async def test_audit_pages_keep_search_filters_and_clear_only_current_view(monke
 @pytest.mark.parametrize("page_size", [25, 50, 100])
 async def test_unified_activity_defaults_to_system_and_validates_filters(monkeypatch, page_size):
     app, ctx = make_app(monkeypatch)
-    ctx.service = SimpleNamespace(list_audit_logs=AsyncMock(return_value=[]))
+    ctx.service = SimpleNamespace(
+        list_audit_logs=AsyncMock(return_value=[]), audit_actors=AsyncMock(return_value={})
+    )
     monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(

@@ -21,10 +21,10 @@
   <a class="btn secondary" href="{{ clear_url }}">{{ tr('Clear filters') }}</a>
 </form>
 <div class="table-scroll"><table class="list data-table">
-  <thead><tr><th>{{ tr('Activity ID') }}</th><th>{{ tr('When') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Details') }}</th></tr></thead>
+  <thead><tr><th>{{ tr('Activity ID') }}</th><th>{{ tr('When (UTC)') }}</th><th>{{ tr('Actor') }}</th><th>{{ tr('Actor ID') }}</th><th>{{ tr('Action') }}</th><th>{{ tr('Entity') }}</th><th>{{ tr('Details') }}</th></tr></thead>
   <tbody>{% for l in logs %}
     {% set metadata = l.audit_metadata or {} %}
-    <tr><td>{{ l.id }}</td><td>{{ l.created_at }}</td><td>{{ tr(metadata.get('actor_category', 'Unclassified')) }}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{% if metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
+    <tr><td>{{ l.id }}</td><td>{{ utc_datetime(l.created_at) }}</td><td>{% set actor = actors.get(l.actor_user_id) %}{% if actor %}<a href="/v1/admin/admin/users/{{ actor.id }}">{{ actor.full_name or tr('User') }}</a>{% if actor.email %}<div class="note">{{ actor.email }}</div>{% endif %}<div class="note">{{ tr(metadata.get('actor_category', 'Unclassified')) }}</div>{% elif l.actor_user_id %}{{ tr('Unknown user') }}{% else %}{{ tr('System activity') }}{% endif %}</td><td>{{ l.actor_user_id or '—' }}</td><td>{{ tr(l.action) }}</td><td>{{ tr(l.entity_type|replace('_', ' ')|title) }}{% if l.entity_id %}/{{ l.entity_id }}{% endif %}</td><td>{% if metadata.get('fields') %}{{ tr('Fields') }}: {% for field in metadata.fields %}{{ tr(field|replace('_', ' ')|title) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>
   {% else %}<tr><td colspan="7">{{ tr('No entries.') }}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% if next_url %}<p class="pager"><a class="btn secondary" href="{{ next_url }}">{{ tr('Next') }}</a></p>{% endif %}

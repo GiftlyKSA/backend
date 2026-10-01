@@ -878,6 +878,7 @@ async def audit_logs(
         "audit_logs.html",
         ctx=ctx,
         logs=rows[:page_size],
+        actors=await ctx.service.audit_actors(rows[:page_size]),
         next_url=next_url,
         filters=filters,
         active_view=view,

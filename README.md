@@ -273,6 +273,10 @@ and theme rules after a deployment, even when they ignore query-string versions.
 
 Activity uses one dashboard page with System, Admin, and User tabs; System opens first.
 Only the selected tab is queried. User activity combines customer and courier changes.
+Activity actors show their current full name, optional email, role, and profile link;
+actor IDs remain visible. Missing users retain their ID, and system events are labeled
+as system activity. Actor display fields are fetched once per page and are not copied
+into audit metadata. Activity timestamps are explicitly displayed in UTC.
 Filters include UTC date/time range, activity ID, activity name (action-name substring),
 actor ID, exact action, and entity type. Sort by newest or oldest, select 25 (default),
 50, or 100 rows per page, and use Next for stable cursor pagination. Reads, HTTP requests, WebSocket lifecycle events,
