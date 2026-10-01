@@ -106,6 +106,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, ge=1)
     RATE_LIMIT_ANONYMOUS_MAX_REQUESTS: int = Field(default=30, ge=1)
     RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    RATE_LIMIT_ADMIN_MAX_REQUESTS: int = Field(default=100, ge=1)
+    RATE_LIMIT_ADMIN_WINDOW_SECONDS: int = Field(default=60, ge=1)
     MAX_REQUEST_BODY_BYTES: int = 1_048_576
 
     # WebSocket chat guards (audit SEC-4/LOG-3): per-user message throttle + frame cap.

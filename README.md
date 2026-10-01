@@ -94,9 +94,13 @@ HTTP throttling defaults to 60 requests per 60 seconds per verified bearer-token
 or 30 requests per 3,600 seconds per unauthenticated client IP. Configure these with
 `RATE_LIMIT_MAX_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`,
 `RATE_LIMIT_ANONYMOUS_MAX_REQUESTS`, and `RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS`.
+Admin dashboard and `/api/admin/` routes instead use a separate 100-request/60-second
+bucket, configured with `RATE_LIMIT_ADMIN_MAX_REQUESTS` and
+`RATE_LIMIT_ADMIN_WINDOW_SECONDS`. Cookie-only dashboard requests are counted per IP;
+bearer-authenticated admin API requests are counted per token user identity.
 Update existing deployment overrides to use the new values. Health probes and CORS
-preflight are exempt. Cookie-only dashboard requests share the IP allowance; the
-dashboard's separate login throttle remains in place. Redis failures currently allow
+preflight are exempt. The dashboard's separate login throttle remains in place.
+Redis failures currently allow
 ordinary HTTP requests through, while authentication retains its own security checks.
 
 Every secret is an environment variable — there is no secrets manager. Secrets are

@@ -4,6 +4,14 @@ Reviewed on 2026-10-01. This is a targeted source review and regression check, n
 penetration test, production verification, or a replacement for the broader backend
 review. No Docker or live database changes were performed.
 
+Later update on 2026-10-01: admin dashboard and `/api/admin/` routes now have a separate
+100-request/60-second bucket (`RATE_LIMIT_ADMIN_MAX_REQUESTS=100`,
+`RATE_LIMIT_ADMIN_WINDOW_SECONDS=60`). Cookie-only requests are counted per IP;
+verified bearer identities are counted per user. Path classification only selects
+a throttle policy; it never grants admin access. The stricter admin login throttle
+of five attempts per five minutes is unchanged. Three boundary/isolation tests verify
+the dashboard root, dashboard subroutes, and admin API paths.
+
 ## Implemented changes
 
 - HTTP middleware selects a Redis-backed limit of 60 requests per 60 seconds for a
@@ -65,9 +73,9 @@ These are observed controls and their verification scope, not complete category 
   rate limiter/WAF and alert on Redis failures; changing availability behavior needs
   an explicit operational decision.
 - **Medium, 5/10, consequence of requested policy:** unauthenticated clients behind
-  one NAT/proxy share 30 requests/hour. Cookie-only dashboard requests also use the IP
-  budget because the HTTP identity selector recognizes bearer tokens, not dashboard
-  sessions. Impact: public/login/dashboard requests can receive 429 after that budget.
+  one NAT/proxy share 30 requests/hour. The former cookie-only dashboard allowance
+  issue is resolved by the separate admin policy above. Impact: public/login requests
+  can receive 429 after the anonymous budget; admin routes have their own budget.
   Health and CORS preflight remain exempt. Verify trusted-proxy deployment and tune
   policies explicitly if shared-IP/admin usage needs a different allowance.
 - **Unconfirmed external risk:** the mobile repository was not inspected or changed.
@@ -96,7 +104,7 @@ need the former unknown-field behavior. Keep input rendering protections in plac
   new limits and the anonymous window. They passed after the implementation.
 - Withdrawal undeclared-field tests failed before the schema fix and passed afterward.
 - Focused input/security suite: 12 passed; withdrawal schema suite: 4 passed.
-- Final full unit suite: 465 passed, including OpenAPI drift verification. The only
+- Final full unit suite after the admin policy update: 470 passed, including OpenAPI drift verification. The only
   warning is an existing Starlette/httpx deprecation notice.
 - Both all-files pre-commit stages passed, including Ruff lint/format, strict mypy,
   JSON/YAML/TOML validation, private-key detection, and merge-marker checks.

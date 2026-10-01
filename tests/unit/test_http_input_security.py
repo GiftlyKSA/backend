@@ -71,6 +71,30 @@ async def test_invalid_bearer_token_uses_anonymous_policy():
     assert redis.windows == {"ratelimit:ip:127.0.0.1": 3600}
 
 
+@pytest.mark.parametrize("path", ["/v1/admin/admin", "/v1/admin/admin/tables", "/api/admin/users"])
+async def test_admin_http_limit_is_100_per_minute_and_separate_from_public(path):
+    app = FastAPI()
+    redis = CounterRedis()
+    app.state.redis = redis
+    main._install_middleware(app, make_test_settings(RATE_LIMIT_ENABLED=True))
+
+    @app.get(path)
+    async def example() -> dict[str, bool]:
+        return {"ok": True}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for _ in range(100):
+            assert (await client.get(path)).status_code == 200
+        blocked = await client.get(path)
+        assert blocked.status_code == 429
+        assert blocked.headers["Retry-After"] == "60"
+        assert (await client.get("/api/example")).status_code == 404
+    assert redis.windows == {
+        "ratelimit:admin:ip:127.0.0.1": 60,
+        "ratelimit:ip:127.0.0.1": 3600,
+    }
+
+
 async def test_api_text_is_returned_as_json_with_nosniff():
     app = FastAPI()
     main._install_middleware(app, make_test_settings())
@@ -152,6 +176,8 @@ def test_admin_templates_escape_text_and_attribute_values(templates) -> None:
         "RATE_LIMIT_WINDOW_SECONDS",
         "RATE_LIMIT_ANONYMOUS_MAX_REQUESTS",
         "RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS",
+        "RATE_LIMIT_ADMIN_MAX_REQUESTS",
+        "RATE_LIMIT_ADMIN_WINDOW_SECONDS",
     ],
 )
 def test_http_throttle_settings_cannot_disable_limits_with_zero(field) -> None:

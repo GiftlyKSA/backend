@@ -271,18 +271,27 @@ def _install_request_guards(
 
         identity = _client_identity(request, settings)
         authenticated = identity.startswith("user:")
+        max_requests = (
+            settings.RATE_LIMIT_MAX_REQUESTS
+            if authenticated
+            else settings.RATE_LIMIT_ANONYMOUS_MAX_REQUESTS
+        )
+        window_seconds = (
+            settings.RATE_LIMIT_WINDOW_SECONDS
+            if authenticated
+            else settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
+        )
+        path = request.url.path
+        if (
+            path == "/v1/admin/admin"
+            or path.startswith("/v1/admin/admin/")
+            or path.startswith("/api/admin/")
+        ):
+            identity = f"admin:{identity}"
+            max_requests = settings.RATE_LIMIT_ADMIN_MAX_REQUESTS
+            window_seconds = settings.RATE_LIMIT_ADMIN_WINDOW_SECONDS
         limiter = RateLimiter(
-            request.app.state.redis,
-            max_requests=(
-                settings.RATE_LIMIT_MAX_REQUESTS
-                if authenticated
-                else settings.RATE_LIMIT_ANONYMOUS_MAX_REQUESTS
-            ),
-            window_seconds=(
-                settings.RATE_LIMIT_WINDOW_SECONDS
-                if authenticated
-                else settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
-            ),
+            request.app.state.redis, max_requests=max_requests, window_seconds=window_seconds
         )
 
         decision = await limiter.check(identity)
