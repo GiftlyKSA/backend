@@ -4413,6 +4413,7 @@
             "writeOnly": true
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "amount",

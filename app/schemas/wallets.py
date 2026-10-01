@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 _SAUDI_IBAN = re.compile(r"^SA\d{22}$")
 
@@ -42,6 +42,7 @@ class TransactionPage(BaseModel):
 class WithdrawalRequest(BaseModel):
     """A courier request to withdraw available wallet funds."""
 
+    model_config = ConfigDict(extra="forbid")
     amount: str = Field(..., description="Amount as a decimal string.", examples=["250.00"])
     iban: SecretStr = Field(..., description="Saudi IBAN; encrypted immediately at rest.")
 
@@ -68,4 +69,5 @@ class WithdrawalResponse(BaseModel):
 class RejectWithdrawalRequest(BaseModel):
     """An admin rejection reason for a withdrawal."""
 
+    model_config = ConfigDict(extra="forbid")
     reason: str = Field(..., min_length=1, max_length=255)

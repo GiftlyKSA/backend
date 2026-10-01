@@ -90,6 +90,15 @@ scheduler and workers. Check their logs for startup errors and job failures.
 
 ## Environment variables
 
+HTTP throttling defaults to 60 requests per 60 seconds per verified bearer-token identity,
+or 30 requests per 3,600 seconds per unauthenticated client IP. Configure these with
+`RATE_LIMIT_MAX_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`,
+`RATE_LIMIT_ANONYMOUS_MAX_REQUESTS`, and `RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS`.
+Update existing deployment overrides to use the new values. Health probes and CORS
+preflight are exempt. Cookie-only dashboard requests share the IP allowance; the
+dashboard's separate login throttle remains in place. Redis failures currently allow
+ordinary HTTP requests through, while authentication retains its own security checks.
+
 Every secret is an environment variable — there is no secrets manager. Secrets are
 wrapped in `SecretStr`, never logged, and never baked into the image; they are injected
 at runtime (task definition / compose override / systemd `EnvironmentFile`). See

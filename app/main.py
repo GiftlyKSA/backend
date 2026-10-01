@@ -269,15 +269,23 @@ def _install_request_guards(
         ):
             return await call_next(request)
 
+        identity = _client_identity(request, settings)
+        authenticated = identity.startswith("user:")
         limiter = RateLimiter(
             request.app.state.redis,
-            max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
-            window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+            max_requests=(
+                settings.RATE_LIMIT_MAX_REQUESTS
+                if authenticated
+                else settings.RATE_LIMIT_ANONYMOUS_MAX_REQUESTS
+            ),
+            window_seconds=(
+                settings.RATE_LIMIT_WINDOW_SECONDS
+                if authenticated
+                else settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
+            ),
         )
 
-        decision = await limiter.check(
-            _client_identity(request, settings),
-        )
+        decision = await limiter.check(identity)
 
         if not decision.allowed:
             return error_response(

@@ -1,5 +1,15 @@
 # Prompt for the Giftly mobile UI agent
 
+Security update (2026-10-01): render all user-authored API values as plain text,
+including names, descriptions, invoice lines, reviews, and messages. Literal HTML
+and JavaScript must stay visible as text; do not evaluate it or insert it through
+`innerHTML`, `dangerouslySetInnerHTML`, `v-html`, or an HTML-rendering widget. Use
+normal escaped text bindings or `textContent`. Do not HTML-decode values into markup.
+Handle HTTP 429 using `Retry-After`: defaults are 60 requests/minute per bearer-token
+user and 30 requests/hour per unauthenticated IP, with additional OTP/chat limits.
+Avoid aggressive polling/retry loops. Withdrawal request bodies must contain only
+the declared OpenAPI properties; undeclared properties now return HTTP 422.
+
 Work in the Giftly **mobile** repository. Update the existing screens and API client to
 match the implemented backend; keep the current visual design unless a contract mismatch
 requires a small UI change. Read the mobile repository's instructions and current code

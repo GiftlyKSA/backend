@@ -18,7 +18,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, ValidationError, model_validator
+from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -102,8 +102,10 @@ class Settings(BaseSettings):
 
     # Hardening (SPEC SECTION 17.2 A04): global request throttle and body-size guard.
     RATE_LIMIT_ENABLED: bool = True
-    RATE_LIMIT_MAX_REQUESTS: int = 120
-    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_MAX_REQUESTS: int = Field(default=60, ge=1)
+    RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, ge=1)
+    RATE_LIMIT_ANONYMOUS_MAX_REQUESTS: int = Field(default=30, ge=1)
+    RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS: int = Field(default=3600, ge=1)
     MAX_REQUEST_BODY_BYTES: int = 1_048_576
 
     # WebSocket chat guards (audit SEC-4/LOG-3): per-user message throttle + frame cap.

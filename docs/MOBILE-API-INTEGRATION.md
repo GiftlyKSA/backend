@@ -34,6 +34,19 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 ## Integration conventions
 
+- HTTP limits default to 60 requests per 60 seconds per verified bearer-token identity,
+  or 30 requests per 3,600 seconds per unauthenticated IP. Public login/registration
+  requests share that IP budget; OTP limits also apply. On HTTP 429, respect
+  `Retry-After` and avoid automatic retry loops. Deployment settings can override defaults.
+- User text is plain text, not executable HTML. Names, descriptions, invoice text,
+  reviews, and chat content may contain literal HTML/JavaScript-looking characters;
+  preserve them and display them through text widgets or DOM `textContent`. Never use
+  raw HTML insertion, evaluate returned text, or treat it as a template. Do not
+  HTML-decode text and then insert it as markup. Backend validation and JSON serialization
+  do not replace safe frontend rendering. Treat map/media URLs as separate validated
+  link fields, not as HTML supplied by users.
+- Withdrawal and withdrawal-rejection bodies now reject unknown fields with HTTP 422,
+  matching the other request models. Send only the properties declared in OpenAPI.
 - Base path is `/api`. Send `Authorization: Bearer <access_token>` on protected HTTP calls. Existing users receive 30-minute access and rotating 30-day refresh credentials; use `POST /api/auth/refresh` and replace both stored tokens. Logout invalidates credentials on every device. Do not derive role or ownership from the phone number, local fixture, or a client-supplied user ID.
 - `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money and tax rates are decimal strings**, such as `"125.50"` and `"0.15"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
 - A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings. Do not use offset or invent a next page when `next_cursor` is null.
