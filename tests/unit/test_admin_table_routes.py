@@ -155,6 +155,9 @@ async def test_overview_renders_at_new_admin_path_with_live_summary(monkeypatch)
         ),
         list_orders=AsyncMock(return_value=[]),
         list_audit_logs=AsyncMock(return_value=[]),
+        audit_filter_choices=AsyncMock(
+            return_value=SimpleNamespace(actions=["UPDATE"], entities=["users"])
+        ),
     )
     monkeypatch.setattr(admin_routes, "_ctx", AsyncMock(return_value=ctx))
     async with AsyncClient(
@@ -244,6 +247,9 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
     ]
     ctx.service = SimpleNamespace(
         list_audit_logs=AsyncMock(return_value=rows),
+        audit_filter_choices=AsyncMock(
+            return_value=SimpleNamespace(actions=["UPDATE"], entities=["users"])
+        ),
         audit_entities=AsyncMock(return_value={("users", actor_id): "Alice · alice@example.com"}),
         audit_actors=AsyncMock(
             return_value={
@@ -260,9 +266,13 @@ async def test_audit_trail_filters_actor_and_pages_without_unbounded_results(mon
         response = await client.get("/v1/admin/admin/audit-logs/system")
         invalid = await client.get("/v1/admin/admin/audit-logs/unknown")
     assert response.status_code == 200
-    assert response.text.count("تعديل") == 25
+    assert response.text.count("<tr><td>") == 25
     assert "&lt;Full Name&gt;" in response.text
     assert "actor@example.com" in response.text
+    for field in ("activity_name", "action", "entity_type"):
+        assert f'<select name="{field}">' in response.text
+        assert f'<input name="{field}"' not in response.text
+    ctx.service.audit_filter_choices.assert_awaited_once_with(("SYSTEM",))
     assert "Alice · alice@example.com" in response.text
     assert f"<td>{actor_id}</td>" not in response.text
     assert f"/v1/admin/admin/users/{actor_id}" in response.text
@@ -294,6 +304,9 @@ async def test_audit_pages_keep_search_filters_and_clear_only_current_view(monke
     app, ctx = make_app(monkeypatch)
     ctx.service = SimpleNamespace(
         list_audit_logs=AsyncMock(return_value=[]),
+        audit_filter_choices=AsyncMock(
+            return_value=SimpleNamespace(actions=["UPDATE"], entities=["users"])
+        ),
         audit_entities=AsyncMock(return_value={}),
         audit_actors=AsyncMock(return_value={}),
     )
@@ -311,6 +324,9 @@ async def test_unified_activity_defaults_to_system_and_validates_filters(monkeyp
     app, ctx = make_app(monkeypatch)
     ctx.service = SimpleNamespace(
         list_audit_logs=AsyncMock(return_value=[]),
+        audit_filter_choices=AsyncMock(
+            return_value=SimpleNamespace(actions=["UPDATE"], entities=["users"])
+        ),
         audit_entities=AsyncMock(return_value={}),
         audit_actors=AsyncMock(return_value={}),
     )

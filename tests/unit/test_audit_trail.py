@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from app import main
 from app.admin.i18n import ARABIC, utc_datetime
+from app.core.admin_time import ADMIN_TIMEZONE
 from app.core.middleware import RequestIdMiddleware
 from app.models import Base
 from app.repositories.audit_repository import AuditRepository
@@ -103,6 +104,33 @@ async def test_audit_actor_lookup_is_batched_and_selects_only_display_fields():
 def test_activity_timestamp_is_explicitly_normalized_to_utc():
     value = datetime.fromisoformat("2026-10-01T15:30:00+03:00")
     assert utc_datetime(value) == "2026-10-01 12:30:00 UTC"
+
+
+async def test_audit_dropdown_choices_are_scoped_bounded_and_exclude_request_logs():
+    session = SimpleNamespace(scalars=AsyncMock(side_effect=[["CREATE", "UPDATE"], ["users"]]))
+    choices = await AuditRepository(session).filter_choices(("SYSTEM",))
+    assert choices.actions == ["CREATE", "UPDATE"]
+    assert choices.entities == ["users"]
+    assert session.scalars.await_count == 2
+    for call in session.scalars.call_args_list:
+        compiled = call.args[0].compile(dialect=postgresql.dialect())
+        sql = str(compiled)
+        assert "DISTINCT" in sql and "LIMIT" in sql
+        assert "actor_category" in sql
+        assert 200 in compiled.params.values()
+        assert ["SYSTEM"] in compiled.params.values()
+        assert "HTTP\\_%" in compiled.params.values()
+
+
+async def test_riyadh_audit_date_bounds_are_bound_as_utc():
+    session = SimpleNamespace(scalars=AsyncMock(return_value=[]))
+    start = datetime(2026, 10, 1, 15, tzinfo=ADMIN_TIMEZONE)
+    end = datetime(2026, 10, 1, 16, tzinfo=ADMIN_TIMEZONE)
+    await AuditRepository(session).list_recent(start_at=start, end_at=end)
+    compiled = session.scalars.call_args.args[0].compile(dialect=postgresql.dialect())
+    dates = [value for value in compiled.params.values() if isinstance(value, datetime)]
+    assert dates == [datetime(2026, 10, 1, 12, tzinfo=UTC), datetime(2026, 10, 1, 13, tzinfo=UTC)]
+    assert all(value.tzinfo is UTC for value in dates)
 
 
 async def test_http_requests_do_not_create_database_audit_rows() -> None:

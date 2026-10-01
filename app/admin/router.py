@@ -902,6 +902,7 @@ async def audit_logs(
         logs=rows[:page_size],
         actors=await ctx.service.audit_actors(rows[:page_size]),
         entities=await ctx.service.audit_entities(rows[:page_size]),
+        choices=await ctx.service.audit_filter_choices(categories),
         next_url=next_url,
         filters=filters,
         active_view=view,

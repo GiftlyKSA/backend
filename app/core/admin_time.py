@@ -5,6 +5,12 @@ from datetime import UTC, datetime, timedelta, timezone
 ADMIN_TIMEZONE = timezone(timedelta(hours=3), "UTC+3")
 
 
+def database_datetime(value: datetime) -> datetime:
+    """Normalize a timezone-aware instant before binding a database timestamp."""
+    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    return aware.astimezone(UTC)
+
+
 def admin_datetime(value: datetime | str) -> str:
     """Format an instant in the dashboard's fixed Riyadh timezone."""
     parsed = datetime.fromisoformat(value) if isinstance(value, str) else value

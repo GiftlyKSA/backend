@@ -13,6 +13,7 @@ from datetime import datetime
 from sqlalchemy import literal_column, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.admin_time import database_datetime
 from app.models import AuditLog, User
 
 
@@ -23,6 +24,14 @@ class AuditActor:
     id: uuid.UUID
     full_name: str | None
     email: str | None
+
+
+@dataclass(frozen=True)
+class AuditFilterChoices:
+    """Bounded stored action/entity choices for one activity category."""
+
+    actions: list[str]
+    entities: list[str]
 
 
 class AuditRepository:
@@ -45,6 +54,24 @@ class AuditRepository:
             actor_id: AuditActor(actor_id, full_name, email)
             for actor_id, full_name, email in result
         }
+
+    async def filter_choices(self, categories: tuple[str, ...]) -> AuditFilterChoices:
+        """Load dropdown values only for the selected tab, without reading row bodies."""
+        category = AuditLog.audit_metadata.op("->>")(literal_column("'actor_category'"))
+        values: list[list[str]] = []
+        for column in (AuditLog.action, AuditLog.entity_type):
+            query = (
+                select(column)
+                .distinct()
+                .where(category.in_(categories))
+                .where(AuditLog.action.not_like("HTTP\\_%", escape="\\"))
+                .where(AuditLog.action.not_like("WS\\_%", escape="\\"))
+                .where(AuditLog.action != "SYSTEM_JOB_RUN")
+                .order_by(column)
+                .limit(200)
+            )
+            values.append(list(await self._session.scalars(query)))
+        return AuditFilterChoices(actions=values[0], entities=values[1])
 
     async def record(
         self,
@@ -120,9 +147,9 @@ class AuditRepository:
             escaped = activity_name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             query = query.where(AuditLog.action.ilike(f"%{escaped}%", escape="\\"))
         if start_at is not None:
-            query = query.where(AuditLog.created_at >= start_at)
+            query = query.where(AuditLog.created_at >= database_datetime(start_at))
         if end_at is not None:
-            query = query.where(AuditLog.created_at <= end_at)
+            query = query.where(AuditLog.created_at <= database_datetime(end_at))
         category = AuditLog.audit_metadata.op("->>")(literal_column("'actor_category'"))
         if actor_categories is not None:
             query = query.where(category.in_(actor_categories))

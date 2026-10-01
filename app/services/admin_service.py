@@ -30,7 +30,7 @@ from app.repositories.admin_read_repository import (
     AdminTablePage,
 )
 from app.repositories.admin_table_repository import AdminTableRepository
-from app.repositories.audit_repository import AuditActor, AuditRepository
+from app.repositories.audit_repository import AuditActor, AuditFilterChoices, AuditRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
@@ -257,6 +257,10 @@ class AdminService:
         return await self._audit.list_actors(
             {row.actor_user_id for row in logs if row.actor_user_id is not None}
         )
+
+    async def audit_filter_choices(self, categories: tuple[str, ...]) -> AuditFilterChoices:
+        """Provide stored dropdown choices for the current activity tab."""
+        return await self._audit.filter_choices(categories)
 
     async def audit_entities(self, logs: list[AuditLog]) -> dict[tuple[str, uuid.UUID], str]:
         """Resolve current safe labels without storing personal-data snapshots."""

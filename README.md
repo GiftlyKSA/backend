@@ -284,7 +284,11 @@ values are unchanged. Public API timestamp serialization remains ISO-8601 with a
 explicit offset, normally UTC (`+00:00`); clients should convert instants for display.
 Filters include Riyadh date/time range, activity ID, activity name (action-name substring),
 actor ID, exact action, and entity type. Sort by newest or oldest, select 25 (default),
-50, or 100 rows per page, and use Next for stable cursor pagination. Reads, HTTP requests, WebSocket lifecycle events,
+50, or 100 rows per page, and use Next for stable cursor pagination.
+Activity name, action, and entity filters use dropdowns populated from the selected
+tab's stored log values (up to 200 distinct choices per field). Riyadh date/time
+bounds are explicitly normalized to UTC before database comparisons.
+Reads, HTTP requests, WebSocket lifecycle events,
 login/logout, and scheduled-job start/completion are not database audit actions.
 Migration `0009_action_only_audit` removes existing `HTTP_*` audit rows; restore a
 database backup if those historical rows are needed. Other old operational rows are

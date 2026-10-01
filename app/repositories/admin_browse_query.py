@@ -23,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.schema import Column, Table
 
-from app.core.admin_time import ADMIN_TIMEZONE
+from app.core.admin_time import ADMIN_TIMEZONE, database_datetime
 from app.core.exceptions import ValidationDomainError
 
 
@@ -61,7 +61,9 @@ def filter_value(column: Column[Any], value: str) -> object:
             return uuid.UUID(value)
         if isinstance(column.type, DateTime):
             parsed = datetime.fromisoformat(value)
-            return parsed.replace(tzinfo=ADMIN_TIMEZONE) if parsed.tzinfo is None else parsed
+            return database_datetime(
+                parsed.replace(tzinfo=ADMIN_TIMEZONE) if parsed.tzinfo is None else parsed
+            )
         if isinstance(column.type, Date):
             return date.fromisoformat(value)
         if isinstance(column.type, Enum):
@@ -172,7 +174,9 @@ def _date_bounds(query: Select[Any], column: Column[Any], options: BrowseOptions
         raise ValidationDomainError("Choose a date field before filtering by date.")
     for bound, lower in ((options.start_at, True), (options.end_at, False)):
         if bound is not None:
-            value: datetime | date = bound.date() if isinstance(column.type, Date) else bound
+            value: datetime | date = (
+                bound.date() if isinstance(column.type, Date) else database_datetime(bound)
+            )
             query = query.where(column >= value if lower else column <= value)
     return query
 

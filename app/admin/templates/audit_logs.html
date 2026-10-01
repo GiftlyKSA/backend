@@ -11,12 +11,12 @@
   <label>{{ tr('From (UTC+3)') }}<input name="start_at" type="datetime-local" step="1" value="{{ filters.start_at }}"></label>
   <label>{{ tr('To (UTC+3)') }}<input name="end_at" type="datetime-local" step="1" value="{{ filters.end_at }}"></label>
   <label>{{ tr('Activity ID') }}<input name="activity_id" value="{{ filters.activity_id }}" placeholder="UUID"></label>
-  <label>{{ tr('Activity name') }}<input name="activity_name" maxlength="100" value="{{ filters.activity_name }}"></label>
+  <label>{{ tr('Activity name') }}<select name="activity_name"><option value="">{{ tr('All records') }}</option>{% set available = choices.actions %}{% if filters.activity_name and filters.activity_name not in available %}<option value="{{ filters.activity_name }}" selected>{{ tr(filters.activity_name|replace('_', ' ')|title) }}</option>{% endif %}{% for choice in available %}<option value="{{ choice }}" {% if choice == filters.activity_name %}selected{% endif %}>{{ tr(choice|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
   <label>{{ tr('Sort by') }}<select name="sort"><option value="newest" {% if filters.sort == 'newest' %}selected{% endif %}>{{ tr('Newest first') }}</option><option value="oldest" {% if filters.sort == 'oldest' %}selected{% endif %}>{{ tr('Oldest first') }}</option></select></label>
   <label>{{ tr('Per page') }}<select name="page_size">{% for size in [25, 50, 100] %}<option value="{{ size }}" {% if filters.page_size == size %}selected{% endif %}>{{ size }}</option>{% endfor %}</select></label>
   <label>{{ tr('Actor ID') }}<input name="actor_user_id" type="text" value="{{ filters.actor_user_id }}" placeholder="UUID"></label>
-  <label>{{ tr('Action') }}<input name="action" type="text" maxlength="100" value="{{ filters.action }}"></label>
-  <label>{{ tr('Entity') }}<input name="entity_type" type="text" maxlength="50" value="{{ filters.entity_type }}"></label>
+  <label>{{ tr('Action') }}<select name="action"><option value="">{{ tr('All records') }}</option>{% set available = choices.actions %}{% if filters.action and filters.action not in available %}<option value="{{ filters.action }}" selected>{{ tr(filters.action|replace('_', ' ')|title) }}</option>{% endif %}{% for choice in available %}<option value="{{ choice }}" {% if choice == filters.action %}selected{% endif %}>{{ tr(choice|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
+  <label>{{ tr('Entity') }}<select name="entity_type"><option value="">{{ tr('All records') }}</option>{% set available = choices.entities %}{% if filters.entity_type and filters.entity_type not in available %}<option value="{{ filters.entity_type }}" selected>{{ tr(filters.entity_type|replace('_', ' ')|title) }}</option>{% endif %}{% for choice in available %}<option value="{{ choice }}" {% if choice == filters.entity_type %}selected{% endif %}>{{ tr(choice|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
   <button type="submit">{{ tr('Filter') }}</button>
   <a class="btn secondary" href="{{ clear_url }}">{{ tr('Clear filters') }}</a>
 </form>
