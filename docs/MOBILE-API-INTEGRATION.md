@@ -5,9 +5,9 @@ from order input/output. Remove those inputs and map navigation from existing sc
 city selection and delivery date remain supported. Old location properties are rejected
 as undeclared request fields.
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 52 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 56 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
 
-**Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (51) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+**Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (56) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
 The backend unit suite compares non-admin operations and their wire schemas in this file
 with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
@@ -623,6 +623,35 @@ See [UI-AGENT-INVOICE-PROMO-PROMPT.md](UI-AGENT-INVOICE-PROMO-PROMPT.md).
 - **Then / dependent API:** Refresh inbox unread count if displayed.
 
 **When/how (61 words):** Acknowledge the caller's inbound messages as read and clear that conversation's unread count. The request has no JSON body and returns 204 without a payload. Call when the chat is genuinely visible to the user, rather than immediately on a background push event. Other participants' read state cannot be set by this caller. Refresh the inbox badge after success if necessary.
+
+## Chat media — 2026-10-03
+
+The customer/courier Chat screen supports private recorded voice notes and camera/
+gallery images and videos. Use [the full chat media handoff](UI-AGENT-CHAT-MEDIA-PROMPT.md)
+for exact requests, responses, accepted MIME types, limits and error handling.
+
+| API | Input | Output | Authorization / dependencies |
+| --- | --- | --- | --- |
+| `GET /api/chat/media-limits` | No body | `ChatMediaLimitsResponse` — integer size/duration/pixel limits and MIME string arrays | Eligible customer/courier bearer token; load before recording/selection. |
+| `POST /api/conversations/{conversation_id}/media-upload-urls` | `ChatUploadRequest`: `media_type: IMAGE\|VIDEO\|VOICE`, `content_type: string`, `byte_size: integer` | 201 `UploadUrlResponse`: `upload_url: string`, `storage_key: string`, `expires_in: integer` | Eligible conversation participant; then direct create-only signed S3 PUT. |
+| `POST /api/conversations/{conversation_id}/media-messages` | `SendChatMediaRequest`: `storage_keys: string[1..5]`, `text?: string` | 201 `MessageResponse` with `attachments: ChatAttachmentResponse[]` | Same participant; successful S3 upload required. No separate chat confirm endpoint. |
+| `GET /api/chat/attachments/{attachment_id}/url` | UUID path; no body | `AttachmentUrlResponse`: `url: string`, `expires_in: integer` | Eligible conversation participant; fetch on demand for private playback. |
+
+**When/how:** Load configured limits, record a microphone voice note or select camera/
+gallery media, then issue one conversation-scoped upload grant per file. Upload exact
+bytes directly to the signed S3 URL with matching content type and `If-None-Match: *`.
+Send returned keys through the media-message endpoint. The backend validates real
+bytes and decoded duration before atomically consuming grants. History and live events
+include attachment metadata; obtain temporary playback URLs only when needed.
+
+Images default to 10 MiB each, videos to 120 MiB/120 seconds, and voice notes to
+10 MiB/120 seconds. Send five images or one video or one voice note per message.
+Message `attachments` entries contain `id: UUID string`, `content_type: string`,
+`byte_size: integer`, `duration_seconds: number|null`, `display_order: integer`.
+Text messages have an empty attachment array. Voice microphone origin is a UI
+requirement; the server cannot attest file provenance. Missing decoder/capacity returns
+503, and reused grants return 409. Rebuild the image and apply migration `0015_chat_media`;
+real private-storage deployment still needs staging verification.
 
 ## Push devices
 

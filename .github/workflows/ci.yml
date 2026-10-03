@@ -137,6 +137,36 @@ jobs:
         run: |
           uid=$(docker run --rm giftly:ci id -u)
           test "$uid" != "0"
+      - name: Verify the packaged recording decoder
+        run: |
+          docker run --rm -i --entrypoint python giftly:ci - <<'PY'
+          import asyncio
+          import io
+          import wave
+          from app.core.exceptions import BadRequestError
+          from app.services.chat_media_validation import verify_recording
+
+          def recording(seconds):
+              output = io.BytesIO()
+              with wave.open(output, "wb") as audio:
+                  audio.setnchannels(1)
+                  audio.setsampwidth(2)
+                  audio.setframerate(8000)
+                  audio.writeframes(b"\x00\x00" * 8000 * seconds)
+              return output.getvalue()
+
+          async def check():
+              duration = await verify_recording(recording(1), kind="VOICE", mime="audio/wav", maximum=120)
+              assert 0.9 <= duration <= 1.1
+              try:
+                  await verify_recording(recording(2), kind="VOICE", mime="audio/wav", maximum=1)
+              except BadRequestError:
+                  pass
+              else:
+                  raise AssertionError("Overlong recording was accepted")
+
+          asyncio.run(check())
+          PY
       - name: Assert no secrets leak into image history
         run: |
           # Scan only the layers OUR Dockerfile adds. The base python image

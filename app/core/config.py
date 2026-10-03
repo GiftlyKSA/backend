@@ -137,6 +137,11 @@ class Settings(BaseSettings):
     AUTO_APPROVE_HOURS: int = 72
     PAYMENT_EXPIRY_HOURS: int = 48
     MAX_UPLOAD_BYTES: int = 10_485_760
+    CHAT_IMAGE_MAX_UPLOAD_BYTES: int = Field(default=10_485_760, ge=1, le=10_485_760)
+    CHAT_VIDEO_MAX_UPLOAD_BYTES: int = Field(default=125_829_120, ge=1, le=125_829_120)
+    CHAT_AUDIO_MAX_UPLOAD_BYTES: int = Field(default=10_485_760, ge=1, le=10_485_760)
+    CHAT_VIDEO_MAX_DURATION_SECONDS: int = Field(default=120, ge=1, le=120)
+    CHAT_AUDIO_MAX_DURATION_SECONDS: int = Field(default=120, ge=1, le=120)
     OTP_TTL_SECONDS: int = 60
     OTP_MAX_PER_WINDOW: int = 3
     OTP_WINDOW_SECONDS: int = 300

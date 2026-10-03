@@ -28,6 +28,14 @@ class DomainError(Exception):
             self.message = message
 
 
+class MediaValidationUnavailableError(DomainError):
+    """Required decoder capacity or infrastructure is temporarily unavailable."""
+
+    code = "MEDIA_VALIDATION_UNAVAILABLE"
+    message = "Media validation is temporarily unavailable. Please try again later."
+    status_code = 503
+
+
 class PaymentsDisabledError(DomainError):
     """Production payments are suspended until Dhamen is implemented and verified."""
 

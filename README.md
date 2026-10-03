@@ -43,6 +43,16 @@ only** — `pip`, `poetry`, `pipenv`, `virtualenv`, and `conda` are forbidden ev
 
 ## Prerequisites
 
+Chat supports private voice notes, images and videos. Deployment images include FFmpeg/
+ffprobe for recording validation; rebuild the image and migrate through `0015_chat_media`
+before enabling these features. The native decoder must also be available for a non-Docker
+deployment. No decoder means recording validation fails closed. Limits are configured
+with `CHAT_AUDIO_MAX_DURATION_SECONDS`, `CHAT_VIDEO_MAX_DURATION_SECONDS` (120 seconds),
+`CHAT_IMAGE_MAX_UPLOAD_BYTES`, `CHAT_AUDIO_MAX_UPLOAD_BYTES` (10 MiB), and
+`CHAT_VIDEO_MAX_UPLOAD_BYTES` (120 MiB). Clients fetch `/api/chat/media-limits`.
+See [the chat media handoff](docs/UI-AGENT-CHAT-MEDIA-PROMPT.md) for private storage policy,
+upload headers, request/response schemas and development-fake limitations.
+
 - [uv](https://docs.astral.sh/uv/) (Astral)
 - Docker + Docker Compose (for the local Postgres/Redis stack)
 

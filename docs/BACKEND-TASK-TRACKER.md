@@ -36,3 +36,9 @@ These are validation tasks or intentional limitations from the review, separate 
 | Implement and verify Dhamen before enabling production payments | Open | High · release dependent | 2026-09-30 | Production payments are intentionally disabled. Validate callback authentication, amounts, idempotency, and settlement with the provider before enabling them. |
 
 No Docker was run on the user's machine for this tracker. PostgreSQL, Redis, vendor, ingress, and production behavior remain unverified where noted above.
+
+## Chat media update — 2026-10-03
+
+| Task | Status | Urgency | Last update | Note / next step |
+| --- | --- | --- | --- | --- |
+| Recorded voice notes, camera/gallery images and video | Implemented; deployment validation pending | High | 2026-10-03 | Private scoped grants, duration/size checks, atomic consumption, history/live metadata and signed playback. See `2026-10-03-chat-media.md` and `UI-AGENT-CHAT-MEDIA-PROMPT.md`. Verify native decoder, PostgreSQL/Redis and real private storage in CI/staging. |

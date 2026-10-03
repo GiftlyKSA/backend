@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import secrets as _secrets
 from datetime import date, timedelta
+from io import BytesIO
 
 import pytest
 from app.core.config import Settings
@@ -19,6 +20,7 @@ from app.models import CourierProfile, User
 from app.models.enums import UserStatus
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from PIL import Image
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
@@ -167,6 +169,63 @@ async def test_rest_chat_send_list_read_inbox() -> None:
             assert leak.status_code == 404
             hidden = await client.get(f"/api/orders/{order_id}/conversation", headers=other_h)
             assert hidden.status_code == 404
+    finally:
+        await app.state.redis.aclose()
+        await engine.dispose()
+        await app.state.engine.dispose()
+
+
+async def test_private_chat_image_history_playback_and_replay() -> None:
+    settings, engine, factory = await _make_stack()
+    app = create_app(settings)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+            customer, courier, _, conversation, _ = await _assigned_conversation(
+                client, app, factory
+            )
+            buffer = BytesIO()
+            Image.new("RGB", (2, 2)).save(buffer, format="PNG")
+            image = buffer.getvalue()
+            issued = await client.post(
+                f"/api/conversations/{conversation}/media-upload-urls",
+                headers=customer,
+                json={"media_type": "IMAGE", "content_type": "image/png", "byte_size": len(image)},
+            )
+            assert issued.status_code == 201, issued.text
+            key = issued.json()["storage_key"]
+            app.state.clients.storage.recorded_bytes[key] = image
+            sent = await client.post(
+                f"/api/conversations/{conversation}/media-messages",
+                headers=customer,
+                json={"storage_keys": [key], "text": "<script>plain text</script>"},
+            )
+            assert sent.status_code == 201, sent.text
+            message = sent.json()
+            assert message["message_type"] == "IMAGE"
+            assert message["content"] == "<script>plain text</script>"
+            attachment = message["attachments"][0]
+            assert attachment["byte_size"] == len(image)
+            assert attachment["duration_seconds"] is None
+            assert "storage_key" not in attachment
+            history = await client.get(
+                f"/api/conversations/{conversation}/messages", headers=courier
+            )
+            assert next(item for item in history.json()["items"] if item["id"] == message["id"])[
+                "attachments"
+            ] == [attachment]
+            url_path = f"/api/chat/attachments/{attachment['id']}/url"
+            playback = await client.get(url_path, headers=courier)
+            assert playback.status_code == 200, playback.text
+            assert playback.json()["expires_in"] == 300
+            stranger = await _register(client, app, _phone(), "CUSTOMER")
+            other_headers = {"Authorization": f"Bearer {stranger['access_token']}"}
+            assert (await client.get(url_path, headers=other_headers)).status_code == 404
+            replay = await client.post(
+                f"/api/conversations/{conversation}/media-messages",
+                headers=customer,
+                json={"storage_keys": [key]},
+            )
+            assert replay.status_code == 409, replay.text
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

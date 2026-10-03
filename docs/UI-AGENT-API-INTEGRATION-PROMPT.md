@@ -15,7 +15,7 @@ match the implemented backend; keep the current visual design unless a contract 
 requires a small UI change. Read the mobile repository's instructions and current code
 before editing. Use these backend files as the source of truth:
 
-- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 51
+- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 56
   implemented non-admin HTTP operations.
 - `../backend/docs/MOBILE-API-INTEGRATION.md` — screen mapping, call order, WebSocket,
   environment behavior, and unsupported features.
@@ -76,3 +76,7 @@ integration changes. When finished, report which screens you changed, which impl
 endpoints each uses, what remains blocked by missing backend APIs, and which tests ran.
 
 See UI-AGENT-INVOICE-PDF-PROMPT.md for the new private invoice PDF endpoint and item-only VAT change.
+
+See UI-AGENT-CHAT-MEDIA-PROMPT.md for private microphone voice notes, camera/gallery
+images and videos, attachment history and signed playback. Chat uploads use the
+conversation-scoped grant and media-message endpoints, without `/api/media/confirm`.

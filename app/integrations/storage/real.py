@@ -171,6 +171,21 @@ class S3StorageClient(StorageClient):
         signature = _IMAGE_MAGIC.get(content_type)
         return signature is not None and head.startswith(signature)
 
+    async def read_bounded_object(self, storage_key: str, *, max_bytes: int) -> bytes:
+        """Read at most the declared size plus one byte, always closing the S3 body."""
+        async with self._client() as s3:
+            response = await s3.get_object(Bucket=self._bucket, Key=storage_key)
+            body = response["Body"]
+            result = bytearray()
+            try:
+                while chunk := await body.read(min(65536, max_bytes + 1 - len(result))):
+                    result.extend(chunk)
+                    if len(result) > max_bytes:
+                        raise ValueError("Private media exceeds the declared size.")
+            finally:
+                body.close()
+        return bytes(result)
+
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a short-lived, RSA-signed CloudFront read URL."""
         signer = CloudFrontSigner(self._cloudfront_key_pair_id, self._sign_cloudfront_policy)

@@ -295,6 +295,7 @@ ARABIC: dict[str, str] = {
     "Balance After": "الرصيد بعد العملية",
     "Batch Id": "معرّف الدفعة",
     "Byte Size": "الحجم بالبايت",
+    "Duration Seconds": "المدة بالثواني",
     "Cancelled Reason": "سبب الإلغاء",
     "Captured At": "وقت تحصيل الدفع",
     "Category": "التصنيف",

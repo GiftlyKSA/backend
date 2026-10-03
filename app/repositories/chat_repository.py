@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import insert, literal, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,8 +110,9 @@ class ChatRepository:
         content_type: str,
         byte_size: int,
         display_order: int,
+        duration_seconds: Decimal | None = None,
     ) -> MessageAttachment | None:
-        """Attach an image only when the actor participates in the message conversation."""
+        """Attach media only to a message sent by this conversation participant."""
         authorized_values = (
             select(
                 literal(message_id),
@@ -118,11 +120,13 @@ class ChatRepository:
                 literal(content_type),
                 literal(byte_size),
                 literal(display_order),
+                literal(duration_seconds),
             )
             .select_from(Message)
             .join(Conversation, Conversation.id == Message.conversation_id)
             .where(
                 Message.id == message_id,
+                Message.sender_id == actor_id,
                 (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
             )
         )
@@ -135,6 +139,7 @@ class ChatRepository:
                     "content_type",
                     "byte_size",
                     "display_order",
+                    "duration_seconds",
                 ],
                 authorized_values,
             )
@@ -143,6 +148,33 @@ class ChatRepository:
         attachment = await self._session.scalar(statement)
         await self._session.flush()
         return attachment
+
+    async def attachments_for_messages(self, ids: list[uuid.UUID]) -> list[MessageAttachment]:
+        """Load attachments in one query after the service authorizes the conversation."""
+        if not ids:
+            return []
+        return list(
+            await self._session.scalars(
+                select(MessageAttachment)
+                .where(MessageAttachment.message_id.in_(ids))
+                .order_by(MessageAttachment.message_id, MessageAttachment.display_order)
+            )
+        )
+
+    async def attachment_for_actor(
+        self, attachment_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> MessageAttachment | None:
+        """Hide absent or foreign attachments with the same scoped lookup."""
+        result: MessageAttachment | None = await self._session.scalar(
+            select(MessageAttachment)
+            .join(Message, Message.id == MessageAttachment.message_id)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(
+                MessageAttachment.id == attachment_id,
+                (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
+            )
+        )
+        return result
 
     async def list_attachments_for_actor(
         self, message_id: uuid.UUID, actor_id: uuid.UUID

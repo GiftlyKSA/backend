@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit_context import mark_request_transaction, set_audit_actor
 from app.core.config import Settings
-from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
+from app.core.deps import Actor, get_db, get_redis, get_settings, require_auth, require_role
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
@@ -30,21 +31,31 @@ from app.models.enums import UserRole
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.device_token_repository import DeviceTokenRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import (
+    AttachmentUrlResponse,
+    ChatAttachmentResponse,
+    ChatMediaLimitsResponse,
+    ChatUploadRequest,
     ConversationResponse,
     InboxItemResponse,
     InboxResponse,
     MessagePage,
     MessageResponse,
+    SendChatMediaRequest,
     SendMessageRequest,
 )
+from app.schemas.media import UploadUrlResponse
 from app.services.auth_service import validate_access_claims
+from app.services.chat_media_service import ChatMediaService
+from app.services.chat_media_validation import MEDIA_TYPES
 from app.services.chat_service import ChatMessage, ChatService, conversation_channel
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/api", tags=["chat"])
+_logger = logging.getLogger(__name__)
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
@@ -75,7 +86,149 @@ def _message(dto: ChatMessage) -> MessageResponse:
         content=dto.content,
         is_read=dto.is_read,
         created_at=dto.created_at,
+        attachments=[ChatAttachmentResponse(**vars(attachment)) for attachment in dto.attachments],
     )
+
+
+def _media_service(request: Request, db: AsyncSession) -> ChatMediaService:
+    return ChatMediaService(
+        session=db,
+        chat=_service(request, db),
+        repository=ChatRepository(db),
+        uploads=MediaRepository(db),
+        storage=request.app.state.clients.storage,
+        settings=get_settings(request),
+        redis=get_redis(request),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db),
+            couriers=CourierRepository(db),
+        ),
+    )
+
+
+@router.get("/chat/media-limits", response_model=ChatMediaLimitsResponse)
+async def chat_media_limits(
+    request: Request,
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_Participant)],
+) -> ChatMediaLimitsResponse:
+    """Return configured bounds to an eligible authenticated chat user."""
+    await CourierEligibilityService(
+        users=UserRepository(db),
+        couriers=CourierRepository(db),
+    ).require_eligible_actor(actor.id)
+    settings = get_settings(request)
+    return ChatMediaLimitsResponse(
+        image_max_bytes=settings.CHAT_IMAGE_MAX_UPLOAD_BYTES,
+        video_max_bytes=settings.CHAT_VIDEO_MAX_UPLOAD_BYTES,
+        voice_max_bytes=settings.CHAT_AUDIO_MAX_UPLOAD_BYTES,
+        video_max_duration_seconds=settings.CHAT_VIDEO_MAX_DURATION_SECONDS,
+        voice_max_duration_seconds=settings.CHAT_AUDIO_MAX_DURATION_SECONDS,
+        image_content_types=list(MEDIA_TYPES["IMAGE"]),
+        video_content_types=list(MEDIA_TYPES["VIDEO"]),
+        voice_content_types=list(MEDIA_TYPES["VOICE"]),
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/media-upload-urls",
+    response_model=UploadUrlResponse,
+    status_code=201,
+)
+async def request_chat_upload(
+    request: Request,
+    db: DbDep,
+    conversation_id: uuid.UUID,
+    body: ChatUploadRequest,
+    actor: Annotated[Actor, Depends(_Participant)],
+) -> UploadUrlResponse:
+    """Issue a private upload grant for a participant's chat attachment."""
+    url, key, expires = await _media_service(request, db).request_upload(
+        conversation_id=conversation_id,
+        actor_id=actor.id,
+        kind=body.media_type,
+        mime=body.content_type,
+        size=body.byte_size,
+    )
+    return UploadUrlResponse(upload_url=url, storage_key=key, expires_in=expires)
+
+
+@router.post(
+    "/conversations/{conversation_id}/media-messages",
+    response_model=MessageResponse,
+    status_code=201,
+)
+async def send_chat_media(
+    request: Request,
+    db: DbDep,
+    conversation_id: uuid.UUID,
+    body: SendChatMediaRequest,
+    actor: Annotated[Actor, Depends(_Participant)],
+) -> MessageResponse:
+    """Validate uploaded bytes, then atomically attach them to a new chat message."""
+    service = _media_service(request, db)
+    attachments = await service.prepare(
+        conversation_id=conversation_id,
+        actor_id=actor.id,
+        keys=body.storage_keys,
+    )
+    await mark_request_transaction(db)
+    current_actor = await require_auth(request, db)
+    if current_actor != actor:
+        raise UnauthorizedError("This session is no longer valid.")
+    dto = await service.send(
+        conversation_id=conversation_id,
+        actor_id=actor.id,
+        attachments=attachments,
+        text=body.text,
+    )
+    await db.commit()
+    try:
+        async with asyncio.timeout(5):
+            await _service(request, db).publish_message(dto)
+    except Exception:
+        _logger.exception("The chat message was saved, but live delivery failed.")
+    try:
+        async with asyncio.timeout(5):
+            await _notify_chat_recipient(request, db, conversation_id, actor.id)
+    except Exception:
+        _logger.exception("The chat message was saved, but its push notification failed.")
+        await db.rollback()
+    return _message(dto)
+
+
+async def _notify_chat_recipient(
+    request: Request,
+    db: AsyncSession,
+    conversation_id: uuid.UUID,
+    actor_id: uuid.UUID,
+) -> None:
+    conversation = await ChatRepository(db).get_for_actor(conversation_id, actor_id)
+    if conversation is None:
+        return
+    recipient = (
+        conversation.courier_id
+        if actor_id == conversation.customer_id
+        else conversation.customer_id
+    )
+    await NotificationService(
+        devices=DeviceTokenRepository(db),
+        push=request.app.state.clients.push,
+    ).notify_user(
+        user_id=recipient, title="New message", body="You have a new message about your order."
+    )
+
+
+@router.get("/chat/attachments/{attachment_id}/url", response_model=AttachmentUrlResponse)
+async def chat_attachment_url(
+    request: Request,
+    db: DbDep,
+    attachment_id: uuid.UUID,
+    actor: Annotated[Actor, Depends(_Participant)],
+) -> AttachmentUrlResponse:
+    """Sign private playback after checking current participant permissions."""
+    url = await _media_service(request, db).playback(attachment_id=attachment_id, actor_id=actor.id)
+    return AttachmentUrlResponse(url=url, expires_in=300)
 
 
 @router.get("/conversations", response_model=InboxResponse)

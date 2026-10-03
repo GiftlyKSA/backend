@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 
 from redis.asyncio import Redis
@@ -18,7 +18,8 @@ from redis.asyncio import Redis
 from app.core.config import Settings
 from app.core.crypto import FieldCipher, build_aad, build_cipher
 from app.core.exceptions import NotFoundError
-from app.models import Conversation, Message
+from app.models import Conversation, Message, MessageAttachment
+from app.models.enums import MessageType
 from app.repositories.chat_repository import ChatRepository
 from app.services.courier_eligibility_service import CourierEligibilityService
 
@@ -28,6 +29,28 @@ _PREVIEW_CHARS = 100
 def conversation_channel(conversation_id: uuid.UUID) -> str:
     """The Redis pub/sub channel that carries a conversation's live messages."""
     return f"chat:conversation:{conversation_id}"
+
+
+@dataclass(frozen=True)
+class ChatAttachment:
+    """Private attachment metadata; playback requires a separate authorized request."""
+
+    id: str
+    content_type: str
+    byte_size: int
+    duration_seconds: float | None
+    display_order: int
+
+
+def attachment_dto(attachment: MessageAttachment) -> ChatAttachment:
+    """Expose display metadata without granting public storage access."""
+    return ChatAttachment(
+        str(attachment.id),
+        attachment.content_type,
+        attachment.byte_size,
+        float(attachment.duration_seconds) if attachment.duration_seconds is not None else None,
+        attachment.display_order,
+    )
 
 
 @dataclass(frozen=True)
@@ -41,6 +64,7 @@ class ChatMessage:
     content: str
     is_read: bool
     created_at: str
+    attachments: list[ChatAttachment] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -126,7 +150,12 @@ class ChatService:
         return conversation
 
     async def send_message(
-        self, *, conversation_id: uuid.UUID, sender_id: uuid.UUID, text: str
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        sender_id: uuid.UUID,
+        text: str,
+        message_type: MessageType = MessageType.TEXT,
     ) -> ChatMessage:
         """Encrypt and append a message for its caller to commit.
 
@@ -135,13 +164,19 @@ class ChatService:
         """
         conversation = await self._require_conversation(conversation_id, sender_id, for_update=True)
         content = self._encrypt_content(conversation_id, text)
-        preview = self._encrypt_preview(conversation_id, text)
+        preview_text = text or {
+            MessageType.IMAGE: "Image",
+            MessageType.VIDEO: "Video",
+            MessageType.VOICE: "Voice note",
+        }.get(message_type, "")
+        preview = self._encrypt_preview(conversation_id, preview_text)
         message = await self._chat.add_message(
             conversation=conversation,
             sender_id=sender_id,
             content_encrypted=content,
             preview_encrypted=preview,
             sender_is_customer=sender_id == conversation.customer_id,
+            message_type=message_type,
         )
         return self._to_dto(message, text)
 
@@ -160,8 +195,15 @@ class ChatService:
         """Return decrypted messages for a participant, newest first."""
         await self._require_conversation(conversation_id, actor_id)
         rows = await self._chat.list_messages(conversation_id, limit=limit, before_id=before_id)
+        attachments = await self._chat.attachments_for_messages([m.id for m in rows])
+        by_message: dict[uuid.UUID, list[ChatAttachment]] = {}
+        for attachment in attachments:
+            by_message.setdefault(attachment.message_id, []).append(attachment_dto(attachment))
         return [
-            self._to_dto(m, self._decrypt_content(conversation_id, m.content_encrypted))
+            replace(
+                self._to_dto(m, self._decrypt_content(conversation_id, m.content_encrypted)),
+                attachments=by_message.get(m.id, []),
+            )
             for m in rows
         ]
 
@@ -212,6 +254,7 @@ class ChatService:
                 "content": message.content,
                 "is_read": message.is_read,
                 "created_at": message.created_at,
+                "attachments": [asdict(a) for a in message.attachments],
             }
         )
         await self._redis.publish(conversation_channel(conversation_id), payload)

@@ -251,9 +251,14 @@ class MediaUpload(UUIDPrimaryKeyMixin, Base):
             "owner_user_id",
             postgresql_where=text("attached_at IS NULL"),
         ),
-        CheckConstraint("purpose IN ('ORDER_REQUEST', 'DELIVERY_PROOF')", name="chk_media_purpose"),
         CheckConstraint(
-            "content_type IN ('image/jpeg', 'image/png')", name="chk_media_content_type"
+            "purpose IN ('ORDER_REQUEST', 'DELIVERY_PROOF', 'CHAT_ATTACHMENT')",
+            name="chk_media_purpose",
+        ),
+        CheckConstraint(
+            "content_type IN ('image/jpeg','image/png','video/mp4','video/webm',"
+            "'audio/mp4','audio/mpeg','audio/ogg','audio/webm','audio/wav','audio/aac')",
+            name="chk_media_content_type",
         ),
         CheckConstraint("byte_size > 0", name="chk_media_byte_size_positive"),
     )
@@ -928,23 +933,31 @@ class MessageAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    duration_seconds: Mapped[Decimal | None] = mapped_column(Numeric(9, 3), nullable=True)
     display_order: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default=text("0")
     )
 
     __table_args__ = (
         CheckConstraint(
-            "content_type IN ('image/jpeg', 'image/png')",
+            "content_type IN ('image/jpeg','image/png','video/mp4','video/webm',"
+            "'audio/mp4','audio/mpeg','audio/ogg','audio/webm','audio/wav','audio/aac')",
             name="chk_message_attachments_content_type",
         ),
         CheckConstraint(
-            "byte_size > 0 AND byte_size <= 10485760",
+            "byte_size > 0 AND ((content_type IN ('video/mp4','video/webm') "
+            "AND byte_size <= 125829120) "
+            "OR (content_type NOT IN ('video/mp4','video/webm') AND byte_size <= 10485760))",
             name="chk_message_attachments_byte_size",
         ),
         CheckConstraint(
             "display_order BETWEEN 0 AND 4", name="chk_message_attachments_display_order"
         ),
         UniqueConstraint("message_id", "storage_key", name="uq_message_attachments_message_key"),
+        CheckConstraint(
+            "duration_seconds IS NULL OR (duration_seconds > 0 AND duration_seconds <= 120)",
+            name="chk_attachment_duration",
+        ),
         Index("idx_message_attachments_message_order", "message_id", "display_order"),
     )
 

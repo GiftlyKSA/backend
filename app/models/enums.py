@@ -106,6 +106,7 @@ class MessageType(StrEnum):
     TEXT = "TEXT"
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
+    VOICE = "VOICE"
     SYSTEM = "SYSTEM"
     MIXED = "MIXED"
 

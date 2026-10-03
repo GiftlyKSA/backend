@@ -45,3 +45,7 @@ class StorageClient(ABC):
     @abstractmethod
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a short-TTL signed CDN read URL for an object."""
+
+    async def read_bounded_object(self, storage_key: str, *, max_bytes: int) -> bytes:
+        """Read private bytes for validation; unsupported providers fail closed."""
+        raise NotImplementedError("Bounded private media reads are not configured.")

@@ -2791,6 +2791,232 @@
           }
         }
       }
+    },
+    "/api/chat/media-limits": {
+      "get": {
+        "operationId": "chat_media_limits_api_chat_media_limits_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMediaLimitsResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Chat Media Limits",
+        "description": "Return configured bounds to an eligible authenticated chat user.",
+        "tags": [
+          "chat"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
+        "x-audience": [
+          "CUSTOMER",
+          "COURIER"
+        ],
+        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
+        "x-availability": "Implemented; private-storage and decoder deployment required for recordings"
+      }
+    },
+    "/api/conversations/{conversation_id}/media-upload-urls": {
+      "post": {
+        "summary": "Request Chat Upload",
+        "description": "Issue a private upload grant for a participant's chat attachment.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ],
+        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
+        "x-audience": [
+          "CUSTOMER",
+          "COURIER"
+        ],
+        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
+        "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
+        "operationId": "request_chat_upload_api_conversations__conversation_id__media_upload_urls_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadUrlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/{conversation_id}/media-messages": {
+      "post": {
+        "summary": "Send Chat Media",
+        "description": "Validate uploaded bytes, then atomically attach them to a new chat message.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ],
+        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
+        "x-audience": [
+          "CUSTOMER",
+          "COURIER"
+        ],
+        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
+        "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
+        "operationId": "send_chat_media_api_conversations__conversation_id__media_messages_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendChatMediaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/attachments/{attachment_id}/url": {
+      "get": {
+        "summary": "Chat Attachment Url",
+        "description": "Sign private playback after checking current participant permissions.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ],
+        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
+        "x-audience": [
+          "CUSTOMER",
+          "COURIER"
+        ],
+        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
+        "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
+        "operationId": "chat_attachment_url_api_chat_attachments__attachment_id__url_get",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentUrlResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3509,6 +3735,13 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachmentResponse"
+            },
+            "type": "array",
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -5158,6 +5391,199 @@
         ],
         "title": "ResolveDisputeRequest",
         "description": "Admin resolution of a dispute."
+      },
+      "AttachmentUrlResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expires_in"
+        ],
+        "title": "AttachmentUrlResponse",
+        "description": "Fresh short-lived URL after conversation-participant authorization."
+      },
+      "ChatAttachmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "display_order": {
+            "type": "integer",
+            "title": "Display Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content_type",
+          "byte_size",
+          "duration_seconds",
+          "display_order"
+        ],
+        "title": "ChatAttachmentResponse",
+        "description": "Attachment display metadata without a reusable public object URL."
+      },
+      "ChatMediaLimitsResponse": {
+        "properties": {
+          "image_max_bytes": {
+            "type": "integer",
+            "title": "Image Max Bytes"
+          },
+          "video_max_bytes": {
+            "type": "integer",
+            "title": "Video Max Bytes"
+          },
+          "voice_max_bytes": {
+            "type": "integer",
+            "title": "Voice Max Bytes"
+          },
+          "video_max_duration_seconds": {
+            "type": "integer",
+            "title": "Video Max Duration Seconds"
+          },
+          "voice_max_duration_seconds": {
+            "type": "integer",
+            "title": "Voice Max Duration Seconds"
+          },
+          "image_content_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Image Content Types"
+          },
+          "video_content_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Video Content Types"
+          },
+          "voice_content_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Voice Content Types"
+          },
+          "images_per_message": {
+            "type": "integer",
+            "title": "Images Per Message",
+            "default": 5
+          },
+          "video_max_pixels": {
+            "type": "integer",
+            "title": "Video Max Pixels",
+            "default": 2073600
+          },
+          "image_max_pixels": {
+            "type": "integer",
+            "title": "Image Max Pixels",
+            "default": 20000000
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_max_bytes",
+          "video_max_bytes",
+          "voice_max_bytes",
+          "video_max_duration_seconds",
+          "voice_max_duration_seconds",
+          "image_content_types",
+          "video_content_types",
+          "voice_content_types"
+        ],
+        "title": "ChatMediaLimitsResponse",
+        "description": "Configured limits for the chat recorder and camera/gallery selectors."
+      },
+      "ChatUploadRequest": {
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "IMAGE",
+              "VIDEO",
+              "VOICE"
+            ],
+            "title": "Media Type"
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Content Type"
+          },
+          "byte_size": {
+            "type": "integer",
+            "maximum": 125829120.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "media_type",
+          "content_type",
+          "byte_size"
+        ],
+        "title": "ChatUploadRequest",
+        "description": "Issue one recording/camera/gallery transfer grant for this conversation."
+      },
+      "SendChatMediaRequest": {
+        "properties": {
+          "storage_keys": {
+            "items": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Storage Keys"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Text",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "storage_keys"
+        ],
+        "title": "SendChatMediaRequest",
+        "description": "Send up to five images, one video, or one recorded voice note."
       }
     },
     "securitySchemes": {

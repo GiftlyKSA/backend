@@ -53,11 +53,12 @@ class MediaRepository:
         )
         await self._session.flush()
 
-    async def get(self, storage_key: str) -> MediaUpload | None:
+    async def get(self, storage_key: str, *, for_update: bool = False) -> MediaUpload | None:
         """Fetch a grant by its server-generated key."""
-        grant: MediaUpload | None = await self._session.scalar(
-            select(MediaUpload).where(MediaUpload.storage_key == storage_key)
-        )
+        query = select(MediaUpload).where(MediaUpload.storage_key == storage_key)
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        grant: MediaUpload | None = await self._session.scalar(query)
         return grant
 
     async def mark_confirmed(self, storage_key: str, actor_id: uuid.UUID) -> bool:

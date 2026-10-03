@@ -184,6 +184,46 @@ async def test_real_storage_only_treats_missing_object_as_absent(code: str, miss
     await client.aclose()
 
 
+@pytest.mark.parametrize("size", [5, 6])
+async def test_private_storage_read_is_bounded_and_closes_body(size: int) -> None:
+    class _Body:
+        def __init__(self) -> None:
+            self.remaining = b"x" * size
+            self.closed = False
+
+        async def read(self, amount: int) -> bytes:
+            assert 0 < amount <= 65536
+            chunk, self.remaining = self.remaining[:amount], self.remaining[amount:]
+            return chunk
+
+        def close(self) -> None:
+            self.closed = True
+
+    body = _Body()
+
+    class _ObjectClient:
+        async def get_object(self, **kwargs: object) -> dict[str, object]:
+            return {"Body": body}
+
+    client = S3StorageClient(
+        bucket="private-bucket",
+        region="eu-west-1",
+        access_key_id="test-access-key",
+        secret_access_key="test-secret-key",
+        cloudfront_domain="cdn.example.com",
+        cloudfront_key_pair_id="K123",
+        cloudfront_private_key=_private_key_pem(),
+    )
+    client._session = _S3Session(_ObjectClient())  # type: ignore[assignment]  # noqa: SLF001
+    if size == 5:
+        assert await client.read_bounded_object("chat/key", max_bytes=5) == b"xxxxx"
+    else:
+        with pytest.raises(ValueError):
+            await client.read_bounded_object("chat/key", max_bytes=5)
+    assert body.closed
+    await client.aclose()
+
+
 async def test_real_storage_reuses_client_and_closes_after_active_operation() -> None:
     entered = asyncio.Event()
     release = asyncio.Event()
