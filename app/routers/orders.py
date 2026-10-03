@@ -150,7 +150,6 @@ async def create_order(
             description=body.description,
             delivery_city=body.delivery_city,
             delivery_city_id=body.delivery_city_id,
-            delivery_map_url=body.delivery_map_url,
             delivery_date=body.delivery_date,
             request_media_keys=body.request_media_keys,
         ),
@@ -190,7 +189,7 @@ async def available_orders(
     cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
-    """List NEW orders in the courier's city without private map links."""
+    """List NEW orders in the courier's city."""
     service = _service(request, db)
     views = await service.list_available_views_for_courier(
         courier_id=actor.id,
@@ -318,7 +317,6 @@ def _detail(view: OrderView) -> OrderDetail:
         delivery_city_id=order.delivery_city_id,
         delivery_date=order.delivery_date.isoformat(),
         description=order.description,
-        delivery_map_url=order.delivery_map_url,
         total_amount=money_str(order.total_amount),
         assigned_at=order.assigned_at.isoformat() if order.assigned_at else None,
         created_at=order.created_at.isoformat(),

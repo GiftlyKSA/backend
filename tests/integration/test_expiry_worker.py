@@ -93,7 +93,6 @@ async def test_expiry_reopens_order_and_releases_hold() -> None:
                 customer_id=customer.id,
                 courier_id=courier.id,
                 city=await city_by_name(session, "Jeddah"),
-                delivery_map_url="https://maps.app.goo.gl/Test",
                 delivery_date=datetime.now(UTC).date() + timedelta(days=5),
                 status=OrderStatus.WAITING_PAYMENT,
                 total_amount=Decimal("724.50"),

@@ -814,7 +814,7 @@
           "orders"
         ],
         "summary": "Create Order",
-        "description": "Create a gift request for a selected city and Gregorian delivery date. A valid HTTPS Google Maps URL is optional; omit it or send null if unavailable. Send up to three confirmed order-request media keys, not local file paths. The backend returns a new order UUID and computes financial totals later through invoice and settlement flows. Do not submit a client-calculated order total, commission, or courier payout.",
+        "description": "Create a gift request for a selected city and Gregorian delivery date. No precise delivery location or address note is collected. Send up to three confirmed order-request media keys, not local file paths. The backend returns a new order UUID and computes financial totals later through invoice and settlement flows. Do not submit a client-calculated order total, commission, or courier payout.",
         "operationId": "create_order_api_orders_post",
         "requestBody": {
           "required": true,
@@ -2579,19 +2579,6 @@
             ],
             "title": "Delivery City Id"
           },
-          "delivery_map_url": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2048
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delivery Map Url",
-            "description": "HTTPS Google Maps link."
-          },
           "delivery_date": {
             "type": "string",
             "format": "date",
@@ -3164,18 +3151,6 @@
               }
             ],
             "title": "Description"
-          },
-          "delivery_map_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delivery Map Url",
-            "description": "Customer-provided Google Maps link."
           },
           "total_amount": {
             "type": "string",

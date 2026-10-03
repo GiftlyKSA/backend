@@ -65,7 +65,6 @@ async def _order_and_invoice(db: AsyncSession, customer_id: uuid.UUID) -> tuple[
         customer_id=customer_id,
         courier_id=customer_id,  # a self-reference is fine for these promo tests
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today() + timedelta(days=30),
         status=OrderStatus.ASSIGNED,
     )

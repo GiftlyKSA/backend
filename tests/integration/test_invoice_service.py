@@ -79,7 +79,6 @@ async def _assigned_order(db: AsyncSession) -> Order:
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today() + timedelta(days=20),
         status=OrderStatus.ASSIGNED,
     )

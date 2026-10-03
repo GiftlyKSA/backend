@@ -7,7 +7,6 @@
   <tr><td>{{ tr('Status') }}</td><td>{{ tr(order.status) }}</td></tr>
   <tr><td>{{ tr('City') }}</td><td>{{ order.delivery_city }}</td></tr>
   <tr><td>{{ tr('Delivery date') }}</td><td>{{ order.delivery_date }}</td></tr>
-  <tr><td>{{ tr('Map link') }}</td><td>{% if order.delivery_map_url %}<a href="{{ order.delivery_map_url }}" rel="noopener noreferrer" target="_blank">{{ tr('Open Google Maps') }}</a>{% else %}—{% endif %}</td></tr>
   <tr><td>{{ tr('Total') }}</td><td class="num">{{ order.total_amount }}</td></tr>
   <tr><td>{{ tr('Commission') }}</td><td class="num">{{ order.commission_amount }}</td></tr>
   <tr><td>{{ tr('Courier payout') }}</td><td class="num">{{ order.courier_payout_amount }}</td></tr>
@@ -20,9 +19,7 @@
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
     <label>{{ tr('City') }}<select name="delivery_city" required>{% for city in cities %}<option value="{{ city.name }}" {% if city.id == order.delivery_city_id %}selected{% endif %}>{{ city.name }}</option>{% endfor %}</select></label>
     <label>{{ tr('Delivery date') }}<input name="delivery_date" type="date" value="{{ order.delivery_date }}" required></label>
-    <label>{{ tr('Google Maps link (optional)') }}<input name="delivery_map_url" type="url" maxlength="2048" value="{{ order.delivery_map_url or '' }}"></label>
     <label>{{ tr('Description') }}<textarea name="description" maxlength="5000">{{ order.description or "" }}</textarea></label>
-    <label>{{ tr('Address note') }}<textarea name="delivery_address_note" maxlength="255">{{ order.delivery_address_note or "" }}</textarea></label>
     <button type="submit">{{ tr('Save order details') }}</button>
   </form>
 </section>

@@ -355,8 +355,6 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         """Expose the related city name to existing read contracts."""
         return self.city.name
 
-    delivery_map_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    delivery_address_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[enums.OrderStatus] = mapped_column(
         _order_status, nullable=False, server_default=enums.OrderStatus.NEW.value

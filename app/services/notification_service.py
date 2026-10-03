@@ -2,7 +2,7 @@
 
 Notifications are BEST-EFFORT: a push failure is logged and swallowed so it never breaks
 the flow that triggered it. The body must NEVER carry Restricted data — chat text, exact
-map links, identity numbers — only a neutral prompt that draws the user into the app.
+identity numbers — only a neutral prompt that draws the user into the app.
 """
 
 from __future__ import annotations

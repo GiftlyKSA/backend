@@ -51,7 +51,6 @@ async def _paid_invoice(db: AsyncSession, *, email: str | None) -> Invoice:
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=10),
         status=OrderStatus.IN_PROGRESS,
     )
@@ -87,7 +86,7 @@ async def test_receipt_sent_once_on_paid(db_session: AsyncSession) -> None:
     assert sent.variables["total_amount"] == "724.50"
     assert sent.variables["order_id"] == str(invoice.order_id)
     # No Restricted data leaks into the template variables.
-    assert "phone" not in sent.variables and "delivery_map_url" not in sent.variables
+    assert "phone" not in sent.variables
     await db_session.refresh(invoice)
     assert invoice.receipt_email_sent_at is not None
 

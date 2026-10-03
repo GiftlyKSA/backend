@@ -135,7 +135,6 @@ async def _issued_invoice(
         headers=cust_h,
         json={
             "delivery_city": "Jeddah",
-            "delivery_map_url": "https://maps.app.goo.gl/Test",
             "delivery_date": _future(),
             "request_media_keys": [],
         },

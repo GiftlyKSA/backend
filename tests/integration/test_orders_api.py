@@ -96,7 +96,6 @@ async def test_order_flow_and_map_link_privacy() -> None:
                 json={
                     "description": "Hand-painted ceramic vase, blue",
                     "delivery_city": "Jeddah",
-                    "delivery_map_url": "https://maps.app.goo.gl/Test",
                     "delivery_date": _future(),
                     "request_media_keys": [],
                 },
@@ -109,10 +108,9 @@ async def test_order_flow_and_map_link_privacy() -> None:
             courier = await _login(client, app, courier_phone)
             cour_h = {"Authorization": f"Bearer {courier['access_token']}"}
 
-            # Radar shows the order without its customer-provided map link.
             radar = await client.get("/api/orders/available", headers=cour_h)
             radar_row = next(o for o in radar.json()["items"] if o["id"] == order_id)
-            assert "delivery_map_url" not in radar_row
+            assert radar_row["delivery_city"] == "Jeddah"
 
             # A courier has no relationship to a NEW order yet, so the detail is 404
             # (do not confirm existence to a non-participant).
@@ -122,7 +120,6 @@ async def test_order_flow_and_map_link_privacy() -> None:
             accepted = await client.post(f"/api/orders/{order_id}/accept", headers=cour_h)
             assert accepted.status_code == 200
             assert accepted.json()["status"] == "ASSIGNED"
-            assert accepted.json()["delivery_map_url"] == "https://maps.app.goo.gl/Test"
 
             # A second accept now conflicts (already assigned).
             again = await client.post(f"/api/orders/{order_id}/accept", headers=cour_h)
@@ -145,7 +142,6 @@ async def test_customer_can_cancel_new_order() -> None:
                 headers=cust_h,
                 json={
                     "delivery_city": "Riyadh",
-                    "delivery_map_url": "https://maps.app.goo.gl/Test",
                     "delivery_date": _future(),
                     "request_media_keys": [],
                 },
@@ -181,7 +177,6 @@ async def test_parallel_accepts_assign_exactly_once() -> None:
                 headers=cust_h,
                 json={
                     "delivery_city": "Jeddah",
-                    "delivery_map_url": "https://maps.app.goo.gl/Test",
                     "delivery_date": _future(),
                     "request_media_keys": [],
                 },

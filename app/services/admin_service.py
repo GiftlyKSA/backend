@@ -19,7 +19,6 @@ from redis.asyncio import Redis
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, NotFoundError, ValidationDomainError
-from app.core.map_url import validate_delivery_map_url
 from app.core.security import hmac_hex
 from app.models import AuditLog, City, CourierProfile, User, Withdrawal
 from app.models.enums import OrderStatus, UserRole, UserStatus
@@ -581,9 +580,7 @@ class AdminService:
         customer_id: uuid.UUID,
         description: str | None,
         delivery_city: str,
-        delivery_map_url: str | None,
         delivery_date: date,
-        delivery_address_note: str | None,
         ip: str | None,
     ) -> uuid.UUID:
         """Create a NEW order for an active customer and audit its origin."""
@@ -601,18 +598,11 @@ class AdminService:
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
-        if delivery_map_url is not None:
-            try:
-                validate_delivery_map_url(delivery_map_url)
-            except ValueError as exc:
-                raise ValidationDomainError(str(exc)) from exc
         order = await self._orders.create(
             customer_id=customer_id,
             description=description,
             delivery_city=city_record,
-            delivery_map_url=delivery_map_url,
             delivery_date=delivery_date,
-            address_note=delivery_address_note,
         )
         await self._audit.record(
             actor_user_id=admin_id,
@@ -648,9 +638,7 @@ class AdminService:
         order_id: uuid.UUID,
         description: str | None,
         delivery_city: str,
-        delivery_map_url: str | None,
         delivery_date: date,
-        delivery_address_note: str | None,
         ip: str | None,
     ) -> None:
         """Update non-financial order details before payment can make them contractual."""
@@ -665,18 +653,11 @@ class AdminService:
         today = date.today()
         if not today <= delivery_date <= today + timedelta(days=180):
             raise ValidationDomainError("Delivery date must be within the next 180 days.")
-        if delivery_map_url is not None:
-            try:
-                validate_delivery_map_url(delivery_map_url)
-            except ValueError as exc:
-                raise ValidationDomainError(str(exc)) from exc
         await self._orders.update_admin_details(
             order,
             description=description,
             delivery_city=city_record,
-            delivery_map_url=delivery_map_url,
             delivery_date=delivery_date,
-            delivery_address_note=delivery_address_note,
         )
         await self._audit.record(
             actor_user_id=admin_id,

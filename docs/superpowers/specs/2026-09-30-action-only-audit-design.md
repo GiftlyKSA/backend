@@ -12,7 +12,7 @@ Acceptance criteria:
 
 1. No new `HTTP_*`, WebSocket lifecycle, or `SYSTEM_JOB_RUN` rows are created. Normal server error/access logging remains available for operations; it is not the database audit trail.
 2. Every committed insert/update/delete to an included application table creates one audit row per changed record, except authentication-only `users.auth_version` updates described below. Rolled-back writes and unchanged updates create none.
-3. New rows have `metadata.actor_category` equal to `CUSTOMER`, `COURIER`, `ADMIN`, or `SYSTEM`. Human actions use `actor_user_id`; autonomous jobs use null. No row values, tokens, OTPs, message text, or map links enter audit metadata or application audit logs.
+3. New rows have `metadata.actor_category` equal to `CUSTOMER`, `COURIER`, `ADMIN`, or `SYSTEM`. Human actions use `actor_user_id`; autonomous jobs use null. No row values, tokens, OTPs, or message text enter audit metadata or application audit logs.
 4. Separate user (customer and courier), admin, and system pages show time, actor, operation, table, and record. They do not present route/status columns or historical HTTP records.
 5. Migration `0009_action_only_audit` deletes historical `HTTP_*` rows as requested. Other historical rows remain stored but operational rows are hidden from these action pages.
 

@@ -1,5 +1,10 @@
 # Giftly mobile API integration catalog
 
+Latest contract change: precise delivery location and address-note fields are removed
+from order input/output. Remove those inputs and map navigation from existing screens;
+city selection and delivery date remain supported. Old location properties are rejected
+as undeclared request fields.
+
 **OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 45 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat WebSocket contract, and unsupported-screen gaps.
 
 **Verified against backend source and offline development OpenAPI on 2026-09-30.** This catalogs every implemented non-admin HTTP endpoint (45) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
@@ -17,7 +22,7 @@ An order participant can now look up its conversation directly with
 REST history endpoint. User responses include a random, unique seven-digit
 `public_identifier`; active city choices include Arabic `name_ar`. Customer profiles no
 longer carry rating fields. Courier ratings are derived from customer reviews of completed
-orders. Order map URLs are optional; order financial totals remain computed by backend
+orders. Precise delivery locations are not collected; order financial totals remain computed by backend
 invoice/settlement flows rather than entered by clients.
 
 For login, use the returned `expires_in` (currently **60 seconds**) for the OTP countdown.
@@ -28,7 +33,7 @@ code, with production delivery through the configured SMS provider. They never e
 which revokes account sessions on all devices. Admin-dashboard TOTP applies only to
 `/v1/admin/admin`; it does not add a mobile login field or endpoint.
 
-The city UUID, optional HTTPS Google Maps URL, decimal-string money, three-photo order limit, and
+The city UUID, decimal-string money, three-photo order limit, and
 production `PAYMENTS_DISABLED` behavior described below remain the current contracts.
 Screens listed as gaps still need later backend work; do not build or guess routes for them.
 
@@ -43,7 +48,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
   preserve them and display them through text widgets or DOM `textContent`. Never use
   raw HTML insertion, evaluate returned text, or treat it as a template. Do not
   HTML-decode text and then insert it as markup. Backend validation and JSON serialization
-  do not replace safe frontend rendering. Treat map/media URLs as separate validated
+  do not replace safe frontend rendering. Treat media URLs as separate validated
   link fields, not as HTML supplied by users.
 - Withdrawal and withdrawal-rejection bodies now reject unknown fields with HTTP 422,
   matching the other request models. Send only the properties declared in OpenAPI.
@@ -307,12 +312,12 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Screens:** Customer Create order `/request`.
 - **Who / authorization:** Authenticated customer; bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `CreateOrderRequest` — `description?: string | null`; exactly one of `delivery_city_id: UUID string` (preferred) or `delivery_city: string` (legacy); `delivery_map_url?: HTTPS Google Maps URL string | null`; `delivery_date: date (YYYY-MM-DD)`; `request_media_keys?: string[]`
-- **Response:** HTTP 201; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Request body:** `CreateOrderRequest` — `description?: string | null`; exactly one of `delivery_city_id: UUID string` (preferred) or `delivery_city: string` (legacy); `delivery_date: date (YYYY-MM-DD)`; `request_media_keys?: string[]`
+- **Response:** HTTP 201; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Optional `POST /api/media/upload-urls` → direct PUT → confirm for 0–3 photos.
 - **Then / dependent API:** `GET /api/orders/{order_id}` and `/waiting/[id]`; courier `GET /api/orders/available`.
 
-**When/how:** Create a gift request for a city and Gregorian delivery date; a customer-provided HTTPS Google Maps link is optional. Send at most three previously confirmed `ORDER_REQUEST` storage keys, not local file URIs. The server stores a supplied link without fetching it and returns a `NEW` order and generated UUID. Use that UUID for waiting and detail navigation; the available-order list omits the link.
+**When/how:** Create a gift request for a city and Gregorian delivery date. No precise delivery location is collected. Send at most three previously confirmed `ORDER_REQUEST` storage keys, not local file URIs. The server returns a `NEW` order and generated UUID. Use that UUID for waiting and detail navigation; fetch its details through the participant endpoint.
 
 ### GET /api/orders
 
@@ -338,7 +343,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Before:** Courier verification complete; matching city stored on profile.
 - **Then / dependent API:** `POST /api/orders/{order_id}/accept`.
 
-**When/how:** Load a paginated radar of `NEW` orders in the courier's city. Summaries intentionally omit the customer-provided map link, customer identity, and full media, so use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.
+**When/how:** Load a paginated radar of `NEW` orders in the courier's city. Summaries intentionally omit customer identity and full media, so use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.
 
 ### GET /api/orders/{order_id}
 
@@ -347,11 +352,11 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order UUID from create, owned list, or accepted order.
 - **Then / dependent API:** Active invoice, participant profile, chat, rating, or state transition.
 
-**When/how:** Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain participant access once assigned. The response includes status, city, date, computed amount, assignment time, and an optional Google Maps link. It does not include a full timeline, attached image URLs, delivery proof gallery, or invoice items; fetch related resources separately where endpoints exist.
+**When/how:** Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain participant access once assigned. The response includes status, city, date, computed amount, and assignment time. It does not include a full timeline, attached image URLs, delivery proof gallery, or invoice items; fetch related resources separately where endpoints exist.
 
 ### POST /api/orders/{order_id}/accept
 
@@ -360,7 +365,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated active verified courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** `GET /api/orders/available` supplies a `NEW` order UUID.
 - **Then / dependent API:** `GET /api/orders/{order_id}`, chat, then invoice creation.
 
@@ -373,7 +378,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `CancelOrderRequest` — `reason?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Participant order still in a cancellable pre-progress state.
 - **Then / dependent API:** Refresh `GET /api/orders/{order_id}` and owned list.
 
@@ -386,11 +391,11 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated active verified assigned courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `DeliverRequest` — `proof_media_keys: string[]`; `note?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order `IN_PROGRESS`; 1–5 confirmed `DELIVERY_PROOF` image keys.
 - **Then / dependent API:** Customer `POST /api/orders/{order_id}/approve` or dispute.
 
-**When/how:** Submit one to five confirmed delivery-proof photo keys after reaching the drop-off location. The backend checks courier assignment, order state, and ownership and purpose of each image before marking the order delivered. It does not calculate distance or verify physical presence. The customer-provided map link is returned on order detail for navigation; it is not submitted again as delivery proof.
+**When/how:** Submit one to five confirmed delivery-proof photo keys after completing delivery. The backend checks courier assignment, order state, and ownership and purpose of each image before marking the order delivered. It does not collect a precise delivery location, calculate distance, or verify physical presence.
 
 ### POST /api/orders/{order_id}/approve
 
@@ -399,7 +404,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated customer who owns the order; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `delivery_map_url: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** Order is `DELIVERED` and proof reviewed.
 - **Then / dependent API:** `POST /api/orders/{order_id}/ratings`; refresh wallet/order.
 

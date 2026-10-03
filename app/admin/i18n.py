@@ -195,12 +195,8 @@ ARABIC: dict[str, str] = {
     "Identity document": "وثيقة الهوية",
     "Identity document type": "نوع وثيقة الهوية",
     "Delivery date": "تاريخ التسليم",
-    "Map link": "رابط الخريطة",
-    "Open Google Maps": "فتح خرائط Google",
     "Commission": "العمولة",
     "Courier payout": "مستحقات المندوب",
-    "Address note": "ملاحظة العنوان",
-    "Google Maps link (optional)": "رابط خرائط Google (اختياري)",
     "Select a city": "اختر مدينة",
     "Approve": "موافقة",
     "Reject": "رفض",
@@ -544,10 +540,9 @@ ARABIC: dict[str, str] = {
         "يُغلق نموذج تفاصيل التسليم بعد بدء الدفع أو تنفيذ الطلب. يمكن تعد"
         "يل السجل من رابط التعديل أو الحذف أعلاه."
     ),
-    (
-        "Orders are created as NEW for an existing active customer. Paste "
-        "the customer's Google Maps link."
-    ): ("تُنشأ الطلبات بحالة جديد لعميل نشط موجود. ألصق رابط خرائط Google الخاص بالعميل."),
+    "Orders are created as NEW for an existing active customer.": (
+        "تُنشأ الطلبات بحالة جديد لعميل نشط موجود."
+    ),
     (
         "Blank fields keep existing values when editing or use defaults wh"
         "en adding. Use “Clear” to remove an optional value. Database rela"

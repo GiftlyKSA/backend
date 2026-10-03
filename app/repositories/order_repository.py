@@ -41,18 +41,14 @@ class OrderRepository:
         customer_id: uuid.UUID,
         description: str | None,
         delivery_city: City,
-        delivery_map_url: str | None,
         delivery_date: date,
-        address_note: str | None,
     ) -> Order:
-        """Insert a NEW order with the customer-supplied map link."""
+        """Insert a NEW order for the selected city and date."""
         order = Order(
             customer_id=customer_id,
             description=description,
             city=delivery_city,
-            delivery_map_url=delivery_map_url,
             delivery_date=delivery_date,
-            delivery_address_note=address_note,
             status=OrderStatus.NEW,
         )
         self._session.add(order)
@@ -135,16 +131,12 @@ class OrderRepository:
         *,
         description: str | None,
         delivery_city: City,
-        delivery_map_url: str | None,
         delivery_date: date,
-        delivery_address_note: str | None,
     ) -> None:
         """Update non-financial order details for an administrator."""
         order.description = description
         order.city = delivery_city
-        order.delivery_map_url = delivery_map_url
         order.delivery_date = delivery_date
-        order.delivery_address_note = delivery_address_note
         await self._session.flush()
 
     async def delete(self, order: Order) -> None:

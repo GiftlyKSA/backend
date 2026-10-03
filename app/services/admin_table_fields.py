@@ -16,7 +16,6 @@ from sqlalchemy import Boolean, Column, Date, DateTime, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import ENUM, INET, JSONB, UUID
 
 from app.core.exceptions import ValidationDomainError
-from app.core.map_url import validate_delivery_map_url
 
 _AUDIT_TIMESTAMPS = {"created_at", "updated_at", "deleted_at"}
 _GENERATED = _AUDIT_TIMESTAMPS | {"auth_version", "public_identifier"}
@@ -185,8 +184,6 @@ def _json_float(raw: str) -> float:
 
 
 def _parse(column: Column[Any], raw: str) -> object:
-    if column.name == "delivery_map_url":
-        return validate_delivery_map_url(raw)
     if isinstance(column.type, ENUM):
         if raw not in column.type.enums:
             raise ValueError("Invalid enum")

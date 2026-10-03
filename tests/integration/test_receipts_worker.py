@@ -61,7 +61,6 @@ async def test_sweeper_sends_and_stamps_receipt() -> None:
                 customer_id=customer.id,
                 courier_id=courier.id,
                 city=await city_by_name(session, "Jeddah"),
-                delivery_map_url="https://maps.app.goo.gl/Test",
                 delivery_date=datetime.now(UTC).date() + timedelta(days=10),
                 status=OrderStatus.IN_PROGRESS,
             )

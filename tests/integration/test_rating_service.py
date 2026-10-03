@@ -40,7 +40,6 @@ async def _order(db: AsyncSession, status: OrderStatus) -> tuple[User, User, Ord
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=5),
         status=status,
     )

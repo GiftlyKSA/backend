@@ -49,7 +49,6 @@ async def test_order_invoice_roundtrip(db_session: AsyncSession) -> None:
     order = Order(
         customer_id=customer.id,
         city=await city_by_name(db_session, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=_future_date(),
         status=OrderStatus.NEW,
     )
@@ -103,7 +102,6 @@ async def test_invoice_net_math_check_rejects_bad_totals(db_session: AsyncSessio
     order = Order(
         customer_id=customer.id,
         city=await city_by_name(db_session, "Riyadh"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=_future_date(),
     )
     db_session.add(order)
@@ -161,14 +159,14 @@ async def test_second_system_gateway_wallet_rejected(db_session: AsyncSession) -
         await db_session.flush()
 
 
-async def test_order_stores_map_link(db_session: AsyncSession) -> None:
+async def test_order_stores_delivery_city_and_date(db_session: AsyncSession) -> None:
     customer = await _make_customer(db_session)
     order = Order(
         customer_id=customer.id,
         city=await city_by_name(db_session, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=_future_date(),
     )
     db_session.add(order)
     await db_session.flush()
-    assert order.delivery_map_url == "https://maps.app.goo.gl/Test"
+    assert order.city.name == "Jeddah"
+    assert order.delivery_date == _future_date()

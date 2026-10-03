@@ -174,7 +174,6 @@ async def test_create_quota_is_checked_under_actor_lock():
             data=NewOrderInput(
                 description=None,
                 delivery_city="Jeddah",
-                delivery_map_url="https://maps.app.goo.gl/Test",
                 delivery_date=date.today(),
                 request_media_keys=[],
             ),

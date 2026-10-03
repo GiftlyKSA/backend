@@ -57,7 +57,6 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db_session, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today(),
         status=OrderStatus.IN_PROGRESS,
     )

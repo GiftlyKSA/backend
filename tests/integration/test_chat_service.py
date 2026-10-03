@@ -82,7 +82,6 @@ async def _conversation(db: AsyncSession) -> tuple[User, User, Conversation]:
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=date.today(),
         status=OrderStatus.IN_PROGRESS,
     )

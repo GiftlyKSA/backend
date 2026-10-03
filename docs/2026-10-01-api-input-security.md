@@ -37,8 +37,7 @@ money, identifiers, and structured data.
 The admin escapes text at HTML rendering time, including quoted attribute values.
 It does not mark user content safe, evaluate it, or insert it using raw HTML DOM APIs
 in the inspected templates/scripts. JSON responses also receive `nosniff` headers.
-Google Maps links are HTTPS/host-allowlisted through the shared validator on API and
-admin writes; links are not fetched by the backend.
+Precise delivery location inputs have since been removed from the API and admin.
 
 HTML-encoding every stored/API value would alter the public contract and create
 double-escaping problems. Sanitization therefore happens at the display boundary,

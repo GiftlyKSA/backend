@@ -24,7 +24,7 @@ before editing. Use these backend files as the source of truth:
   and record the mismatch.
 
 The backend source and contract were reviewed on 2026-09-30. For the latest order-chat,
-profile, city, map-link, and rating changes, follow
+profile, city, order, and rating changes, follow
 `../backend/docs/UI-AGENT-ORDER-CHAT-UPDATE-PROMPT.md` as an additional implementation brief.
 Do not implement server-rendered `/v1/admin/admin` pages or admin TOTP in the mobile app.
 Do not invent routes for unsupported screens; mark those actions as waiting for a later
@@ -42,7 +42,7 @@ Check and update these flows in the app:
    protected local state, close chat sockets, and return to login; backend logout revokes
    all account sessions.
 2. **Cities and orders:** Load `GET /api/cities` for city selectors, display `name_ar` in
-   Arabic, and submit selected UUIDs. The HTTPS Google Maps URL is optional; do not send or
+   Arabic, and submit selected UUIDs. Precise delivery locations and address notes are removed; do not collect or
    compute latitude, longitude, radius, or distance. Create orders with zero to three
    confirmed request-photo storage keys. Use the backend's actual order statuses and
    delivery-date bounds, translating labels only for display. Courier available orders

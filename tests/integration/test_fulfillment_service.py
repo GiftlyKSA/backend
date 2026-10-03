@@ -78,7 +78,6 @@ async def _paid_order(
         customer_id=customer.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=10),
         status=status,
     )

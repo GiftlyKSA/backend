@@ -11,11 +11,8 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
-    field_validator,
     model_validator,
 )
-
-from app.core.map_url import validate_delivery_map_url
 
 
 class CreateOrderRequest(BaseModel):
@@ -27,19 +24,10 @@ class CreateOrderRequest(BaseModel):
         None, description="Legacy city name; select delivery_city_id from GET /api/cities."
     )
     delivery_city_id: UUID | None = None
-    delivery_map_url: str | None = Field(
-        None, max_length=2048, description="HTTPS Google Maps link."
-    )
     delivery_date: date = Field(..., description="Requested delivery date (<= 6 months out).")
     request_media_keys: list[str] = Field(
         default_factory=list, max_length=3, description="Confirmed request-photo keys (0–3)."
     )
-
-    @field_validator("delivery_map_url")
-    @classmethod
-    def validate_map_url(cls, value: str | None) -> str | None:
-        """Keep submitted delivery links on the allowed HTTPS map hosts."""
-        return validate_delivery_map_url(value) if value is not None else None
 
     @model_validator(mode="after")
     def validate_city_choice(self) -> CreateOrderRequest:
@@ -82,7 +70,6 @@ class OrderDetail(BaseModel):
     delivery_city_id: UUID
     delivery_date: str
     description: str | None
-    delivery_map_url: str | None = Field(None, description="Customer-provided Google Maps link.")
     total_amount: str
     assigned_at: str | None
     created_at: str

@@ -108,7 +108,6 @@ async def _create_order(client: AsyncClient, headers: dict[str, str]) -> str:
         headers=headers,
         json={
             "delivery_city": "Jeddah",
-            "delivery_map_url": "https://maps.app.goo.gl/Test",
             "delivery_date": _future(),
             "request_media_keys": [],
         },
@@ -248,7 +247,6 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
                 "avatar_storage_key",
                 "gateway_customer_identifier",
                 "gateway_supplier_id",
-                "delivery_map_url",
             }
             assert sensitive.isdisjoint(allowed.json())
     finally:

@@ -112,7 +112,6 @@ async def _issued_invoice(db: AsyncSession) -> tuple[User, Order, Invoice]:
         customer_id=user.id,
         courier_id=courier.id,
         city=await city_by_name(db, "Jeddah"),
-        delivery_map_url="https://maps.app.goo.gl/Test",
         delivery_date=datetime.now(UTC).date() + timedelta(days=10),
         status=OrderStatus.WAITING_PAYMENT,
     )
