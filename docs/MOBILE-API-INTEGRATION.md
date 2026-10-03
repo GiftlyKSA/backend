@@ -1,6 +1,6 @@
 # Giftly mobile API integration catalog
 
-Latest contract change: precise delivery location and address-note fields are removed
+Latest contract change: the delivery location URL is removed
 from order input/output. Remove those inputs and map navigation from existing screens;
 city selection and delivery date remain supported. Old location properties are rejected
 as undeclared request fields.

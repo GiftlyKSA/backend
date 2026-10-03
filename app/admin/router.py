@@ -528,6 +528,7 @@ async def order_create(
     delivery_city: Annotated[str, Form(min_length=1, max_length=100)],
     delivery_date: Annotated[date, Form()],
     description: Annotated[str, Form(max_length=5000)] = "",
+    delivery_address_note: Annotated[str, Form(max_length=255)] = "",
 ) -> RedirectResponse:
     """Create a NEW order on behalf of an active customer."""
     ctx = await _ctx(request, db)
@@ -538,6 +539,7 @@ async def order_create(
         description=description.strip() or None,
         delivery_city=delivery_city.strip(),
         delivery_date=delivery_date,
+        delivery_address_note=delivery_address_note.strip() or None,
         ip=client_ip(request),
     )
     return RedirectResponse(f"/v1/admin/admin/orders/{order_id}", status_code=303)
@@ -572,6 +574,7 @@ async def order_edit(
     delivery_city: Annotated[str, Form(min_length=1, max_length=100)],
     delivery_date: Annotated[date, Form()],
     description: Annotated[str, Form(max_length=5000)] = "",
+    delivery_address_note: Annotated[str, Form(max_length=255)] = "",
 ) -> RedirectResponse:
     """Update non-financial order details while the order is still editable."""
     ctx = await _ctx(request, db)
@@ -582,6 +585,7 @@ async def order_edit(
         description=description.strip() or None,
         delivery_city=delivery_city.strip(),
         delivery_date=delivery_date,
+        delivery_address_note=delivery_address_note.strip() or None,
         ip=client_ip(request),
     )
     return RedirectResponse(f"/v1/admin/admin/orders/{order_id}", status_code=303)

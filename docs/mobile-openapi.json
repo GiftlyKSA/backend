@@ -814,7 +814,7 @@
           "orders"
         ],
         "summary": "Create Order",
-        "description": "Create a gift request for a selected city and Gregorian delivery date. No precise delivery location or address note is collected. Send up to three confirmed order-request media keys, not local file paths. The backend returns a new order UUID and computes financial totals later through invoice and settlement flows. Do not submit a client-calculated order total, commission, or courier payout.",
+        "description": "Create a gift request for a selected city and Gregorian delivery date. No delivery location URL is collected. Send up to three confirmed order-request media keys, not local file paths. The backend returns a new order UUID and computes financial totals later through invoice and settlement flows. Do not submit a client-calculated order total, commission, or courier payout.",
         "operationId": "create_order_api_orders_post",
         "requestBody": {
           "required": true,
@@ -953,7 +953,7 @@
           "orders"
         ],
         "summary": "Available Orders",
-        "description": "Load a paginated radar of `NEW` orders in the courier's city. Summaries intentionally omit exact drop-off coordinates, customer identity, and full media, so use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.",
+        "description": "Load a paginated radar of `NEW` orders in the courier's city. Summaries omit customer identity and full media; precise delivery locations are not collected. Use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.",
         "operationId": "available_orders_api_orders_available_get",
         "parameters": [
           {
@@ -1198,7 +1198,7 @@
           "orders"
         ],
         "summary": "Deliver Order",
-        "description": "Submit current courier coordinates and confirmed delivery-proof photo keys after reaching the drop-off location. The backend checks assignment, state, radius, ownership, and purpose of each image; it then marks the order delivered. Send the actual current location in decimal degrees and do not substitute a cached order location. This is a state transition, not a generic photo-upload call.",
+        "description": "Submit one to five confirmed delivery-proof photo keys and an optional note after completing delivery. The backend checks courier assignment, order state, and ownership and purpose of each image before marking the order delivered. It does not collect precise delivery locations, calculate distance, or verify physical presence. This is a state transition, not a generic photo-upload call.",
         "operationId": "deliver_order_api_orders__order_id__deliver_post",
         "parameters": [
           {

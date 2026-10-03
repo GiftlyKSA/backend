@@ -126,6 +126,7 @@ class OrderService:
             description=data.description,
             delivery_city=city,
             delivery_date=data.delivery_date,
+            address_note=None,
         )
         for key in data.request_media_keys:
             head = media_heads[key]

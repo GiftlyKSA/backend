@@ -42,6 +42,7 @@ class OrderRepository:
         description: str | None,
         delivery_city: City,
         delivery_date: date,
+        address_note: str | None,
     ) -> Order:
         """Insert a NEW order for the selected city and date."""
         order = Order(
@@ -49,6 +50,7 @@ class OrderRepository:
             description=description,
             city=delivery_city,
             delivery_date=delivery_date,
+            delivery_address_note=address_note,
             status=OrderStatus.NEW,
         )
         self._session.add(order)
@@ -132,11 +134,13 @@ class OrderRepository:
         description: str | None,
         delivery_city: City,
         delivery_date: date,
+        delivery_address_note: str | None,
     ) -> None:
         """Update non-financial order details for an administrator."""
         order.description = description
         order.city = delivery_city
         order.delivery_date = delivery_date
+        order.delivery_address_note = delivery_address_note
         await self._session.flush()
 
     async def delete(self, order: Order) -> None:

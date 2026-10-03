@@ -60,6 +60,7 @@ _REDACTED_COLUMNS = {
     "date_of_birth",
     "ip_address",
     "user_agent",
+    "delivery_address_note",
     "iban_last4",
     "gateway_payment_url",
 }

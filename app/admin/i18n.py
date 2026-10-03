@@ -197,6 +197,7 @@ ARABIC: dict[str, str] = {
     "Delivery date": "تاريخ التسليم",
     "Commission": "العمولة",
     "Courier payout": "مستحقات المندوب",
+    "Address note": "ملاحظة العنوان",
     "Select a city": "اختر مدينة",
     "Approve": "موافقة",
     "Reject": "رفض",

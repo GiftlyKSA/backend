@@ -42,7 +42,7 @@ Check and update these flows in the app:
    protected local state, close chat sockets, and return to login; backend logout revokes
    all account sessions.
 2. **Cities and orders:** Load `GET /api/cities` for city selectors, display `name_ar` in
-   Arabic, and submit selected UUIDs. Precise delivery locations and address notes are removed; do not collect or
+   Arabic, and submit selected UUIDs. The delivery location URL is removed; do not collect or
    compute latitude, longitude, radius, or distance. Create orders with zero to three
    confirmed request-photo storage keys. Use the backend's actual order statuses and
    delivery-date bounds, translating labels only for display. Courier available orders

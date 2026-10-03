@@ -44,6 +44,7 @@ async def test_order_push_waits_for_commit_and_uses_outbox(
         description=None,
         delivery_city=city,
         delivery_date=date.today() + timedelta(days=30),
+        address_note=None,
     )
     notification = await db_session.get(OrderNotification, order.id)
     assert notification is not None
@@ -75,6 +76,7 @@ async def test_rolled_back_order_has_no_outbox_row(db_session: AsyncSession) -> 
         description=None,
         delivery_city=city,
         delivery_date=date.today() + timedelta(days=30),
+        address_note=None,
     )
     await nested.rollback()
     assert await db_session.get(OrderNotification, order.id) is None

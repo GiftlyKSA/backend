@@ -581,6 +581,7 @@ class AdminService:
         description: str | None,
         delivery_city: str,
         delivery_date: date,
+        delivery_address_note: str | None,
         ip: str | None,
     ) -> uuid.UUID:
         """Create a NEW order for an active customer and audit its origin."""
@@ -603,6 +604,7 @@ class AdminService:
             description=description,
             delivery_city=city_record,
             delivery_date=delivery_date,
+            address_note=delivery_address_note,
         )
         await self._audit.record(
             actor_user_id=admin_id,
@@ -639,6 +641,7 @@ class AdminService:
         description: str | None,
         delivery_city: str,
         delivery_date: date,
+        delivery_address_note: str | None,
         ip: str | None,
     ) -> None:
         """Update non-financial order details before payment can make them contractual."""
@@ -658,6 +661,7 @@ class AdminService:
             description=description,
             delivery_city=city_record,
             delivery_date=delivery_date,
+            delivery_address_note=delivery_address_note,
         )
         await self._audit.record(
             actor_user_id=admin_id,

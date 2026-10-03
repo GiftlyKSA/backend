@@ -367,13 +367,13 @@ and verification limits. It is not a declaration of production readiness.
 
 ## Troubleshooting
 
-Order location removal: migration `0010_remove_delivery_location` drops the map URL
-and address-note columns. Order APIs/admin now collect city and delivery date only;
-update clients to stop submitting the removed fields. The existing deployment migration
-step applies this revision before starting the service. No database was modified locally.
-The migration deletes stored location values; downgrade restores empty nullable columns
-only. Recovery of previous values requires a pre-migration backup. Applied migration
-history retains the old column names solely to support safe upgrades.
+Only the delivery location URL is removed. City, delivery date, description, delivery
+photos, and admin address notes remain supported. Stop submitting the removed URL field.
+Migration `0010_remove_delivery_location` initially also dropped address notes;
+`0011_restore_address_note` corrects their schema. Deployment applies both before startup.
+Existing note values dropped by revision 0010 require a pre-migration backup to recover;
+back up notes before upgrading a database that has not run that revision. No database
+was modified locally. Applied migration history is retained for safe upgrades.
 
 - **App refuses to boot naming a variable** — that is the interlock working; fix that
   variable in `.env`.

@@ -259,6 +259,7 @@ async def test_ban_and_controlled_table_edits(
         description="Original",
         delivery_city=await city_by_name(db_session, "Jeddah"),
         delivery_date=date.today() + timedelta(days=2),
+        address_note="Original note",
     )
     await service.update_order_details(
         admin_id=admin.id,
@@ -266,6 +267,7 @@ async def test_ban_and_controlled_table_edits(
         description="Updated",
         delivery_city="Riyadh",
         delivery_date=date.today() + timedelta(days=3),
+        delivery_address_note="Updated note",
         ip=None,
     )
     assert order.delivery_city == "Riyadh"
@@ -324,6 +326,7 @@ async def test_admin_crud_for_users_profiles_and_new_orders(
         description="Admin-created order",
         delivery_city="Jeddah",
         delivery_date=date.today() + timedelta(days=2),
+        delivery_address_note="Reception",
         ip=None,
     )
     await service.delete_order(admin_id=admin.id, order_id=order_id, ip=None)
