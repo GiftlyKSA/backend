@@ -5,9 +5,9 @@ from order input/output. Remove those inputs and map navigation from existing sc
 city selection and delivery date remain supported. Old location properties are rejected
 as undeclared request fields.
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 50 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 51 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
 
-**Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (50) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+**Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (51) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
 The backend unit suite compares non-admin operations and their wire schemas in this file
 with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
@@ -464,6 +464,30 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 **When/how (63 words):** Read one invoice by its UUID after participant ownership checks. Unlike the order-scoped active-invoice route, this address can identify the particular invoice the screen is showing, including one whose status has changed. Display item lines, fee breakdown, promo snapshot, issue and expiry times, and total directly from the response. The backend does not expose saved card details or a collection of invoice revisions.
 
+### POST /api/invoices/{invoice_id}/promo (2026-10-03)
+
+- **API name / screen:** Apply, replace or remove invoice promo; customer Invoice/Checkout.
+- **Who / authorization:** ACTIVE owning CUSTOMER; bearer token. Foreign invoices return 404.
+- **Path / headers:** UUID `invoice_id`; required `Idempotency-Key` string, 1–128 characters.
+- **Request body:** `ApplyInvoicePromoRequest`: required `code` string (nonblank, max 32) or null to remove. Unknown properties rejected. Codes are trimmed and case-insensitive.
+- **Response:** HTTP 200, existing full `InvoiceResponse` including authoritative items, discount, tax, total, expiry and ID.
+- **Before / after:** Load current invoice; optionally preview; apply/remove; replace displayed invoice with response; pay the returned invoice ID.
+
+Apply a customer-selected promo only to a current, unpaid, unexpired ISSUED invoice
+whose order is WAITING_PAYMENT and has no unresolved payment attempt. A revision
+preserves the old financial history, original items, fees, tax policy and deadline.
+The invoice ID can change. A repeated operation key and normalized request replays
+its result without another reservation. Invalid replacements roll back. The promo
+is consumed only on settlement; application does not enable production payments.
+
+Errors: 401 authentication; 403 role/account eligibility; 404 ownership; 409 stale
+state, in-flight payment, conflicting key or missing original pricing policy; 422
+invalid input or specific `PROMO_*` eligibility/usage errors; 429 rate limiting.
+Legacy invoices without a stored pricing-policy snapshot return 409 for changes.
+Existing applied codes/no-code removals are safe no-ops. Idempotent replays return
+their original result invoice; refresh active state if it has since been superseded.
+See [UI-AGENT-INVOICE-PROMO-PROMPT.md](UI-AGENT-INVOICE-PROMO-PROMPT.md).
+
 ### POST /api/invoices/{invoice_id}/pay
 
 - **API name:** Pay Invoice.
@@ -501,7 +525,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Request body:** `PromoValidateRequest` — `code: string`; `order_id: string`
 - **Response:** HTTP 200; `PromoPreviewResponse` — `code: string`; `discount_amount: string`; `original_total_amount: string`; `total_amount: string`
 - **Before:** Active invoice for `order_id`.
-- **Then / dependent API:** Review discount; payment or courier invoice creation owns actual reservation.
+- **Then / dependent API:** Apply through `POST /api/invoices/{invoice_id}/promo`; only the application response changes the payable invoice. Preview reserves nothing.
 
 **When/how (61 words):** Preview a promo against the customer's own order and active invoice before showing a discounted total. Send the code and order UUID; the backend checks eligibility and computes the proposed discount. This endpoint does not reserve, consume, or settle the promo. Treat the response as a preview only, and continue to use the final invoice/payment response as the authoritative charged amount.
 
@@ -839,7 +863,7 @@ The prototype's labels and local-device data are not server contracts. The table
 | Customer/Courier Orders `/orders` | `orders`; courier `orders/available` | No customer text/order-number search; no order number in responses. Courier should not show a search box. |
 | Order detail `/order/[id]` | `orders/{id}`, active invoice, participant, ratings, chat | No timeline events or media/proof download/list API in the returned contract. |
 | Chat `/chat/[id]` | `conversations`, messages, read, WebSocket | Conversation ID comes from inbox; WebSocket has no durable replay, so use REST history after reconnect. |
-| Invoice `/invoice/[id]` | `orders/{id}/invoice`, `invoices/{id}`, promo preview; courier create/cancel; customer pay | No saved-card API or exposed invoice revision field. Production payment is disabled. |
+| Invoice `/invoice/[id]` | `orders/{id}/invoice`, `invoices/{id}`, promo preview/apply/remove; courier create/cancel; customer pay | Pay the returned current invoice ID after promo changes. No saved-card API. Production payment is disabled. |
 | Customer Calendar `/calendar` | `/api/occasions` CRUD | Customer-owned special dates; stored reminder preferences only, no automatic reminders or annual recurrence. |
 | Courier Calendar `/calendar` | `orders` can supply assigned delivery dates | No appointment CRUD, day/month range filter, or one-year appointments API. |
 | Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
@@ -859,4 +883,4 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **50 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **51 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.

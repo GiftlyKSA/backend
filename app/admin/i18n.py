@@ -235,6 +235,8 @@ ARABIC: dict[str, str] = {
     "View all redemptions": "عرض كل عمليات الاسترداد",
     "Intent": "العملية",
     "Invoice Items": "بنود الفاتورة",
+    "Invoice Promo Operations": "عمليات تطبيق الخصومات على الفواتير",
+    "Result Invoice Id": "معرّف الفاتورة الناتجة",
     "Invoice items": "بنود الفاتورة",
     "Admin Sessions": "جلسات المشرفين",
     "Audit Logs": "سجلات التدقيق",

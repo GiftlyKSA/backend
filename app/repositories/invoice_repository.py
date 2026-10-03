@@ -116,6 +116,33 @@ class InvoiceRepository:
         )
         return result
 
+    async def get_for_customer(
+        self, invoice_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> Invoice | None:
+        """Scope operation replays to the actual customer, not generic participation."""
+        invoice: Invoice | None = await self._session.scalar(
+            select(Invoice)
+            .join(Order, Order.id == Invoice.order_id)
+            .where(Invoice.id == invoice_id, Order.customer_id == customer_id)
+            .execution_options(populate_existing=True)
+        )
+        return invoice
+
+    async def get_active_for_customer(
+        self, order_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> Invoice | None:
+        """Return an active invoice only to the actual customer owner."""
+        invoice: Invoice | None = await self._session.scalar(
+            select(Invoice)
+            .join(Order, Order.id == Invoice.order_id)
+            .where(
+                Invoice.order_id == order_id,
+                Invoice.status.in_(_ACTIVE_STATUSES),
+                Order.customer_id == customer_id,
+            )
+        )
+        return invoice
+
     async def get_active_for_order_for_actor(
         self, order_id: uuid.UUID, actor_id: uuid.UUID
     ) -> Invoice | None:
@@ -149,6 +176,19 @@ class InvoiceRepository:
             select(Invoice)
             .where(Invoice.id == invoice_id, Invoice.issued_by_courier_id == courier_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result
+
+    async def lock_for_customer(
+        self, invoice_id: uuid.UUID, customer_id: uuid.UUID
+    ) -> Invoice | None:
+        """Lock an invoice only through its owning customer's order."""
+        result: Invoice | None = await self._session.scalar(
+            select(Invoice)
+            .join(Order, Order.id == Invoice.order_id)
+            .where(Invoice.id == invoice_id, Order.customer_id == customer_id)
+            .with_for_update(of=Invoice)
             .execution_options(populate_existing=True)
         )
         return result

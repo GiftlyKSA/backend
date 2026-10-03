@@ -33,6 +33,7 @@ from app.models.enums import InvoiceStatus, OrderStatus
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.invoice_promo_service import stored_pricing_config
 from app.services.order_state import assert_transition
 from app.services.payment_reservation_service import PaymentReservationService
 from app.services.promo_service import PromoService, to_pricing_promo
@@ -256,15 +257,22 @@ class InvoiceService:
 
         Re-runs the pricing engine over the invoice's stored lines with the candidate
         promo so the customer sees the exact discount and resulting total before the
-        courier re-issues with the code.
+        customer applies the code through an immutable invoice revision.
 
         Raises:
             NotFoundError: The order (for this customer) has no active invoice.
             Promo* errors: The promo failed validation (each a 422).
         """
-        invoice = await self._invoices.get_active_for_order_for_actor(order_id, customer_id)
+        await self._eligibility.require_customer(customer_id)
+        invoice = await self._invoices.get_active_for_customer(order_id, customer_id)
         if invoice is None:
             raise NotFoundError("No active invoice for this order.")
+        if (
+            invoice.status is not InvoiceStatus.ISSUED
+            or invoice.expires_at is None
+            or invoice.expires_at <= self._now()
+        ):
+            raise ConflictError("Only a current unpaid, unexpired invoice can be previewed.")
         items = await self._invoices.list_items(invoice.id)
         pricing_items = [
             PricingItem(
@@ -279,13 +287,13 @@ class InvoiceService:
         ]
         base = self._discountable_base(pricing_items, invoice.courier_fee_amount)
         validation = await self._promos.validate(
-            code=code, discountable_base=base, user_id=customer_id
+            code=code, discountable_base=base, user_id=customer_id, current_invoice_id=invoice.id
         )
         result = calculate_invoice_totals(
             pricing_items,
             invoice.courier_fee_amount,
             to_pricing_promo(validation.promo),
-            self._pricing_config(),
+            stored_pricing_config(invoice),
         )
         return PromoPreview(
             code=validation.promo.code,

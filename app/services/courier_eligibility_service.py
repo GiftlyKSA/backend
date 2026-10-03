@@ -33,6 +33,17 @@ class CourierEligibilityService:
             raise ForbiddenError("This courier account is not eligible for this action.")
         await self._require_active_verified(user.id, user.status)
 
+    async def require_customer(self, customer_id: uuid.UUID) -> None:
+        """Require an active, non-erased customer for financial mutations."""
+        user = await self._users.get(customer_id)
+        if (
+            user is None
+            or user.role is not UserRole.CUSTOMER
+            or user.status is not UserStatus.ACTIVE
+            or user.deleted_at is not None
+        ):
+            raise ForbiddenError("This customer account is not eligible for this action.")
+
     async def _require_active_verified(self, courier_id: uuid.UUID, status: UserStatus) -> None:
         if status is not UserStatus.ACTIVE:
             raise ForbiddenError("This courier account is not eligible for this action.")

@@ -335,6 +335,13 @@ def calculate_invoice_totals(
         raise PricingIntegrityError("Invoice total exceeds the maximum permitted.")
 
     breakdown: dict[str, object] = {
+        "pricing_policy": {
+            "service_fee_rate": str(cfg.service_fee_rate),
+            "service_fee_min_amount": str(cfg.service_fee_min_amount),
+            "service_fee_max_amount": str(cfg.service_fee_max_amount),
+            "default_vat_rate": str(cfg.default_vat_rate),
+            "max_invoice_amount": str(cfg.max_invoice_amount),
+        },
         "items_net_amount": str(items_net),
         "courier_fee_amount": str(courier_fee_net),
         "service_fee_amount": str(service_fee),

@@ -18,11 +18,14 @@ from app.core.exceptions import (
 from app.models import CourierProfile, Order, Promo, User
 from app.models.enums import InvoiceStatus, OrderStatus, PromoDiscountType, UserRole
 from app.repositories.courier_repository import CourierRepository
+from app.repositories.invoice_promo_repository import InvoicePromoRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.payment_repository import PaymentRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.invoice_promo_service import InvoicePromoService
 from app.services.invoice_service import (
     InvoiceLineInput,
     InvoiceService,
@@ -34,6 +37,80 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
 from tests.integration.conftest import city_by_name
+
+
+def _customer_promos(db: AsyncSession) -> InvoicePromoService:
+    return InvoicePromoService(
+        invoices=InvoiceRepository(db),
+        orders=OrderRepository(db),
+        payments=PaymentRepository(db),
+        promos=PromoService(PromoRepository(db)),
+        operations=InvoicePromoRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
+    )
+
+
+async def test_customer_promo_revision_replay_remove_and_failed_replacement(
+    db_session: AsyncSession,
+) -> None:
+    order = await _assigned_order(db_session)
+    original = await _service(db_session).create_invoice(
+        order_id=order.id, courier_id=order.courier_id, data=_input()
+    )
+    original_id, original_total, expiry = original.id, original.total_amount, original.expires_at
+    promo = Promo(
+        code=f"GIFT{uuid.uuid4().hex[:8].upper()}",
+        description="ten percent",
+        discount_type=PromoDiscountType.PERCENT,
+        percent_value=Decimal("10"),
+        max_total_usages=1,
+        max_usages_per_user=1,
+    )
+    db_session.add(promo)
+    await db_session.flush()
+    service = _customer_promos(db_session)
+    other_customer = await _user(db_session, UserRole.CUSTOMER)
+    with pytest.raises(NotFoundError):
+        await service.apply(
+            invoice_id=original_id, customer_id=other_customer.id, code=promo.code, key="foreign"
+        )
+    applied, _ = await service.apply(
+        invoice_id=original_id, customer_id=order.customer_id, code=promo.code.lower(), key="apply"
+    )
+    applied_id = applied.id
+    assert applied_id != original_id and applied.expires_at == expiry
+    assert original.status is InvoiceStatus.CANCELLED and original.total_amount == original_total
+    assert (
+        order.status is OrderStatus.WAITING_PAYMENT and order.total_amount == applied.total_amount
+    )
+    replay, _ = await service.apply(
+        invoice_id=original_id, customer_id=order.customer_id, code=promo.code, key="apply"
+    )
+    assert replay.id == applied_id
+    with pytest.raises(ConflictError):
+        await service.apply(
+            invoice_id=original_id, customer_id=order.customer_id, code=None, key="apply"
+        )
+    from app.core.exceptions import PromoNotFoundError
+
+    with pytest.raises(PromoNotFoundError):
+        await service.apply(
+            invoice_id=applied_id, customer_id=order.customer_id, code="MISSING", key="bad"
+        )
+    current = await InvoiceRepository(db_session).get_active_for_order(order.id)
+    assert current.id == applied_id
+    assert (
+        await PromoRepository(db_session).count_user_redemptions(promo.id, order.customer_id) == 1
+    )
+    removed, _ = await service.apply(
+        invoice_id=applied_id, customer_id=order.customer_id, code=None, key="remove"
+    )
+    assert removed.total_amount == original_total and removed.expires_at == expiry
+    assert (
+        await PromoRepository(db_session).count_user_redemptions(promo.id, order.customer_id) == 0
+    )
 
 
 def _settings() -> Settings:

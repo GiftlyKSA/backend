@@ -70,7 +70,12 @@ class PromoService:
         return datetime.now(UTC)
 
     async def validate(
-        self, *, code: str, discountable_base: Decimal, user_id: uuid.UUID
+        self,
+        *,
+        code: str,
+        discountable_base: Decimal,
+        user_id: uuid.UUID,
+        current_invoice_id: uuid.UUID | None = None,
     ) -> PromoValidation:
         """Validate a promo against a base amount without reserving it (§12.2).
 
@@ -91,13 +96,37 @@ class PromoService:
             raise PromoExpiredError
         if discountable_base < promo.min_order_amount:
             raise PromoMinOrderNotMetError
-        if promo.max_total_usages is not None and promo.used_count >= promo.max_total_usages:
+        held = False
+        if current_invoice_id is not None:
+            redemption = await self._promos.get_redemption_by_invoice(current_invoice_id)
+            held = (
+                redemption is not None
+                and redemption.promo_id == promo.id
+                and redemption.user_id == user_id
+                and redemption.status is PromoRedemptionStatus.RESERVED
+            )
+        if (
+            promo.max_total_usages is not None
+            and promo.used_count - int(held) >= promo.max_total_usages
+        ):
             raise PromoUsageExceededError
         user_uses = await self._promos.count_user_redemptions(promo.id, user_id)
-        if user_uses >= promo.max_usages_per_user:
+        if user_uses - int(held) >= promo.max_usages_per_user:
             raise PromoUserLimitReachedError
         discount = compute_promo_discount(discountable_base, to_pricing_promo(promo))
         return PromoValidation(promo=promo, discount_amount=discount)
+
+    async def lock_replacement(self, code: str | None, previous_id: uuid.UUID | None) -> None:
+        """Serialize promo edits and reserve/release in deterministic row order."""
+        candidate = await self._promos.get_by_code(code) if code is not None else None
+        if code is not None and candidate is None:
+            raise PromoNotFoundError()
+        identifiers = {
+            identifier
+            for identifier in (previous_id, candidate.id if candidate else None)
+            if identifier is not None
+        }
+        await self._promos.lock_many(sorted(identifiers))
 
     async def reserve(
         self,

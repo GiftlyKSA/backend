@@ -2671,6 +2671,81 @@
         "x-before": "Customer login; saved occasion UUID for record operations",
         "x-dependent-api": "Reload occasion detail or list after changes"
       }
+    },
+    "/api/invoices/{invoice_id}/promo": {
+      "post": {
+        "tags": [
+          "invoices"
+        ],
+        "summary": "Apply Invoice Promo",
+        "description": "Apply/remove a promo by replacing an unpaid invoice; pay the returned invoice ID.",
+        "operationId": "apply_invoice_promo_api_invoices__invoice_id__promo_post",
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyInvoicePromoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-mobile-screen": "Customer Invoice /invoice/[id]",
+        "x-audience": "Authenticated ACTIVE owning CUSTOMER",
+        "x-before": "Load current ISSUED invoice; no unresolved payment attempt",
+        "x-dependent-api": "Pay returned invoice ID; refresh order active invoice on conflict",
+        "x-availability": "Implemented; legacy invoices without frozen policy return CONFLICT"
+      }
     }
   },
   "components": {
@@ -3750,6 +3825,7 @@
           },
           "order_id": {
             "type": "string",
+            "format": "uuid",
             "title": "Order Id",
             "description": "The order whose active invoice to price against."
           }
@@ -4955,6 +5031,30 @@
         ],
         "title": "OccasionPage",
         "description": "A bounded page ordered by calendar date and ID."
+      },
+      "ApplyInvoicePromoRequest": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "ApplyInvoicePromoRequest",
+        "description": "Apply a case-insensitive code, or remove it with explicit null."
       }
     },
     "securitySchemes": {

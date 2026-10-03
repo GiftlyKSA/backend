@@ -1,13 +1,12 @@
 """Public promo routes (SPEC SECTION 12.2).
 
 Only the customer-facing preview lives here: validate a promo against the customer's
-own order and see the exact discount and resulting total. Reserving/consuming a promo
-happens inside the invoice pipeline, never from a client call.
+own order and see the exact discount and resulting total. The customer invoice-promo
+endpoint reserves usages; only confirmed settlement consumes them.
 """
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -55,7 +54,7 @@ async def validate_promo(
 ) -> PromoPreviewResponse:
     """Preview a promo against the customer's own order's active invoice."""
     preview = await _service(request, db).preview_promo(
-        order_id=uuid.UUID(body.order_id), code=body.code, customer_id=actor.id
+        order_id=body.order_id, code=body.code, customer_id=actor.id
     )
     return PromoPreviewResponse(
         code=preview.code,

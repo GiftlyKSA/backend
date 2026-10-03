@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.core.money import MoneyError, parse_money, parse_rate
+from app.core.promo_codes import normalize_code
 
 _Title = Annotated[str, StringConstraints(min_length=1, max_length=120)]
 _Description = Annotated[str, StringConstraints(max_length=500)]
@@ -60,6 +62,15 @@ class CreateInvoiceRequest(BaseModel):
     courier_fee_amount: _MoneyStr = Field("0.00", description="Courier's craft/labour, net.")
     promo_code: _Code | None = None
 
+    @field_validator("promo_code")
+    @classmethod
+    def _valid_code(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = normalize_code(value)
+            if not 1 <= len(value) <= 32:
+                raise ValueError("Enter a promo code between 1 and 32 characters.")
+        return value
+
     @field_validator("courier_fee_amount")
     @classmethod
     def _valid_fee(cls, value: str) -> str:
@@ -76,7 +87,27 @@ class PromoValidateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     code: _Code
-    order_id: str = Field(..., description="The order whose active invoice to price against.")
+    order_id: UUID = Field(..., description="The order whose active invoice to price against.")
+
+    @field_validator("code")
+    @classmethod
+    def _valid_code(cls, value: str) -> str:
+        normalized = normalize_code(value)
+        if not 1 <= len(normalized) <= 32:
+            raise ValueError("Enter a promo code between 1 and 32 characters.")
+        return normalized
+
+
+class ApplyInvoicePromoRequest(BaseModel):
+    """Apply a case-insensitive code, or remove it with explicit null."""
+
+    model_config = ConfigDict(extra="forbid")
+    code: _Code | None = Field(...)
+
+    @field_validator("code")
+    @classmethod
+    def _valid_code(cls, value: str | None) -> str | None:
+        return CreateInvoiceRequest._valid_code(value)
 
 
 class InvoiceItemResponse(BaseModel):

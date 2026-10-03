@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
@@ -18,17 +18,21 @@ from app.core.money import money_str, parse_money, parse_rate
 from app.models import Invoice, InvoiceItem
 from app.models.enums import UserRole
 from app.repositories.courier_repository import CourierRepository
+from app.repositories.invoice_promo_repository import InvoicePromoRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.payment_repository import PaymentRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.invoices import (
+    ApplyInvoicePromoRequest,
     CreateInvoiceRequest,
     InvoiceItemResponse,
     InvoiceResponse,
 )
 from app.schemas.payments import PayInvoiceResponse
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.invoice_promo_service import InvoicePromoService
 from app.services.invoice_service import InvoiceLineInput, InvoiceService, NewInvoiceInput
 from app.services.payment_reservation_service import build_payment_reservation_service
 from app.services.payment_service import build_payment_service
@@ -171,6 +175,31 @@ async def pay_invoice(
         amount_from_gateway=money_str(result.amount_from_gateway),
         payment_url=result.payment_url,
     )
+
+
+@router.post("/invoices/{invoice_id}/promo", response_model=InvoiceResponse)
+async def apply_invoice_promo(
+    db: DbDep,
+    invoice_id: uuid.UUID,
+    body: ApplyInvoicePromoRequest,
+    actor: Annotated[Actor, Depends(_Customer)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)],
+) -> InvoiceResponse:
+    """Apply/remove a promo by replacing an unpaid invoice; pay the returned invoice ID."""
+    service = InvoicePromoService(
+        invoices=InvoiceRepository(db),
+        orders=OrderRepository(db),
+        payments=PaymentRepository(db),
+        promos=PromoService(PromoRepository(db)),
+        operations=InvoicePromoRepository(db),
+        eligibility=CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ),
+    )
+    invoice, items = await service.apply(
+        invoice_id=invoice_id, customer_id=actor.id, code=body.code, key=idempotency_key
+    )
+    return _detail(invoice, items)
 
 
 @router.post("/invoices/{invoice_id}/cancel", response_model=InvoiceResponse)

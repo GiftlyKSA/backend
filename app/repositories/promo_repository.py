@@ -13,13 +13,9 @@ from decimal import Decimal
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.promo_codes import normalize_code as normalize_code
 from app.models import Promo, PromoRedemption
 from app.models.enums import PromoDiscountType, PromoRedemptionStatus
-
-
-def normalize_code(code: str) -> str:
-    """Normalize a promo code to its canonical stored form."""
-    return code.strip().upper()
 
 
 class PromoRepository:
@@ -36,9 +32,18 @@ class PromoRepository:
     async def get_by_code(self, code: str) -> Promo | None:
         """Return a promo by its normalized code, or None."""
         result: Promo | None = await self._session.scalar(
-            select(Promo).where(Promo.code == normalize_code(code))
+            select(Promo)
+            .where(Promo.code == normalize_code(code))
+            .execution_options(populate_existing=True)
         )
         return result
+
+    async def lock_many(self, promo_ids: list[uuid.UUID]) -> None:
+        """Lock replacement promos in one consistent order to avoid swap deadlocks."""
+        if promo_ids:
+            await self._session.execute(
+                select(Promo.id).where(Promo.id.in_(promo_ids)).order_by(Promo.id).with_for_update()
+            )
 
     async def list_all(self, limit: int = 100) -> list[Promo]:
         """Return promos, newest first."""

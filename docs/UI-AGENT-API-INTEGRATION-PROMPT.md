@@ -15,7 +15,7 @@ match the implemented backend; keep the current visual design unless a contract 
 requires a small UI change. Read the mobile repository's instructions and current code
 before editing. Use these backend files as the source of truth:
 
-- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 50
+- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 51
   implemented non-admin HTTP operations.
 - `../backend/docs/MOBILE-API-INTEGRATION.md` — screen mapping, call order, WebSocket,
   environment behavior, and unsupported features.
@@ -53,6 +53,8 @@ Check and update these flows in the app:
    Production top-up and invoice payment return `PAYMENTS_DISABLED` until Dhamen is
    implemented; do not present checkout as functional or treat a browser redirect as
    payment success. Use the specified `Idempotency-Key` on withdrawal requests.
+   For customer promo application/removal, follow `UI-AGENT-INVOICE-PROMO-PROMPT.md`:
+   use an operation key, replace the displayed invoice and pay its returned ID.
 4. **Media, chat, and notifications:** Follow upload URL → signed PUT → confirm → attach
    storage key. For an old order, use `GET /api/orders/{order_id}/conversation` to find its
    conversation ID directly. Page REST history and reconnect the WebSocket with a fresh

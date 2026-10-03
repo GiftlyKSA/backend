@@ -511,6 +511,28 @@ class Promo(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class InvoicePromoOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A customer-scoped receipt for an atomic invoice promo change."""
+
+    __tablename__ = "invoice_promo_operations"
+
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT"), nullable=False
+    )
+    code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    result_invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("customer_id", "idempotency_key", name="uq_invoice_promo_operation_key"),
+    )
+
+
 class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A courier-authored, itemised, priced invoice for an order.
 
