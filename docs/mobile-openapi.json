@@ -5,7 +5,7 @@
     "version": "0.1.0",
     "description": "Generated from implemented backend routes for mobile integration. Admin routes are excluded. Screen and flow details are vendor extensions; unsupported screen features are future API work and have no route in this specification. Production payment routes currently return PAYMENTS_DISABLED until a verified Dhamen integration is available."
   },
-  "x-integration-reviewed-on": "2026-09-30",
+  "x-integration-reviewed-on": "2026-10-03",
   "paths": {
     "/api/health": {
       "get": {
@@ -2370,6 +2370,307 @@
           }
         ]
       }
+    },
+    "/api/occasions": {
+      "post": {
+        "tags": [
+          "occasions"
+        ],
+        "summary": "Create Occasion",
+        "description": "Save a special date; automatic reminders and annual recurrence are not available.",
+        "operationId": "create_occasion_api_occasions_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOccasionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccasionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer Calendar /calendar",
+        "x-audience": "Authenticated CUSTOMER; own records only",
+        "x-availability": "Implemented; reminders and recurrence unavailable",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-before": "Customer login; saved occasion UUID for record operations",
+        "x-dependent-api": "Reload occasion detail or list after changes"
+      },
+      "get": {
+        "tags": [
+          "occasions"
+        ],
+        "summary": "List Occasions",
+        "description": "List owned dates, soonest first, with an optional inclusive date filter.",
+        "operationId": "list_occasions_api_occasions_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccasionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer Calendar /calendar",
+        "x-audience": "Authenticated CUSTOMER; own records only",
+        "x-availability": "Implemented; reminders and recurrence unavailable",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-before": "Customer login; saved occasion UUID for record operations",
+        "x-dependent-api": "Reload occasion detail or list after changes"
+      }
+    },
+    "/api/occasions/{occasion_id}": {
+      "get": {
+        "tags": [
+          "occasions"
+        ],
+        "summary": "Get Occasion",
+        "description": "Read a saved date belonging to this customer.",
+        "operationId": "get_occasion_api_occasions__occasion_id__get",
+        "parameters": [
+          {
+            "name": "occasion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Occasion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccasionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer Calendar /calendar",
+        "x-audience": "Authenticated CUSTOMER; own records only",
+        "x-availability": "Implemented; reminders and recurrence unavailable",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-before": "Customer login; saved occasion UUID for record operations",
+        "x-dependent-api": "Reload occasion detail or list after changes"
+      },
+      "patch": {
+        "tags": [
+          "occasions"
+        ],
+        "summary": "Update Occasion",
+        "description": "Update supplied fields on a customer-owned date.",
+        "operationId": "update_occasion_api_occasions__occasion_id__patch",
+        "parameters": [
+          {
+            "name": "occasion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Occasion Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOccasionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccasionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer Calendar /calendar",
+        "x-audience": "Authenticated CUSTOMER; own records only",
+        "x-availability": "Implemented; reminders and recurrence unavailable",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-before": "Customer login; saved occasion UUID for record operations",
+        "x-dependent-api": "Reload occasion detail or list after changes"
+      },
+      "delete": {
+        "tags": [
+          "occasions"
+        ],
+        "summary": "Delete Occasion",
+        "description": "Delete a customer-owned date; return no response body.",
+        "operationId": "delete_occasion_api_occasions__occasion_id__delete",
+        "parameters": [
+          {
+            "name": "occasion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Occasion Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-mobile-screen": "Customer Calendar /calendar",
+        "x-audience": "Authenticated CUSTOMER; own records only",
+        "x-availability": "Implemented; reminders and recurrence unavailable",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-before": "Customer login; saved occasion UUID for record operations",
+        "x-dependent-api": "Reload occasion detail or list after changes"
+      }
     }
   },
   "components": {
@@ -4506,6 +4807,154 @@
         ],
         "title": "ConversationResponse",
         "description": "Conversation identity for an order participant."
+      },
+      "CreateOccasionRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "occasion_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Occasion Date"
+          },
+          "reminder_days_before": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 0.0,
+            "title": "Reminder Days Before",
+            "default": 7
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "occasion_date"
+        ],
+        "title": "CreateOccasionRequest",
+        "description": "Store a special date; reminder delivery is not implemented."
+      },
+      "UpdateOccasionRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "occasion_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occasion Date"
+          },
+          "reminder_days_before": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Days Before"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpdateOccasionRequest",
+        "description": "Change supplied fields only; null is not a valid field value."
+      },
+      "OccasionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "occasion_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Occasion Date"
+          },
+          "reminder_days_before": {
+            "type": "integer",
+            "title": "Reminder Days Before"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "occasion_date",
+          "reminder_days_before",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OccasionResponse",
+        "description": "A saved calendar date with UTC record timestamps."
+      },
+      "OccasionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OccasionResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "OccasionPage",
+        "description": "A bounded page ordered by calendar date and ID."
       }
     },
     "securitySchemes": {

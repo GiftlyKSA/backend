@@ -15,7 +15,7 @@ match the implemented backend; keep the current visual design unless a contract 
 requires a small UI change. Read the mobile repository's instructions and current code
 before editing. Use these backend files as the source of truth:
 
-- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 45
+- `../backend/docs/mobile-openapi.json` — OpenAPI 3.1 request/response types and all 50
   implemented non-admin HTTP operations.
 - `../backend/docs/MOBILE-API-INTEGRATION.md` — screen mapping, call order, WebSocket,
   environment behavior, and unsupported features.
@@ -60,7 +60,9 @@ Check and update these flows in the app:
    socket events are not replayed. Register/unregister device push tokens when appropriate.
    There is no in-app notification-feed endpoint.
 5. **Screen gaps:** Compare every customer and courier screen to the handoff table in
-   `MOBILE-API-INTEGRATION.md`. Leave unsupported occasions, saved cards, courier report
+   `MOBILE-API-INTEGRATION.md`. Integrate customer occasions using
+   `UI-AGENT-OCCASIONS-PROMPT.md`; reminders and recurrence are future features.
+   Leave unsupported saved cards, courier report
    aggregates/targets, date-filtered statements, theme/avatar/phone changes, and other
    listed gaps pending. Do not fabricate backend data or silently rely on prototype-only
    fixtures for these features.

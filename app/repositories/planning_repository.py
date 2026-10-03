@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FeaturedGift, Occasion
@@ -51,26 +51,56 @@ class PlanningRepository:
         return occasion
 
     async def get_occasion_for_actor(
-        self, occasion_id: uuid.UUID, actor_id: uuid.UUID
+        self, occasion_id: uuid.UUID, actor_id: uuid.UUID, *, lock: bool = False
     ) -> Occasion | None:
         """Return an occasion only when it belongs to the actor."""
-        result: Occasion | None = await self._session.scalar(
-            select(Occasion).where(Occasion.id == occasion_id, Occasion.user_id == actor_id)
-        )
+        query = select(Occasion).where(Occasion.id == occasion_id, Occasion.user_id == actor_id)
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        result: Occasion | None = await self._session.scalar(query)
         return result
 
     async def list_occasions_for_actor(
-        self, actor_id: uuid.UUID, *, limit: int, from_date: date | None = None
+        self,
+        actor_id: uuid.UUID,
+        *,
+        limit: int,
+        from_date: date | None = None,
+        after: Occasion | None = None,
     ) -> list[Occasion]:
         """Return only the actor's occasions, soonest first."""
         query = select(Occasion).where(Occasion.user_id == actor_id)
         if from_date is not None:
             query = query.where(Occasion.occasion_date >= from_date)
+        if after is not None:
+            query = query.where(
+                tuple_(Occasion.occasion_date, Occasion.id) > (after.occasion_date, after.id)
+            )
         return list(
             await self._session.scalars(
                 query.order_by(Occasion.occasion_date, Occasion.id).limit(limit)
             )
         )
+
+    async def update_occasion(
+        self,
+        occasion: Occasion,
+        *,
+        title: str | None,
+        occasion_date: date | None,
+        reminder_days_before: int | None,
+    ) -> Occasion:
+        """Update explicit editable fields on an ownership-locked row."""
+        if title is not None:
+            occasion.title = title
+        if occasion_date is not None:
+            occasion.occasion_date = occasion_date
+        if reminder_days_before is not None:
+            occasion.reminder_days_before = reminder_days_before
+        occasion.updated_at = datetime.now(UTC)
+        await self._session.flush()
+        await self._session.refresh(occasion)
+        return occasion
 
     async def delete_occasion_for_actor(self, occasion_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
         """Delete an occasion only through an ownership-scoped statement."""

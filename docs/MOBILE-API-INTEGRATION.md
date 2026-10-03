@@ -5,9 +5,9 @@ from order input/output. Remove those inputs and map navigation from existing sc
 city selection and delivery date remain supported. Old location properties are rejected
 as undeclared request fields.
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 45 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 50 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
 
-**Verified against backend source and offline development OpenAPI on 2026-09-30.** This catalogs every implemented non-admin HTTP endpoint (45) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+**Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (50) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
 The backend unit suite compares non-admin operations and their wire schemas in this file
 with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
@@ -671,6 +671,38 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 **When/how (61 words):** This callback is for the local simulated gateway, not a mobile app action and not a Dhamen endpoint. Its raw JSON body identifies a simulated payment link, status, and amount; the signature header authenticates the exact bytes. The backend handles idempotent settlement or failure in a transaction and returns an outcome. Never place the simulation signing secret in a phone app.
 
+## Customer occasions API (2026-10-03)
+
+Customers can now manage their own birthdays, anniversaries and other calendar
+dates. All five operations require a CUSTOMER bearer token; missing or foreign
+records/cursors return 404. Couriers and admins cannot use these customer APIs.
+
+| Method | Endpoint | Input | Success |
+| --- | --- | --- | --- |
+| POST | `/api/occasions` | `CreateOccasionRequest` | 201 `OccasionResponse` |
+| GET | `/api/occasions` | `limit` 1–100 (default 25), optional UUID `cursor`, optional inclusive `from_date` YYYY-MM-DD | 200 `OccasionPage` |
+| GET | `/api/occasions/{occasion_id}` | UUID path; no body | 200 `OccasionResponse` |
+| PATCH | `/api/occasions/{occasion_id}` | `UpdateOccasionRequest`; nonempty partial update | 200 `OccasionResponse` |
+| DELETE | `/api/occasions/{occasion_id}` | UUID path; no body | 204; no body |
+
+Create fields: required `title` (nonblank string, 1–120 characters), required
+`occasion_date` (YYYY-MM-DD), optional `reminder_days_before` (integer 0–365,
+default 7). PATCH supports the same fields, all optional but at least one supplied;
+explicit nulls are rejected. Ownership, IDs and timestamps cannot be assigned.
+Response fields: `id`, `title`, `occasion_date`, `reminder_days_before`, UTC
+`created_at` and `updated_at`. Lists return `items` and nullable UUID `next_cursor`,
+ordered by date then ID ascending. No per-item relationship queries are needed.
+
+Use this API when a customer saves or manages a personal gifting date from Calendar
+or Home. Fetch a bounded page, display dates without timezone conversion, and pass
+the returned cursor unchanged for more results. Create/edit responses provide the
+record to reconcile local state. Titles remain text and must be escaped by clients.
+Reminder preferences are stored only: automatic notification delivery and annual
+recurrence are not implemented. These records do not create orders automatically.
+
+See [UI-AGENT-OCCASIONS-PROMPT.md](UI-AGENT-OCCASIONS-PROMPT.md) for examples, errors
+and UI instructions. The generated schemas are included in `mobile-openapi.json`.
+
 ## Live order status WebSocket (2026-10-03)
 
 `/api/ws/orders/{order_id}` is a read-only authenticated stream for the owning customer
@@ -801,14 +833,14 @@ The prototype's labels and local-device data are not server contracts. The table
 | Phone login `/login`, OTP `/verify-otp` | `send-otp`, `verify-otp`, `refresh` | Demo phone-role fixtures and permissive demo OTP are not backend rules. |
 | Customer registration `/register-customer` | `register`, `users/me` | Backend supports courier registration too, but mobile has no courier onboarding flow. Name length/age-16 rules from prototype are not enforced here. |
 | Help `/help` | None | Static app content; no help/contact API. |
-| Customer Home `/home` | `users/me`, `wallets/me`, `orders`, `conversations` | No occasions, notification-feed, or aggregated home endpoint. |
+| Customer Home `/home` | `users/me`, `wallets/me`, `orders`, `conversations` | Occasions CRUD is available; no notification-feed or aggregated home endpoint. |
 | Create order `/request` | `media/upload-urls`, signed PUT, `media/confirm`, `orders` | Backend allows **0–3** photos, not prototype's four; no morning/evening period, recipient phone, or returned image URLs. |
 | Waiting `/waiting/[id]` | `orders/{id}` | No separate push/poll status stream; refresh the order. |
 | Customer/Courier Orders `/orders` | `orders`; courier `orders/available` | No customer text/order-number search; no order number in responses. Courier should not show a search box. |
 | Order detail `/order/[id]` | `orders/{id}`, active invoice, participant, ratings, chat | No timeline events or media/proof download/list API in the returned contract. |
 | Chat `/chat/[id]` | `conversations`, messages, read, WebSocket | Conversation ID comes from inbox; WebSocket has no durable replay, so use REST history after reconnect. |
 | Invoice `/invoice/[id]` | `orders/{id}/invoice`, `invoices/{id}`, promo preview; courier create/cancel; customer pay | No saved-card API or exposed invoice revision field. Production payment is disabled. |
-| Customer Calendar `/calendar` | None for occasions | Occasion CRUD/calendar APIs are absent. |
+| Customer Calendar `/calendar` | `/api/occasions` CRUD | Customer-owned special dates; stored reminder preferences only, no automatic reminders or annual recurrence. |
 | Courier Calendar `/calendar` | `orders` can supply assigned delivery dates | No appointment CRUD, day/month range filter, or one-year appointments API. |
 | Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
 | Courier Reports `/reports` and settings sheet | Wallet transactions can be read as raw entries | No earnings aggregates, comparison, chart series, target settings, or financial-notification preference API. |
@@ -827,4 +859,4 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **45 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **50 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
