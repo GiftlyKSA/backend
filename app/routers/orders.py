@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.db import emit_committed_audit_events
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.money import money_str
 from app.models import Dispute
@@ -41,6 +42,7 @@ from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.fulfillment_service import DeliveryInput, FulfillmentService
 from app.services.media_service import MediaService
 from app.services.money_service import MoneyService
+from app.services.order_realtime_service import publish_order_change
 from app.services.order_service import NewOrderInput, OrderService, OrderView
 from app.services.rating_service import RatingService
 
@@ -227,7 +229,11 @@ async def accept_order(
     view = await service.view_existing_order_for_actor(
         order=order, actor_id=actor.id, role=actor.role
     )
-    return _detail(view)
+    response = _detail(view)
+    await db.commit()
+    emit_committed_audit_events(db)
+    await publish_order_change(get_redis(request), uuid.UUID(response.id))
+    return response
 
 
 @router.post("/{order_id}/cancel", response_model=OrderDetail)

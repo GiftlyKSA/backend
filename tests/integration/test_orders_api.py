@@ -170,6 +170,12 @@ async def test_parallel_accepts_assign_exactly_once() -> None:
             )
             await _verify_courier(factory, courier_phone)
             courier = await _login(client, app, courier_phone)
+            second_phone = _phone()
+            await _register(
+                client, app, second_phone, "COURIER", city="Jeddah", national_id=_phone()[1:]
+            )
+            await _verify_courier(factory, second_phone)
+            second_courier = await _login(client, app, second_phone)
 
             cust_h = {"Authorization": f"Bearer {cust['access_token']}"}
             created = await client.post(
@@ -184,11 +190,16 @@ async def test_parallel_accepts_assign_exactly_once() -> None:
             order_id = created.json()["id"]
             cour_h = {"Authorization": f"Bearer {courier['access_token']}"}
 
-            async def accept() -> int:
-                r = await client.post(f"/api/orders/{order_id}/accept", headers=cour_h)
+            second_h = {"Authorization": f"Bearer {second_courier['access_token']}"}
+
+            async def accept(index: int) -> int:
+                r = await client.post(
+                    f"/api/orders/{order_id}/accept",
+                    headers=cour_h if index % 2 else second_h,
+                )
                 return r.status_code
 
-            results = await asyncio.gather(*[accept() for _ in range(50)])
+            results = await asyncio.gather(*[accept(index) for index in range(50)])
             assert sum(1 for code in results if code == 200) == 1
             assert sum(1 for code in results if code == 409) == 49
     finally:

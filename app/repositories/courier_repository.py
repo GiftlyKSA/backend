@@ -8,7 +8,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import City, CourierProfile
+from app.models import City, CourierProfile, User
+from app.models.enums import UserRole, UserStatus
 
 
 class CourierRepository:
@@ -21,6 +22,22 @@ class CourierRepository:
     async def get(self, user_id: uuid.UUID) -> CourierProfile | None:
         """Return a courier profile by user id, or None."""
         return await self._session.get(CourierProfile, user_id)
+
+    async def lock(self, user_id: uuid.UUID) -> CourierProfile | None:
+        """Keep city assignment and verification stable through an operation."""
+        profile: CourierProfile | None = await self._session.scalar(
+            select(CourierProfile)
+            .join(User, User.id == CourierProfile.user_id)
+            .where(
+                CourierProfile.user_id == user_id,
+                User.role == UserRole.COURIER,
+                User.status == UserStatus.ACTIVE,
+                User.deleted_at.is_(None),
+            )
+            .with_for_update(of=CourierProfile)
+            .execution_options(populate_existing=True)
+        )
+        return profile
 
     async def list_pending(self, limit: int = 50) -> list[CourierProfile]:
         """Return unverified courier profiles, newest first."""

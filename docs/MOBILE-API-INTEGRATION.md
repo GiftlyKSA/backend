@@ -5,9 +5,9 @@ from order input/output. Remove those inputs and map navigation from existing sc
 city selection and delivery date remain supported. Old location properties are rejected
 as undeclared request fields.
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 45 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat WebSocket contract, and unsupported-screen gaps.
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 45 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
 
-**Verified against backend source and offline development OpenAPI on 2026-09-30.** This catalogs every implemented non-admin HTTP endpoint (45) plus the chat WebSocket. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+**Verified against backend source and offline development OpenAPI on 2026-09-30.** This catalogs every implemented non-admin HTTP endpoint (45) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
 The backend unit suite compares non-admin operations and their wire schemas in this file
 with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
@@ -671,6 +671,37 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 **When/how (61 words):** This callback is for the local simulated gateway, not a mobile app action and not a Dhamen endpoint. Its raw JSON body identifies a simulated payment link, status, and amount; the signature header authenticates the exact bytes. The backend handles idempotent settlement or failure in a transaction and returns an outcome. Never place the simulation signing secret in a phone app.
 
+## Live order status WebSocket (2026-10-03)
+
+`/api/ws/orders/{order_id}` is a read-only authenticated stream for the owning customer
+and the assigned active, verified courier. An unassigned courier cannot subscribe.
+Use `wss://` in production. Native clients send `Authorization: Bearer ACCESS_TOKEN`;
+browser clients offer protocols `giftly.orders` and `bearer.ACCESS_TOKEN`. The server
+selects only `giftly.orders`; do not put credentials in the URL or log protocols.
+
+The first event is `order.snapshot`; subsequent changes use `order.updated`:
+
+```json
+{"type":"order.updated","order_id":"550e8400-e29b-41d4-a716-446655440000","status":"ASSIGNED","courier_id":"550e8400-e29b-41d4-a716-446655440001","assigned_at":"2026-10-03T10:00:00Z"}
+```
+
+`order_id` is a UUID string; `status` uses the existing order status enum;
+`courier_id` is a UUID string or null; `assigned_at` is a UTC datetime string or null.
+No request body or client application frames are supported. Acceptance sends a Redis
+hint only after commit. Other status changes and missed hints reconcile every five
+seconds. Each check revalidates credentials and current participation. These checks
+use short sessions, rather than a database transaction held for the socket lifetime.
+
+Close codes: 4401 invalid/revoked/expired credentials; 4403 denied origin, role or
+ownership; 4429 connection capacity; 4400 unsupported client frame; 1013 temporary
+backend failure. A rejection before handshake completion may appear as a failed
+handshake instead of a close code. Refresh credentials and reconnect appropriately;
+use bounded backoff and reload `GET /api/orders/{order_id}` after reconnect. Close on
+logout. The shared limit is eight sockets per account across chat/order streams.
+
+For the complete acceptance integration brief, see
+[UI-AGENT-ORDER-ACCEPTANCE-PROMPT.md](UI-AGENT-ORDER-ACCEPTANCE-PROMPT.md).
+
 ## Live chat WebSocket
 
 ### WS /api/ws/conversations/{conversation_id}
@@ -796,4 +827,4 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **45 non-admin HTTP operations plus one WebSocket** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **45 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.

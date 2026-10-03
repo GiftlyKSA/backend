@@ -164,10 +164,13 @@ class OrderService:
             raise OrderAlreadyAssignedError() from exc
 
     async def _assign_locked(self, order_id: uuid.UUID, courier_id: uuid.UUID) -> Order:
+        profile = await self._couriers.lock(courier_id)
+        if profile is None or not profile.is_verified:
+            raise ForbiddenError("This courier account is not eligible for this action.")
         # The DB row lock is belt-and-braces: if Redis ever fails open, the DB still
         # serializes the assignment.
         order = await self._orders.lock(order_id)
-        if order is None:
+        if order is None or order.delivery_city_id != profile.city_of_residence_id:
             raise NotFoundError("Order not found.")
         if order.status is not OrderStatus.NEW:
             raise OrderAlreadyAssignedError()
