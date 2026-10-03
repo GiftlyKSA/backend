@@ -246,6 +246,23 @@ class OrderRepository:
         """Flush pending writes."""
         await self._session.flush()
 
+    async def lock_overdue_unaccepted(self, *, before: date, limit: int) -> list[Order]:
+        """Claim a bounded batch without blocking concurrent acceptance or sweeps."""
+        return list(
+            await self._session.scalars(
+                select(Order)
+                .where(
+                    Order.status == OrderStatus.NEW,
+                    Order.courier_id.is_(None),
+                    Order.delivery_date < before,
+                )
+                .order_by(Order.delivery_date, Order.id)
+                .limit(limit)
+                .with_for_update(skip_locked=True, of=Order)
+                .execution_options(populate_existing=True)
+            )
+        )
+
     async def list_auto_approve_due(self, cutoff: datetime, limit: int) -> list[Order]:
         """Return DELIVERED orders whose delivered_at is at or before ``cutoff``."""
         return list(

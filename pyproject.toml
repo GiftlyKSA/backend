@@ -25,6 +25,7 @@ dependencies = [
     "taskiq-redis>=1.0",
     "aioboto3>=13",
     "python-multipart>=0.0.20",
+    "reportlab>=4.4,<5",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,7 @@ dev = [
     "testcontainers>=4.8",
     "pre-commit>=4.3,<5",
     "pre-commit-hooks>=6,<7",
+    "types-reportlab>=5.0.0.20260911",
 ]
 
 [tool.uv]

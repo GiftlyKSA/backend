@@ -277,7 +277,6 @@ class Settings(BaseSettings):
             "SNDR_BASE_URL",
             "SNDR_FROM_EMAIL",
             "SNDR_FROM_NAME",
-            "SNDR_INVOICE_PAID_TEMPLATE_KEY",
         )
         for name in ("SUPABASE_URL", "SNDR_BASE_URL"):
             parsed = urlsplit(getattr(self, name))

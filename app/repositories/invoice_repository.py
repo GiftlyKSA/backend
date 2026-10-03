@@ -30,6 +30,13 @@ class InvoiceRepository:
         """Bind the repository to a session."""
         self._session = session
 
+    async def list_vat_repair_ids(self, *, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
+        """Page unpaid candidates without exposing customer data to the repair report."""
+        query = select(Invoice.id).where(Invoice.status == InvoiceStatus.ISSUED)
+        if after is not None:
+            query = query.where(Invoice.id > after)
+        return list(await self._session.scalars(query.order_by(Invoice.id).limit(limit)))
+
     async def create_draft(
         self,
         *,

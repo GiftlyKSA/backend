@@ -23,8 +23,8 @@ POST /api/promos/validate
 Body: {"order_id":"550e8400-e29b-41d4-a716-446655440000","code":"gift10"}
 order_id: required UUID string; code: required nonblank string, max 32 characters.
 Unknown properties are rejected. HTTP 200 example:
-{"code":"GIFT10","discount_amount":"60.00","original_total_amount":"724.50",
- "total_amount":"655.50"}
+{"code":"GIFT10","discount_amount":"60.00","original_total_amount":"705.00",
+ "total_amount":"637.50"}
 All amounts are decimal strings in SAR. This does not reserve/consume a code, change
 the invoice or reduce the payable amount. Follow with application to save it.
 
@@ -53,8 +53,8 @@ SUCCESS HTTP 200: existing full InvoiceResponse, example:
   "service_fee_amount":"30.00",
   "discount_amount":"60.00",
   "net_after_discount_amount":"570.00",
-  "tax_amount":"85.50",
-  "total_amount":"655.50",
+  "tax_amount":"67.50",
+  "total_amount":"637.50",
   "promo_code":"GIFT10",
   "issued_at":"2026-10-03T10:00:00Z",
   "expires_at":"2026-10-04T09:00:00Z",
@@ -111,7 +111,7 @@ POST /api/invoices/{returned_invoice_id}/pay
 Authorization: Bearer <customer_access_token>. No JSON request body.
 Response HTTP 200:
 {"invoice_id":"550e8400-e29b-41d4-a716-446655440001","status":"PENDING",
- "amount_from_wallet":"0.00","amount_from_gateway":"655.50",
+ "amount_from_wallet":"0.00","amount_from_gateway":"637.50",
  "payment_url":"https://provider.example/checkout"}
 invoice_id/status are strings; amounts decimal strings; payment_url string|null.
 PAID indicates confirmed settlement in supported flows; PENDING may provide a URL.

@@ -1,9 +1,4 @@
-"""sndr.sh email client — the ONLY place that knows the vendor wire format.
-
-The official sndr.sh docs are not yet available. The request/response mapping below
-is isolated so it can be corrected in exactly one place when the docs arrive; see
-the VENDOR CONTRACT block. Services never import a sndr symbol.
-"""
+"""sndr.sh send contract, verified against official API reference on 2026-10-03."""
 
 from __future__ import annotations
 
@@ -37,16 +32,31 @@ class SndrEmailClient(EmailClient):
     async def send_transactional(
         self, to_email: str, template_key: str, variables: dict[str, object]
     ) -> None:
-        """POST a template send to sndr.sh, raising on a non-2xx response."""
-        # VENDOR CONTRACT — pending official sndr.sh docs. Correct this block only.
-        payload = {
-            "from": {"email": self._from_email, "name": self._from_name},
-            "to": [{"email": to_email}],
-            "template": template_key,
-            "variables": variables,
+        """Send a paid invoice with safe plain text and a private PDF attachment."""
+        invoice_id = str(variables.get("invoice_id", ""))
+        payload: dict[str, object] = {
+            "from": f"{self._from_name} <{self._from_email}>",
+            "to": [to_email],
+            "subject": "Your Giftly paid invoice",
+            "text": (
+                f"Thank you for your payment. Invoice: {invoice_id}\n"
+                f"Total: {variables.get('currency', 'SAR')} {variables.get('total_amount', '')}\n"
+                "Your invoice PDF is attached."
+            ),
         }
         headers = {"Authorization": f"Bearer {self._api_key}"}
+        if invoice_id:
+            headers["Idempotency-Key"] = f"giftly-invoice-receipt-{invoice_id}"
+        attachment = variables.get("pdf_base64")
+        if attachment:
+            payload["attachments"] = [
+                {
+                    "filename": "giftly-invoice.pdf",
+                    "content": attachment,
+                    "content_type": "application/pdf",
+                }
+            ]
         response = await self._client.post(
-            f"{self._base_url}/v1/transactional", json=payload, headers=headers
+            f"{self._base_url}/v1/send", json=payload, headers=headers
         )
         response.raise_for_status()

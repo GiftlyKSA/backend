@@ -33,6 +33,8 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
         total_amount=Decimal("13.80"),
         promo_code_snapshot=None,
         paid_at=None,
+        issued_at=None,
+        status="PAID",
     )
     active_sessions = 0
     events: list[str] = []
@@ -54,6 +56,9 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
         async def claim_receipt(self, *_args: object, **_kwargs: object) -> object:
             events.append("claim")
             return invoice
+
+        async def list_items(self, *_args):
+            return []
 
         async def complete_receipt(self, *_args: object, **_kwargs: object) -> bool:
             events.append("complete")
@@ -104,6 +109,8 @@ async def test_provider_timeout_leaves_claim_for_later_retry(
         total_amount=Decimal("13.80"),
         promo_code_snapshot=None,
         paid_at=None,
+        issued_at=None,
+        status="PAID",
     )
     complete = AsyncMock()
 
@@ -121,7 +128,9 @@ async def test_provider_timeout_leaves_claim_for_later_retry(
         receipt_service,
         "InvoiceRepository",
         lambda session: SimpleNamespace(
-            claim_receipt=AsyncMock(return_value=invoice), complete_receipt=complete
+            claim_receipt=AsyncMock(return_value=invoice),
+            complete_receipt=complete,
+            list_items=AsyncMock(return_value=[]),
         ),
     )
     monkeypatch.setattr(

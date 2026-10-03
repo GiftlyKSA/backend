@@ -124,6 +124,28 @@ async def run_expire_stale() -> None:
         await redis.aclose()
 
 
+@broker.task(schedule=[{"cron": "0 0 * * *", "cron_offset": timedelta(hours=3)}])
+async def cancel_overdue_orders() -> None:
+    """Cancel unaccepted orders daily at Saudi midnight in bounded transactions."""
+    settings = get_settings()
+    engine = build_engine(settings)
+    factory = build_session_factory(engine)
+    total = 0
+    try:
+        for _ in range(100):
+            async with factory() as session:
+                count = await ExpiryService(session).cancel_overdue_orders(now=datetime.now(UTC))
+                await session.commit()
+            total += count
+            if count < 200:
+                break
+        else:
+            _logger.warning("Overdue order sweep reached its 20000-order limit; run it again.")
+        _logger.info("Cancelled %d overdue unaccepted orders", total)
+    finally:
+        await engine.dispose()
+
+
 async def purge_refresh_tokens(
     *, factory: async_sessionmaker[AsyncSession] | None = None, settings: Settings | None = None
 ) -> int:

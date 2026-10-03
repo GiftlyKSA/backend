@@ -74,3 +74,5 @@ cursor pagination, 422 validation errors, the documented domain error envelope, 
 `Retry-After`, and 503 payment-disabled states. Add or update focused tests for any
 integration changes. When finished, report which screens you changed, which implemented
 endpoints each uses, what remains blocked by missing backend APIs, and which tests ran.
+
+See UI-AGENT-INVOICE-PDF-PROMPT.md for the new private invoice PDF endpoint and item-only VAT change.

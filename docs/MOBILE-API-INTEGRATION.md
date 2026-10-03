@@ -5,7 +5,7 @@ from order input/output. Remove those inputs and map navigation from existing sc
 city selection and delivery date remain supported. Old location properties are rejected
 as undeclared request fields.
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 51 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
+**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 52 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
 
 **Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (51) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
 
@@ -884,3 +884,7 @@ The prototype's labels and local-device data are not server contracts. The table
 ## Source and verification
 
 Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **51 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+
+## Invoice PDF and item-only VAT (2026-10-03)
+
+GET /api/invoices/{invoice_id}/pdf returns private application/pdf bytes to the owning customer or assigned eligible courier. Use the Bearer header; there is no body. Foreign invoices return 404. VAT applies only to discounted items; courier and service fees have zero VAT. Historical invoice amounts are read as stored. See [complete UI handoff](UI-AGENT-INVOICE-PDF-PROMPT.md) for download behavior and errors.

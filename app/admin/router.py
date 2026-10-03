@@ -619,6 +619,21 @@ async def invoice_detail(request: Request, db: DbDep, invoice_id: uuid.UUID) -> 
     return _render(request, "invoice_detail.html", ctx=ctx, invoice=invoice)
 
 
+@router.get("/invoices/{invoice_id}/pdf")
+async def admin_invoice_pdf(request: Request, db: DbDep, invoice_id: uuid.UUID) -> Response:
+    """Download an English invoice PDF for a currently authenticated admin."""
+    ctx = await _ctx(request, db)
+    document = await ctx.service.get_invoice_pdf(invoice_id)
+    return Response(
+        document,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="giftly-invoice-{invoice_id}.pdf"',
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 # --- Promos -----------------------------------------------------------------
 
 

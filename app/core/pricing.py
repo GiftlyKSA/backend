@@ -250,7 +250,7 @@ def calculate_invoice_totals(
 ) -> PricingResult:
     """Compute every priced leg of an invoice from raw courier inputs.
 
-    Implements SPEC SECTION 11 verbatim, in the mandated order. The output is the
+    Applies VAT only to discounted items. The output is the
     authority persisted to ``invoices`` and ``invoice_items``; the DB CHECKs then
     re-verify the arithmetic independently.
 
@@ -310,9 +310,8 @@ def calculate_invoice_totals(
         )
 
     courier_taxable = courier_fee_net - courier_alloc
-    courier_tax = quantize_money(courier_taxable * cfg.default_vat_rate)
-    service_tax = quantize_money(service_fee * cfg.default_vat_rate)
-    tax_amount += courier_tax + service_tax
+    courier_tax = ZERO
+    service_tax = ZERO
 
     # 9. Totals.
     net_after_discount = items_net + courier_fee_net + service_fee - discount
@@ -336,6 +335,7 @@ def calculate_invoice_totals(
 
     breakdown: dict[str, object] = {
         "pricing_policy": {
+            "tax_scope": "ITEMS_ONLY",
             "service_fee_rate": str(cfg.service_fee_rate),
             "service_fee_min_amount": str(cfg.service_fee_min_amount),
             "service_fee_max_amount": str(cfg.service_fee_max_amount),

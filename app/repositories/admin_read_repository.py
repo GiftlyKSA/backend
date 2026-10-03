@@ -24,6 +24,7 @@ from app.core.admin_time import admin_datetime
 from app.models import (
     Dispute,
     Invoice,
+    InvoiceItem,
     Order,
     PaymentIntent,
     Wallet,
@@ -375,6 +376,16 @@ class AdminReadRepository:
     async def get_invoice(self, invoice_id: uuid.UUID) -> Invoice | None:
         """Return an invoice by id, or None."""
         return await self._session.get(Invoice, invoice_id)
+
+    async def get_invoice_items(self, invoice_id: uuid.UUID) -> list[InvoiceItem]:
+        """Load stored lines for an authenticated admin invoice download."""
+        return list(
+            await self._session.scalars(
+                select(InvoiceItem)
+                .where(InvoiceItem.invoice_id == invoice_id)
+                .order_by(InvoiceItem.position)
+            )
+        )
 
     async def list_disputes(
         self, status: DisputeStatus | None = None, limit: int = 50

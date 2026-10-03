@@ -43,9 +43,9 @@ def test_golden_example_matches_spec_section_11_exactly() -> None:
     assert result.courier_fee_amount == Decimal("100.00")
     assert result.service_fee_amount == Decimal("30.00")
     assert result.discount_amount == Decimal("60.00")
-    assert result.tax_amount == Decimal("85.50")
+    assert result.tax_amount == Decimal("67.50")
     assert result.net_after_discount_amount == Decimal("570.00")
-    assert result.total_amount == Decimal("655.50")
+    assert result.total_amount == Decimal("637.50")
 
 
 def test_golden_example_discount_allocation() -> None:
@@ -59,17 +59,17 @@ def test_golden_example_line_taxes() -> None:
     result = calculate_invoice_totals(_golden_items(), Decimal("100.00"), WELCOME10, CFG)
     assert result.lines[0].line_tax_amount == Decimal("54.00")
     assert result.lines[1].line_tax_amount == Decimal("13.50")
-    assert result.courier_fee_tax_amount == Decimal("13.50")
-    assert result.service_fee_tax_amount == Decimal("4.50")
+    assert result.courier_fee_tax_amount == Decimal("0.00")
+    assert result.service_fee_tax_amount == Decimal("0.00")
 
 
 def test_no_promo_yields_zero_discount() -> None:
     result = calculate_invoice_totals(_golden_items(), Decimal("100.00"), None, CFG)
     assert result.discount_amount == Decimal("0.00")
-    # net_after_discount 630.00 (500 + 100 + 30) + tax 94.50 (60 + 15 + 15 + 4.50).
+    # net_after_discount 630.00 (500 + 100 + 30) + tax 75.00 (60 + 15 + 15 + 4.50).
     assert result.net_after_discount_amount == Decimal("630.00")
-    assert result.tax_amount == Decimal("94.50")
-    assert result.total_amount == Decimal("724.50")
+    assert result.tax_amount == Decimal("75.00")
+    assert result.total_amount == Decimal("705.00")
 
 
 def test_service_fee_never_charged_on_empty_base() -> None:

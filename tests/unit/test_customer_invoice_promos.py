@@ -99,9 +99,9 @@ async def test_apply_case_insensitive_preserves_policy_expiry_and_history(code):
     original_total = invoice.total_amount
     await service.apply(invoice_id=invoice.id, customer_id=customer, code=code, key="operation")
     assert invoice.status is InvoiceStatus.CANCELLED
-    assert invoice.total_amount == original_total == Decimal("724.50")
+    assert invoice.total_amount == original_total == Decimal("705.00")
     result = service._invoices.create_draft.call_args.kwargs["result"]
-    assert result.total_amount == Decimal("655.50")
+    assert result.total_amount == Decimal("637.50")
     assert result.discount_amount == Decimal("60.00")
     assert result.service_fee_amount == Decimal("30.00")
     assert order.status is OrderStatus.WAITING_PAYMENT and order.total_amount == result.total_amount
@@ -127,7 +127,7 @@ async def test_remove_returns_original_price_without_reserving():
     service, invoice, order, customer = context()
     invoice.promo_code_snapshot, invoice.promo_id = "GIFT10", uuid4()
     await service.apply(invoice_id=invoice.id, customer_id=customer, code=None, key="remove")
-    assert order.total_amount == Decimal("724.50")
+    assert order.total_amount == Decimal("705.00")
     service._promos.reserve.assert_not_awaited()
     assert service._invoices.create_draft.call_args.kwargs["promo_id"] is None
 

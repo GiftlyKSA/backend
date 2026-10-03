@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -14,6 +15,7 @@ from app.integrations.email.base import EmailClient
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.user_repository import UserRepository
+from app.services.invoice_pdf import render_invoice_pdf
 
 _DEFAULT_TEMPLATE_KEY = "invoice_paid_receipt"
 _SEND_TIMEOUT_SECONDS = 15
@@ -39,7 +41,7 @@ class ReceiptService:
         """Send an eligible receipt and stamp only the claim this call owns.
 
         Provider acceptance followed by a crash or stamp failure can cause a retry.
-        The provider has no confirmed idempotency contract, so delivery is at least once.
+        A stable provider idempotency key makes retries replay-safe within its window.
         """
         token = uuid.uuid4()
         async with self._factory() as session:
@@ -52,6 +54,7 @@ class ReceiptService:
             order = await OrderRepository(session).get(invoice.order_id)
             customer = await UserRepository(session).get(order.customer_id) if order else None
             address = customer.email if customer else None
+            items = await invoices.list_items(invoice.id) if address else []
             variables: dict[str, object] = {
                 "invoice_id": str(invoice.id),
                 "order_id": str(invoice.order_id),
@@ -67,10 +70,13 @@ class ReceiptService:
             }
             await session.commit()
 
-        if address:
-            template = self._settings.SNDR_INVOICE_PAID_TEMPLATE_KEY or _DEFAULT_TEMPLATE_KEY
-            async with asyncio.timeout(_SEND_TIMEOUT_SECONDS):
-                await self._email.send_transactional(address, template, variables)
+        if not address:
+            return False
+        pdf = await asyncio.to_thread(render_invoice_pdf, invoice, items)
+        variables["pdf_base64"] = base64.b64encode(pdf).decode("ascii")
+        template = self._settings.SNDR_INVOICE_PAID_TEMPLATE_KEY or _DEFAULT_TEMPLATE_KEY
+        async with asyncio.timeout(_SEND_TIMEOUT_SECONDS):
+            await self._email.send_transactional(address, template, variables)
 
         async with self._factory() as session:
             completed = await InvoiceRepository(session).complete_receipt(

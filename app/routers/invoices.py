@@ -8,9 +8,11 @@ id always comes from the JWT, never the body.
 from __future__ import annotations
 
 import uuid
+from asyncio import to_thread
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
@@ -32,6 +34,7 @@ from app.schemas.invoices import (
 )
 from app.schemas.payments import PayInvoiceResponse
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.invoice_pdf import render_invoice_pdf
 from app.services.invoice_promo_service import InvoicePromoService
 from app.services.invoice_service import InvoiceLineInput, InvoiceService, NewInvoiceInput
 from app.services.payment_reservation_service import build_payment_reservation_service
@@ -151,6 +154,34 @@ async def get_invoice(
         invoice_id=invoice_id, actor_id=actor.id
     )
     return _detail(invoice, items)
+
+
+@router.get(
+    "/invoices/{invoice_id}/pdf",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}
+    },
+)
+async def download_invoice_pdf(
+    request: Request,
+    db: DbDep,
+    invoice_id: uuid.UUID,
+    actor: Annotated[Actor, Depends(_Participant)],
+) -> Response:
+    """Download a stored invoice as English PDF, scoped to order participants."""
+    invoice, items = await _service(request, db).get_invoice_for_actor(
+        invoice_id=invoice_id, actor_id=actor.id
+    )
+    document = await to_thread(render_invoice_pdf, invoice, items)
+    return Response(
+        document,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="giftly-invoice-{invoice.id}.pdf"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.post("/invoices/{invoice_id}/pay", response_model=PayInvoiceResponse)

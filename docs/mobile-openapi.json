@@ -13,7 +13,7 @@
           "health"
         ],
         "summary": "Liveness probe",
-        "description": "Call this only for process liveness, such as a load balancer or local diagnostics. It returns a static marker without checking PostgreSQL or Redis, so a successful response does not mean account screens can load. Mobile screens should not poll it as their data source. Use readiness separately when an operator needs to know whether backing services are available.",
+        "description": "Return a static liveness marker with no dependency checks.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {
@@ -45,7 +45,7 @@
           "health"
         ],
         "summary": "Readiness probe",
-        "description": "Use this for deployment readiness checks rather than a customer-facing screen. The handler probes both PostgreSQL and Redis and returns a dependency status map, with HTTP 503 when either is down. A phone app should surface normal request failures through its usual error states instead of polling this endpoint. Do not confuse readiness with the static liveness route.",
+        "description": "Probe the backing services and report readiness.\n\nReturns:\n    200 with each dependency marked ``ok`` when all pass; 503 with the failing\n    dependency marked ``down`` otherwise. The probe never raises, so a dependency\n    outage is a clean 503 rather than a 500.",
         "operationId": "ready_api_health_ready_get",
         "responses": {
           "200": {
@@ -71,7 +71,7 @@
           "cities"
         ],
         "summary": "List Cities",
-        "description": "Fetch active cities to populate registration, profile, and delivery selectors. Submit the selected id as a UUID relationship for courier registration, profile editing, or order creation. Display name_ar in Arabic and name in English. Existing name-based request fields remain for older clients, but send only one city field per request. Refresh choices before new selections instead of hard-coding the seed list.",
+        "description": "List active cities without requiring a login.",
         "operationId": "list_cities_api_cities_get",
         "responses": {
           "200": {
@@ -103,7 +103,7 @@
           "auth"
         ],
         "summary": "Send Otp",
-        "description": "Submit the user's Saudi mobile number when they request sign-in or resend a code. The backend accepts common local formats and normalizes them to E.164; the response deliberately looks the same whether the phone already has an account. Start the resend countdown from `expires_in`. Numeric five-digit `otp_dev` is returned only in development and omitted otherwise.",
+        "description": "Send a login OTP. The response is identical whether or not the phone exists.",
         "operationId": "send_otp_api_auth_send_otp_post",
         "requestBody": {
           "content": {
@@ -151,7 +151,7 @@
           "auth"
         ],
         "summary": "Verify Otp",
-        "description": "Send the phone number and the five-digit development or six-digit non-development code entered on the OTP screen. If `is_new_user` is false, securely store the access and refresh tokens, use the returned role to choose the customer or courier experience, and fetch the profile. If true, carry the short-lived registration token to registration; never infer role from prototype phone fixtures.",
+        "description": "Verify an OTP, returning tokens for an existing user or a registration token.",
         "operationId": "verify_otp_api_auth_verify_otp_post",
         "requestBody": {
           "content": {
@@ -199,7 +199,7 @@
           "auth"
         ],
         "summary": "Register",
-        "description": "Create the account after OTP verification by sending the registration token and the chosen account role. Customer fields are optional at this API boundary; courier registration additionally requires city and at least one identity document in the service. Store the issued token pair only after success, then fetch `/me`. The current mobile prototype has no complete courier onboarding screen.",
+        "description": "Create the account authorised by a registration token and return tokens.",
         "operationId": "register_api_auth_register_post",
         "requestBody": {
           "content": {
@@ -247,7 +247,7 @@
           "auth"
         ],
         "summary": "Refresh",
-        "description": "Rotate the current refresh credential when the access JWT expires or shortly before expiry. Replace both locally stored tokens atomically with the returned pair; a used token must never be retried in parallel because replay revokes its family. If refresh fails, clear local credentials and return to login. Do not send the refresh token as a normal bearer access token.",
+        "description": "Rotate a refresh token, returning a new pair (reuse revokes the family).",
         "operationId": "refresh_api_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -295,7 +295,7 @@
           "auth"
         ],
         "summary": "Logout",
-        "description": "Call logout when the user explicitly signs out, then delete both stored tokens and close chat sockets. The backend revokes the account's access, refresh, and dashboard credentials across all devices before returning 204. Other devices must log in again. Even if the request fails, do not continue to show protected local data after the user chooses to sign out.",
+        "description": "Sign out all devices by revoking the account's access and refresh credentials.",
         "operationId": "logout_api_auth_logout_post",
         "responses": {
           "204": {
@@ -320,7 +320,7 @@
           "users"
         ],
         "summary": "Get Me",
-        "description": "Fetch the authenticated user profile after restoring a session and whenever the profile screen opens. Use the generated seven-digit public_identifier as a display identifier, but keep the UUID id for API paths. Customers have no rating fields; courier rating and count are under courier_profile and are derived from customer reviews. Use server role and status for navigation instead of saved prototype fixtures.",
+        "description": "Return the authenticated user's own profile.",
         "operationId": "get_me_api_users_me_get",
         "responses": {
           "200": {
@@ -350,7 +350,7 @@
           "users"
         ],
         "summary": "Update Me",
-        "description": "Send only fields the user changed; omitted properties leave existing values untouched. The seven-digit public_identifier is generated and read-only, so do not submit it. Customer and courier users can edit common details, while courier city and biography apply to courier profiles. Use the returned profile as the new display state. Courier ratings are derived from reviews and cannot be edited through this route.",
+        "description": "Update the authenticated user's editable profile fields.",
         "operationId": "update_me_api_users_me_patch",
         "requestBody": {
           "content": {
@@ -402,7 +402,7 @@
           "users"
         ],
         "summary": "Resubmit Courier Verification",
-        "description": "Use this action only after a courier has corrected a rejected profile and requests another verification review. It does not verify the courier immediately; the response returns the updated account and courier status for the UI. Do not expose it as a routine profile-save button. Operational courier endpoints remain unavailable until the profile is active and verified by the backend.",
+        "description": "Resubmit a rejected courier profile for another audited review.",
         "operationId": "resubmit_courier_verification_api_users_me_courier_verification_resubmit_post",
         "responses": {
           "200": {
@@ -434,7 +434,7 @@
           "users"
         ],
         "summary": "Get Participant Profile",
-        "description": "Retrieve a minimal public-facing profile for a customer or courier who shares an order or conversation with the caller. Use its seven-digit public_identifier, display name, and initials in chat or order detail. Rating and courier details appear only for courier profiles. The backend enforces the relationship; arbitrary account browsing is unsupported. Never expect phone, email, identity documents, or full private profile fields.",
+        "description": "Return a minimal profile only after shared-order/conversation proof.",
         "operationId": "get_participant_profile_api_users__user_id__participant_get",
         "parameters": [
           {
@@ -488,7 +488,7 @@
           "wallets"
         ],
         "summary": "Get My Wallet",
-        "description": "Load the signed-in user's own wallet snapshot, not a wallet ID chosen by the client. Display balance, held balance, and available funds as decimal-string SAR amounts; never parse them through floating-point arithmetic for financial decisions. Refresh after payment, approval, or withdrawal activity. A courier must be active and verified before this operational wallet route is available.",
+        "description": "Return the authenticated user's wallet snapshot.",
         "operationId": "get_my_wallet_api_wallets_me_get",
         "responses": {
           "200": {
@@ -520,7 +520,7 @@
           "wallets"
         ],
         "summary": "Start Topup",
-        "description": "Start a wallet funding attempt with a positive decimal-string amount. In development the fake payment flow may settle locally and return a null payment URL; production currently returns `PAYMENTS_DISABLED` before any intent or balance change because Dhamen is not integrated. The mobile UI must not present this as a working production checkout or treat a browser return as settlement.",
+        "description": "Start a wallet top-up and return the gateway payment URL.",
         "operationId": "start_topup_api_wallets_topup_post",
         "requestBody": {
           "content": {
@@ -572,7 +572,7 @@
           "wallets"
         ],
         "summary": "Request Withdrawal",
-        "description": "Request a courier withdrawal by sending a positive decimal-string amount and Saudi IBAN, plus a unique `Idempotency-Key` header. The backend encrypts the IBAN and returns only its last four characters and request status. Reuse the same key for a retry of one logical request, not for a new withdrawal. Customers cannot call this route.",
+        "description": "Reserve funds and create an encrypted courier withdrawal request.",
         "operationId": "request_withdrawal_api_wallets_withdrawals_post",
         "parameters": [
           {
@@ -637,7 +637,7 @@
           "wallets"
         ],
         "summary": "List My Transactions",
-        "description": "Read the owner's ledger entries newest first using `limit` and the returned `next_cursor`. Each item contains signed decimal-string amount, transaction type and status, balance after, and creation timestamp. Append pages without inventing totals from only the loaded slice. The backend provides no date-range filters or statement summary, so the courier statement screen cannot be fully integrated from this endpoint alone.",
+        "description": "Return the authenticated user's ledger entries, newest first (keyset paged).",
         "operationId": "list_my_transactions_api_wallets_me_transactions_get",
         "parameters": [
           {
@@ -710,7 +710,7 @@
           "media"
         ],
         "summary": "Create Upload Url",
-        "description": "Request a five-minute signed URL for one JPEG or PNG, declaring whether it is an order request photo or delivery proof. Upload bytes directly to the returned URL with the issued `Content-Type`, `Content-Length`, and `If-None-Match: *` headers; the API does not receive the file body. Keep the returned storage key for confirmation and later attachment to the matching operation.",
+        "description": "Issue a pre-signed upload URL with a server-generated key.",
         "operationId": "create_upload_url_api_media_upload_urls_post",
         "requestBody": {
           "content": {
@@ -762,7 +762,7 @@
           "media"
         ],
         "summary": "Confirm Upload",
-        "description": "Confirm an uploaded object by its server-generated storage key after the direct PUT completes. The backend checks ownership, declared type and size, actual object presence, and image magic bytes. Only confirmed keys may be attached, and each can be claimed once for its original purpose. A local file URI or an unconfirmed key is not a durable order or delivery attachment.",
+        "description": "Confirm an uploaded object exists and is a valid image.",
         "operationId": "confirm_upload_api_media_confirm_post",
         "requestBody": {
           "content": {
@@ -814,7 +814,7 @@
           "orders"
         ],
         "summary": "Create Order",
-        "description": "Create a gift request for a selected city and Gregorian delivery date. No delivery location URL is collected. Send up to three confirmed order-request media keys, not local file paths. The backend returns a new order UUID and computes financial totals later through invoice and settlement flows. Do not submit a client-calculated order total, commission, or courier payout.",
+        "description": "Create a NEW gift-request order.",
         "operationId": "create_order_api_orders_post",
         "requestBody": {
           "required": true,
@@ -864,7 +864,7 @@
           "orders"
         ],
         "summary": "List Orders",
-        "description": "List only orders owned by the customer or assigned to the courier, newest first. Use optional status filtering and cursor pagination to build current and history tabs; the server does not provide text search, order-number search, or a date-range filter. Courier availability is a separate route. Keep server status strings authoritative and derive display grouping locally without assuming the prototype's labels are API values.",
+        "description": "List customer-owned or courier-assigned orders, newest first.",
         "operationId": "list_orders_api_orders_get",
         "parameters": [
           {
@@ -953,7 +953,7 @@
           "orders"
         ],
         "summary": "Available Orders",
-        "description": "Load a paginated radar of `NEW` orders in the courier's city. Summaries omit customer identity and full media; precise delivery locations are not collected. Use this list for selection rather than a full private detail screen. The courier cannot read an unassigned order's participant detail through the normal detail route. Accepting is an explicit action and may fail if another courier wins the race.",
+        "description": "List NEW orders in the courier's city.",
         "operationId": "available_orders_api_orders_available_get",
         "parameters": [
           {
@@ -1026,7 +1026,7 @@
           "orders"
         ],
         "summary": "Get Order",
-        "description": "Fetch the authoritative state of an order the caller participates in. Customers can inspect their own order; couriers gain access once assigned. The response includes status, city, delivery date, computed total, assignment time, and an optional map URL. Hide map actions when that value is null. Fetch conversation identity by order ID, then use paginated REST messages for durable chat history.",
+        "description": "Return an order the caller participates in.",
         "operationId": "get_order_api_orders__order_id__get",
         "parameters": [
           {
@@ -1080,7 +1080,7 @@
           "orders"
         ],
         "summary": "Accept Order",
-        "description": "Claim a `NEW` order as the current verified courier. The backend checks city, assignment capacity, and current order state under locks; the first valid acceptance wins. Do not show assignment as complete until the response succeeds, because another courier may accept concurrently. The response provides the assigned order detail; use its UUID and status to open chat and later issue an invoice.",
+        "description": "Accept a NEW order (Redis lock + FOR UPDATE race).",
         "operationId": "accept_order_api_orders__order_id__accept_post",
         "parameters": [
           {
@@ -1134,7 +1134,7 @@
           "orders"
         ],
         "summary": "Cancel Order",
-        "description": "Cancel a participant order before work is in progress, optionally recording a short reason. The service rechecks the locked state, so a concurrent acceptance or payment transition may cause a rejection; display the server result rather than optimistic finality. A known backend gap can leave an issued invoice and wallet reservation pending when cancelling from `WAITING_PAYMENT`; do not promise immediate funds release in that state.",
+        "description": "Cancel an order before it is in progress.",
         "operationId": "cancel_order_api_orders__order_id__cancel_post",
         "parameters": [
           {
@@ -1198,7 +1198,7 @@
           "orders"
         ],
         "summary": "Deliver Order",
-        "description": "Submit one to five confirmed delivery-proof photo keys and an optional note after completing delivery. The backend checks courier assignment, order state, and ownership and purpose of each image before marking the order delivered. It does not collect precise delivery locations, calculate distance, or verify physical presence. This is a state transition, not a generic photo-upload call.",
+        "description": "Mark an in-progress order delivered with photo proof (assigned courier).",
         "operationId": "deliver_order_api_orders__order_id__deliver_post",
         "parameters": [
           {
@@ -1262,7 +1262,7 @@
           "orders"
         ],
         "summary": "Approve Order",
-        "description": "Approve the courier's delivered order when the customer accepts the proof. The backend completes the order and releases escrow according to its financial rules; the request has no body. Treat the returned status as authoritative, then refresh related wallet and rating state. A courier cannot approve on behalf of the customer. If the customer disagrees, use the dispute action instead of approval.",
+        "description": "Approve a delivered order: complete it and release escrow (customer).",
         "operationId": "approve_order_api_orders__order_id__approve_post",
         "parameters": [
           {
@@ -1316,7 +1316,7 @@
           "orders"
         ],
         "summary": "Dispute Order",
-        "description": "Open a dispute with a reason of at least three characters when a delivery or financial outcome is contested. The backend freezes the appropriate escrow path and returns a dispute ID and status. Show that resolution is pending; there is no customer/courier resolution endpoint. Do not infer a refund or payout from successful dispute creation, because an administrator must resolve it later.",
+        "description": "Open a dispute on an order, freezing escrow (either participant).",
         "operationId": "dispute_order_api_orders__order_id__dispute_post",
         "parameters": [
           {
@@ -1380,7 +1380,7 @@
           "invoices"
         ],
         "summary": "Create Invoice",
-        "description": "Issue an itemized invoice for an assigned order. Send line titles, net unit prices, quantities, tax fractions, optional descriptions, courier fee, and optional promo code as decimal strings where applicable. The server computes service fees, discounts, tax, totals, revision-backed storage, and expiry. Use the returned invoice amounts; the mobile app must not send or calculate a trusted final total.",
+        "description": "Author and issue an invoice for an order (assigned courier only).",
         "operationId": "create_invoice_api_orders__order_id__invoices_post",
         "parameters": [
           {
@@ -1444,7 +1444,7 @@
           "invoices"
         ],
         "summary": "Get Order Invoice",
-        "description": "Fetch the current active invoice for a participant order when the UI knows the order UUID but not the invoice UUID. Render the server's itemized amounts and status as decimal strings. This route is for the active invoice, not an invoice history list; a cancelled or expired invoice may no longer be the active result. Use the returned ID for payment or invoice-specific navigation.",
+        "description": "Return an order's active invoice (participant only).",
         "operationId": "get_order_invoice_api_orders__order_id__invoice_get",
         "parameters": [
           {
@@ -1498,7 +1498,7 @@
           "invoices"
         ],
         "summary": "Get Invoice",
-        "description": "Read one invoice by its UUID after participant ownership checks. Unlike the order-scoped active-invoice route, this address can identify the particular invoice the screen is showing, including one whose status has changed. Display item lines, fee breakdown, promo snapshot, issue and expiry times, and total directly from the response. The backend does not expose saved card details or a collection of invoice revisions.",
+        "description": "Return an invoice by id (participant only).",
         "operationId": "get_invoice_api_invoices__invoice_id__get",
         "parameters": [
           {
@@ -1552,7 +1552,7 @@
           "invoices"
         ],
         "summary": "Pay Invoice",
-        "description": "Ask the backend to fund an issued invoice using its own wallet/gateway split rules; there is no client-selected amount or payment-method body. A `PENDING` response may contain a URL for gateway completion, while `PAID` indicates settlement in supported flows. Production currently returns `PAYMENTS_DISABLED` because live Dhamen is not implemented. Never treat a browser redirect alone as proof of payment.",
+        "description": "Pay an issued invoice from wallet, gateway, or a split of both (customer only).",
         "operationId": "pay_invoice_api_invoices__invoice_id__pay_post",
         "parameters": [
           {
@@ -1606,7 +1606,7 @@
           "invoices"
         ],
         "summary": "Cancel Invoice",
-        "description": "Let the issuing courier cancel an unpaid invoice to correct item lines or fees. The backend releases its promo and pending wallet reservation, marks the invoice cancelled, and reopens the order for a new invoice. It rejects already paid or otherwise ineligible invoices. Refresh the order and invoice display after success; do not edit the immutable original invoice in place.",
+        "description": "Cancel an unpaid issued invoice, reopening the order (issuing courier only).",
         "operationId": "cancel_invoice_api_invoices__invoice_id__cancel_post",
         "parameters": [
           {
@@ -1660,7 +1660,7 @@
           "promos"
         ],
         "summary": "Validate Promo",
-        "description": "Preview a promo against the customer's own order and active invoice before showing a discounted total. Send the code and order UUID; the backend checks eligibility and computes the proposed discount. This endpoint does not reserve, consume, or settle the promo. Treat the response as a preview only, and continue to use the final invoice/payment response as the authoritative charged amount.",
+        "description": "Preview a promo against the customer's own order's active invoice.",
         "operationId": "validate_promo_api_promos_validate_post",
         "requestBody": {
           "content": {
@@ -1712,7 +1712,7 @@
           "webhooks"
         ],
         "summary": "Simulation Webhook",
-        "description": "This callback is for the local simulated gateway, not a mobile app action and not a Dhamen endpoint. Its raw JSON body identifies a simulated payment link, status, and amount; the signature header authenticates the exact bytes. The backend handles idempotent settlement or failure in a transaction and returns an outcome. Never place the simulation signing secret in a phone app.",
+        "description": "Verify and process a simulated payment callback (signature over the raw body).",
         "operationId": "simulation_webhook_api_webhooks_simulation_post",
         "parameters": [
           {
@@ -1766,7 +1766,7 @@
           "ratings"
         ],
         "summary": "Rate Order",
-        "description": "After an order reaches COMPLETED, its customer may rate the assigned courier once with an integer score from one to five and an optional comment. The backend derives the rated courier from the order, so never submit a target user ID. Couriers cannot rate customers through this route. Use current_actor_has_rated to hide repeat submission and display a rating only after the request succeeds.",
+        "description": "Rate the assigned courier after order completion.",
         "operationId": "rate_order_api_orders__order_id__ratings_post",
         "parameters": [
           {
@@ -1830,7 +1830,7 @@
           "ratings"
         ],
         "summary": "User Rating Summary",
-        "description": "Fetch a courier aggregate rating and count computed from customer reviews of completed orders. The response includes a decimal-string average and integer count, not detailed review rows. The route requires authentication but does not require a shared order with the courier. Use the average only for display; never treat it as a stored field on the generic user record or a client-editable score.",
+        "description": "Return a user's average received score and rating count.",
         "operationId": "user_rating_summary_api_users__user_id__ratings_summary_get",
         "parameters": [
           {
@@ -1884,7 +1884,7 @@
           "chat"
         ],
         "summary": "List Conversations",
-        "description": "List the caller's conversations ordered by recent activity. Each row provides its order and other-user IDs, last message preview, unread count, and timestamp; the response is cursor paginated. Use the returned `conversation_id` to open chat, not the order ID as a substitute. This API contains safe inbox data only for the participant and can support a home notification badge.",
+        "description": "List the caller's conversations, most-recent activity first (keyset paged).",
         "operationId": "list_conversations_api_conversations_get",
         "parameters": [
           {
@@ -1956,7 +1956,7 @@
           "chat"
         ],
         "summary": "List Messages",
-        "description": "Load decrypted conversation messages newest first in bounded pages. Pass next_cursor unchanged to the same route to retrieve older messages and stop when it is null. Membership is enforced; missing or foreign-conversation cursors return 404 instead of restarting history. Open the WebSocket for live updates, but fetch REST history after reconnect because socket events are not replayed. Deduplicate merged messages by id and acknowledge reads only when visible.",
+        "description": "Return decrypted messages the caller can see (participant only).",
         "operationId": "list_messages_api_conversations__conversation_id__messages_get",
         "parameters": [
           {
@@ -2037,7 +2037,7 @@
           "chat"
         ],
         "summary": "Send Message",
-        "description": "Send a text message with a nonempty `text` field, at most 4,000 characters. The server encrypts it at rest, commits it, publishes a live event, and sends a generic push notification without message text. Show the returned message after success and reconcile it with a matching WebSocket event to avoid duplicates. This route does not accept media attachments or arbitrary recipient IDs.",
+        "description": "Send a text message; participants receive it live over the WebSocket.",
         "operationId": "send_message_api_conversations__conversation_id__messages_post",
         "parameters": [
           {
@@ -2101,7 +2101,7 @@
           "chat"
         ],
         "summary": "Mark Read",
-        "description": "Acknowledge the caller's inbound messages as read and clear that conversation's unread count. The request has no JSON body and returns 204 without a payload. Call when the chat is genuinely visible to the user, rather than immediately on a background push event. Other participants' read state cannot be set by this caller. Refresh the inbox badge after success if necessary.",
+        "description": "Mark the caller's inbound messages read and clear their unread count.",
         "operationId": "mark_read_api_conversations__conversation_id__read_post",
         "parameters": [
           {
@@ -2148,7 +2148,7 @@
           "devices"
         ],
         "summary": "Register Device",
-        "description": "Register or refresh the current device's push token using `IOS` or `ANDROID`. The server associates that token with the authenticated account and can move a handed-down device token away from a previous owner. Register again after token rotation or a successful new login. Do not confuse this with an in-app notification-list API; the backend has no endpoint to fetch a notification feed.",
+        "description": "Register or refresh a push token for the caller.",
         "operationId": "register_device_api_devices_post",
         "requestBody": {
           "content": {
@@ -2198,7 +2198,7 @@
           "devices"
         ],
         "summary": "Unregister Device",
-        "description": "Unregister the current device's push token when push permission is removed, the token changes, or the user signs out. Send the exact token in the JSON body; the backend removes it only if owned by the caller. The response is 204 with no body. Logout revokes credentials, but the UI should also explicitly remove device registration when it still has a valid access token.",
+        "description": "Remove a push token (only if it belongs to the caller).",
         "operationId": "unregister_device_api_devices_delete",
         "requestBody": {
           "content": {
@@ -2243,7 +2243,7 @@
           "dev"
         ],
         "summary": "Development liveness marker",
-        "description": "Use this endpoint only to confirm that development-only routes were registered on a local environment. It returns a static `dev` marker and is intentionally absent in production, where the same URL returns 404. It provides no user, order, payment, or service readiness data. Mobile integration should never depend on it; use the actual protected endpoints for screen data and operator readiness separately.",
+        "description": "Confirm dev routes are registered (development only).",
         "operationId": "dev_ping_api_dev_ping_get",
         "responses": {
           "200": {
@@ -2275,7 +2275,7 @@
           "dev"
         ],
         "summary": "Simulate Payment",
-        "description": "Trigger a correctly signed local fake callback for a pending simulated payment link. This development helper looks up the server-side amount, constructs the fake event, and runs the ordinary simulation webhook handler; it is not a real checkout or Dhamen integration. Never call it from a distributed mobile build or expose it as a customer payment button. Production does not register this route.",
+        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler — it never bypasses webhook processing.",
         "operationId": "simulate_payment_api_dev_simulation_simulate_post",
         "requestBody": {
           "content": {
@@ -2322,8 +2322,8 @@
         "tags": [
           "chat"
         ],
-        "summary": "Find Order Conversation",
-        "description": "When a customer or courier reopens any assigned order, including a completed order, use its order ID to find the conversation ID directly. This avoids scanning every page of the inbox for an old thread. A missing, unassigned, or unrelated order returns 404. Once found, request the first REST message page, then follow its cursor for older history. Open the WebSocket only when live updates are needed.",
+        "summary": "Get Order Conversation",
+        "description": "Find an order's existing conversation, including after order completion.",
         "operationId": "get_order_conversation_api_orders__order_id__conversation_get",
         "parameters": [
           {
@@ -2745,6 +2745,51 @@
         "x-before": "Load current ISSUED invoice; no unresolved payment attempt",
         "x-dependent-api": "Pay returned invoice ID; refresh order active invoice on conflict",
         "x-availability": "Implemented; legacy invoices without frozen policy return CONFLICT"
+      }
+    },
+    "/api/invoices/{invoice_id}/pdf": {
+      "get": {
+        "tags": [
+          "invoices"
+        ],
+        "summary": "Download Invoice Pdf",
+        "description": "Download a stored invoice as English PDF, scoped to order participants.",
+        "operationId": "download_invoice_pdf_api_invoices__invoice_id__pdf_get",
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -5055,6 +5100,64 @@
         ],
         "title": "ApplyInvoicePromoRequest",
         "description": "Apply a case-insensitive code, or remove it with explicit null."
+      },
+      "RejectWithdrawalRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RejectWithdrawalRequest",
+        "description": "An admin rejection reason for a withdrawal."
+      },
+      "ResolveDisputeRequest": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "RESOLVED_CUSTOMER | RESOLVED_COURIER | RESOLVED_SPLIT."
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "courier_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier Amount",
+            "description": "Courier's share for a SPLIT resolution (decimal string)."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "title": "ResolveDisputeRequest",
+        "description": "Admin resolution of a dispute."
       }
     },
     "securitySchemes": {

@@ -2,6 +2,7 @@
 {% block content %}
 <h1>{{ tr('Invoice') }}</h1>
 {% if not invoice %}<p>{{ tr('Not found.') }}</p>{% else %}
+<a href="/v1/admin/admin/invoices/{{ invoice.id }}/pdf">Download invoice PDF (English)</a>
 <section class="card"><table>
   <tr><td>{{ tr('ID') }}</td><td>{{ invoice.id }}</td></tr>
   <tr><td>{{ tr('Status') }}</td><td>{{ tr(invoice.status) }}</td></tr>

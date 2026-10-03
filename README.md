@@ -379,3 +379,7 @@ was modified locally. Applied migration history is retained for safe upgrades.
   variable in `.env`.
 - **TLS/proxy errors** — see the environment's proxy notes; never disable TLS
   verification.
+
+### Invoice PDFs, VAT and paid receipts
+
+VAT is calculated only on discounted invoice items. Participant downloads use GET /api/invoices/{invoice_id}/pdf; authenticated dashboard admins can download from invoice details. Paid receipts include an English PDF via sndr.sh, using a verified sending domain and SNDR_BASE_URL=https://api.sndr.sh. The receipt worker runs every five minutes. The overdue unaccepted-order task runs at Saudi midnight (UTC+3). Deploy migration 0014 before starting workers. For reviewed dry-run VAT repair of unpaid invoices, see [repair procedure](docs/2026-10-03-invoice-vat-delivery.md).

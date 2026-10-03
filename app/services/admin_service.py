@@ -10,6 +10,7 @@ to the ledger service and are intentionally not performed here.
 from __future__ import annotations
 
 import uuid
+from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -36,6 +37,7 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.services.city_service import CityService
+from app.services.invoice_pdf import render_invoice_pdf
 
 
 @dataclass(frozen=True)
@@ -170,6 +172,14 @@ class AdminService:
     async def get_invoice(self, invoice_id: uuid.UUID) -> object | None:
         """Return an invoice by id."""
         return await self._reads.get_invoice(invoice_id)
+
+    async def get_invoice_pdf(self, invoice_id: uuid.UUID) -> bytes:
+        """Render the stored invoice after dashboard administrator authorization."""
+        invoice = await self._reads.get_invoice(invoice_id)
+        if invoice is None:
+            raise NotFoundError("Invoice not found.")
+        items = await self._reads.get_invoice_items(invoice_id)
+        return await to_thread(render_invoice_pdf, invoice, items)
 
     async def list_promos(self) -> list[object]:
         """Return promos."""

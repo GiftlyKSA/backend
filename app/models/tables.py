@@ -392,6 +392,12 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("idx_orders_created_at", text("created_at DESC")),
         Index("idx_orders_customer_created", "customer_id", text("created_at DESC")),
         Index(
+            "idx_orders_overdue_unaccepted",
+            "delivery_date",
+            "id",
+            postgresql_where=text("status = 'NEW' AND courier_id IS NULL"),
+        ),
+        Index(
             "idx_orders_courier_created",
             "courier_id",
             text("created_at DESC"),
