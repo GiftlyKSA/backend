@@ -10,13 +10,14 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets as _secrets
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from uuid import UUID
 
 import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
 from app.main import create_app
-from app.models import CourierProfile, User
+from app.models import CourierProfile, Order, User
 from app.models.enums import UserStatus
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -103,6 +104,13 @@ async def test_order_flow_and_map_link_privacy() -> None:
             assert created.status_code == 201, created.text
             order_id = created.json()["id"]
             assert created.json()["status"] == "NEW"
+
+            # Acceptance must still work after the requested delivery day has passed.
+            async with factory() as session:
+                historical = await session.get(Order, UUID(order_id))
+                historical.created_at = datetime.now(UTC) - timedelta(days=2)
+                historical.delivery_date = datetime.now(UTC).date() - timedelta(days=1)
+                await session.commit()
 
             # Re-login the courier to get a token reflecting ACTIVE status.
             courier = await _login(client, app, courier_phone)

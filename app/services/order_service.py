@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +106,9 @@ class OrderService:
                 media object that fails validation.
             ConflictError: The customer already has the maximum active orders.
         """
+        today = datetime.now(UTC).date()
+        if not today <= data.delivery_date <= today + timedelta(days=180):
+            raise ValidationDomainError("The delivery date must be within the next 180 days.")
         if len(data.request_media_keys) > _MAX_REQUEST_MEDIA:
             raise ValidationDomainError("At most 3 request photos are allowed.")
         if data.delivery_city_id is not None:

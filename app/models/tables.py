@@ -376,7 +376,8 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "delivery_date >= CURRENT_DATE AND delivery_date <= CURRENT_DATE + INTERVAL '180 days'",
+            "delivery_date >= (created_at AT TIME ZONE 'UTC')::date "
+            "AND delivery_date <= (created_at AT TIME ZONE 'UTC')::date + 180",
             name="chk_delivery_date_window",
         ),
         CheckConstraint(
