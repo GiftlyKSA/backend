@@ -30,3 +30,7 @@ because the local database was unavailable. Full-project Ruff lint, Ruff format
 checks and strict mypy passed. Alembic generated upgrade and rollback SQL
 successfully with one migration head. Actual PostgreSQL migration execution and
 the aged-order acceptance regression remain unverified locally.
+
+The complete `uv run --locked pytest` run finished with 551 passed, 194 skipped,
+and one existing Starlette/httpx deprecation warning. Skipped integration tests
+do not establish database or external-provider correctness.
