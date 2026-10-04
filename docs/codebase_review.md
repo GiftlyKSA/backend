@@ -37,6 +37,7 @@ requires measurements/external proof; **Accepted risk** reflects an explicit use
 | Gate | SQL-01 | Representative query/pool/resource capacity proof | Medium 5 | Needs validation |
 | Gate | PERF-09 | Audit retention/export and write amplification | Medium 5 | Needs validation |
 | Gate | SEC-15 | Query-token and ingress logging exposure | Medium 5 | Needs validation |
+| Gate | SEC-20 | Reconcile GitHub dependency alerts with current lockfile | Medium 5 | Needs validation; alert details unavailable |
 | Gate | OPS-01 | New migrations, decoder and service startup on deployment | Medium 5 | Needs validation |
 | Gate | INT-01 | Live vendor contracts and Dhamen readiness | Medium 5 | External scope; needs validation |
 | Accepted | SEC-16 | Privileged maintenance bypasses financial immutability | High 9 | User-approved unrestricted CRUD |
@@ -74,6 +75,17 @@ requires measurements/external proof; **Accepted risk** reflects an explicit use
 - **Minimal fix:** verify query/header redaction and migrate chat to a short-lived socket ticket or supported header/subprotocol authentication while preserving existing clients during rollout.
 - **Expected impact:** safer credential transport; a ticket changes client connection sequencing and needs bounded expiry/replay controls.
 - **Verify:** controlled fake-token probes at every logging boundary, ticket expiry/reuse tests and compatibility checks. Never use real tokens for log inspection.
+
+### Supply-chain validation
+
+#### SEC-20 — GitHub dependency-alert disposition remains unconfirmed
+
+- **Status / score:** Needs validation, Medium 5/10; alert presence is confirmed, current package applicability is UNCONFIRMED.
+- **Evidence:** the master push reported 20 dependency alerts (one Critical, ten High, nine Moderate). A read-only request for alert package/manifest metadata returned HTTP 401. The separate current locked-production audit reported no known advisories after the targeted updates.
+- **Impact:** the scan cannot establish whether remaining alerts concern another manifest, stale dependency metadata or an uncovered deployment graph. The push warning must not be described as resolved or automatically dismissed as stale.
+- **Minimal action:** an authorized repository security maintainer should inspect each alert against the current master lockfile, relevant environment and upstream advisory, resolve applicable versions and document disposition with evidence.
+- **Expected impact:** reliable supply-chain release evidence; no automatic alert suppression or unrelated upgrades.
+- **Verify:** current-master graph scan, package/manifest reconciliation and exact-commit CI audit. System/container packages need their own scan.
 
 ### Accepted High risks
 
@@ -261,6 +273,7 @@ Independent change review found no additional confirmed introduced High/Medium d
 - Dependency audit on the full locked production graph initially reported16 advisories in PyJWT2.13.0 and urllib3 2.7.0. Targeted resolution changed only PyJWT→2.15.1 and urllib3→2.8.0. The repeated `pip-audit2.10.1 --strict --no-deps --disable-pip` scan reported **no known vulnerabilities** on 2026-10-04. This excludes system/image packages and undisclosed flaws.
 - Upstream sources checked 2026-10-04: [PyJWT PEM guard advisory](https://github.com/jpadilla/pyjwt/security/advisories/GHSA-ffc3-869f-jxw9), [PyJWT release history](https://github.com/jpadilla/pyjwt/releases), [urllib3 2.8.0](https://github.com/urllib3/urllib3/releases/tag/2.8.0). The application already pins one allowed JWT algorithm; upstream advisory presence is not proof of exploitability in this deployment.
 - Read-only remote CI inspection found successful older runs, latest returned SHA3352467 ([run](https://github.com/GiftlyKSA/backend/actions/runs/37133529592)). These do not validate this change or current source SHA.
+- Push verification confirmed master commit `72e08ba`, with local/origin hashes matching. The remote dependency warning persisted; alert details returned HTTP 401, recorded as SEC-20. This does not contradict the separately scoped clean production-lockfile scan or establish that the remote alerts are stale.
 - Final aggregate gate: `uv run --locked pytest -n 4 -o addopts="" -q -p no:cacheprovider --basetemp <fresh temporary directory>` finished with **668 passed, 198 skipped, four existing Starlette/httpx deprecation warnings**. The unavailable PostgreSQL/Redis and native decoder checks remain skipped. Ruff lint/format, strict mypy (184 source files), both pre-commit stages, mobile OpenAPI drift, local documentation links and `git diff --check` passed.
 
 No Docker, live PostgreSQL/Redis, production repair, secrets inspection or vendor delivery
