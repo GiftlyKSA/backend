@@ -71,7 +71,6 @@ class Settings(BaseSettings):
     # Field encryption
     FIELD_ENCRYPTION_KEYS: SecretStr
     FIELD_ENCRYPTION_KEY_VERSION: int
-    IDENTITY_FINGERPRINT_PEPPER: SecretStr
 
     # Storage / CDN (required in production; validated by deploy config, not here)
     AWS_REGION: str | None = None
@@ -200,11 +199,6 @@ class Settings(BaseSettings):
                 )
         if self.FIELD_ENCRYPTION_KEY_VERSION not in keys:
             raise ValueError("FIELD_ENCRYPTION_KEY_VERSION is not present in the key map.")
-        pepper = self.IDENTITY_FINGERPRINT_PEPPER.get_secret_value().encode("utf-8")
-        if any(pepper == key for key in keys.values()):
-            raise ValueError("IDENTITY_FINGERPRINT_PEPPER must differ from every encryption key.")
-        if len(pepper) < 32:
-            raise ValueError("IDENTITY_FINGERPRINT_PEPPER must be at least 32 bytes.")
 
     def _validate_jwt(self) -> None:
         if self.JWT_ALGORITHM == "HS256":
@@ -218,6 +212,8 @@ class Settings(BaseSettings):
 
     def _validate_otp_key(self) -> None:
         if self.OTP_HMAC_KEY is None:
+            if self.JWT_SECRET is None:
+                raise ValueError("OTP_HMAC_KEY is required when JWT_SECRET is absent.")
             return
         key = self.OTP_HMAC_KEY.get_secret_value()
         if len(key) < 32 or not key.isascii():

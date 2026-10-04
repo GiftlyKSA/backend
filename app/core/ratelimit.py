@@ -3,9 +3,9 @@
 A single Redis counter per identity per window, advanced by one atomic Lua eval —
 ``INCR``, TTL set (or repair), and ceiling check in one round trip, so a crash can
 never strand a counter without an expiry. The design mirrors the OTP throttle so
-there is one throttling idiom in the codebase. It is deliberately **fail-open**: a
-Redis outage must not take the whole API down, so a backend error lets the request
-through (and is logged) rather than surfacing a 500.
+there is one throttling idiom in the codebase. Redis outages fail closed with an
+explicit unavailable decision; HTTP callers render a stable 503 while health probes
+remain exempt.
 """
 
 from __future__ import annotations
@@ -61,11 +61,13 @@ class RateLimitDecision:
         allowed: Whether the request may proceed.
         retry_after_seconds: Seconds until the window resets (0 when allowed).
         blocked: Whether a separate security guard denied the identity.
+        unavailable: Whether the shared throttle could not validate the request.
     """
 
     allowed: bool
     retry_after_seconds: int
     blocked: bool = False
+    unavailable: bool = False
 
 
 class RateLimiter:
@@ -85,8 +87,8 @@ class RateLimiter:
 
         Returns:
             An allow decision under the ceiling, otherwise a deny carrying the
-            seconds until the current window expires. On any Redis error the request
-            is allowed (fail-open) so a cache blip never becomes an outage.
+            seconds until the current window expires. A backend error denies the
+            request with an explicit unavailable decision.
         """
         key = self._key(identity)
         try:
@@ -94,16 +96,16 @@ class RateLimiter:
             if retry_after > 0:
                 return RateLimitDecision(allowed=False, retry_after_seconds=retry_after)
             return RateLimitDecision(allowed=True, retry_after_seconds=0)
-        except Exception:  # noqa: BLE001 — fail-open: availability over strict limiting.
-            _logger.warning("Rate-limit backend unavailable; allowing request", exc_info=True)
-            return RateLimitDecision(allowed=True, retry_after_seconds=0)
+        except Exception:  # noqa: BLE001 - dependency failures must not disable protection.
+            _logger.warning("Rate-limit backend unavailable; denying request")
+            return RateLimitDecision(allowed=False, retry_after_seconds=0, unavailable=True)
 
     async def check_guarded(self, identity: str, *, blocked_key: str) -> RateLimitDecision:
         """Check a Redis security flag and throttle in one atomic round trip.
 
-        Unlike the ordinary HTTP limiter, this guard fails closed: if Redis cannot
-        confirm that a live WebSocket identity is permitted, the caller should close
-        the socket rather than accept messages from a potentially revoked session.
+        If Redis cannot confirm that a live WebSocket identity is permitted, the
+        caller should close the socket rather than accept messages from a potentially
+        revoked session.
         """
         key = self._key(identity)
         try:

@@ -26,6 +26,7 @@ from app.repositories.media_repository import MediaRepository
 from app.services.chat_media_validation import media_policy, verify_image, verify_recording
 from app.services.chat_service import ChatMessage, ChatService, attachment_dto
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.media_service import TransactionBoundary
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,8 @@ class ChatMediaService:
         kind: str,
         mime: str,
         size: int,
+        release_reads: TransactionBoundary | None = None,
+        resume_writes: TransactionBoundary | None = None,
     ) -> tuple[str, str, int]:
         """Issue an immutable, size-bound grant only to a conversation participant."""
         await self._chat.get_conversation_for_actor(
@@ -79,6 +82,20 @@ class ChatMediaService:
         )
         extension, _ = media_policy(self._settings, kind, mime, size)
         key = f"chat/{conversation_id}/{uuid.uuid4()}.{extension}"
+        if release_reads is not None:
+            await release_reads()
+        url = await self._storage.create_upload_url(
+            storage_key=key,
+            content_type=mime,
+            byte_size=size,
+            ttl_seconds=300,
+        )
+        if resume_writes is not None:
+            await resume_writes()
+            await self._chat.get_conversation_for_actor(
+                conversation_id=conversation_id,
+                actor_id=actor_id,
+            )
         await self._uploads.issue(
             storage_key=key,
             actor_id=actor_id,
@@ -87,12 +104,6 @@ class ChatMediaService:
             byte_size=size,
             max_count=20,
             max_bytes=250 * 1024 * 1024,
-        )
-        url = await self._storage.create_upload_url(
-            storage_key=key,
-            content_type=mime,
-            byte_size=size,
-            ttl_seconds=300,
         )
         return url, key, 300
 

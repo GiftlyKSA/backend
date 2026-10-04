@@ -19,7 +19,6 @@ from app.core.audit_context import set_audit_actor
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, UnauthorizedError, ValidationDomainError
-from app.core.identity import identity_fingerprint
 from app.core.jwt import (
     AccessClaims,
     JwtError,
@@ -28,7 +27,7 @@ from app.core.jwt import (
     decode_registration_token,
 )
 from app.core.security import generate_session_token, sha256_hex
-from app.models.enums import UserRole, UserStatus
+from app.models.enums import UserGender, UserRole, UserStatus
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.city_repository import CityRepository
 from app.repositories.user_repository import UserRepository
@@ -47,7 +46,7 @@ async def validate_access_claims(
     if (
         user is None
         or user.deleted_at is not None
-        or user.status is UserStatus.BANNED
+        or user.status in {UserStatus.BANNED, UserStatus.DELETED}
         or user.role.value != claims.role
         or user.auth_version != claims.auth_version
     ):
@@ -118,7 +117,7 @@ class AuthService:
         user = await self._users.get_for_update(user.id)
         if user is None or user.phone != phone or user.deleted_at is not None:
             raise UnauthorizedError("This account is no longer available.")
-        if user.status is UserStatus.BANNED:
+        if user.status in {UserStatus.BANNED, UserStatus.DELETED}:
             # A ban blocks fresh logins too, not just live tokens (audit SEC-1).
             raise UnauthorizedError("This account has been suspended.")
         tokens = await self._issue_tokens(user.id, user.role.value, user.auth_version)
@@ -136,13 +135,14 @@ class AuthService:
         national_id: str | None,
         passport_id: str | None,
         city_id: uuid.UUID | None = None,
+        gender: UserGender | None = None,
     ) -> TokenPair:
         """Create the account authorised by a registration token and issue tokens.
 
         Raises:
             UnauthorizedError: The registration token is invalid or expired.
             ValidationDomainError: Required fields for the chosen role are missing.
-            ConflictError: The phone or courier identity is already registered.
+            ConflictError: The phone is already registered.
         """
         try:
             phone = decode_registration_token(self._settings, registration_token)
@@ -154,7 +154,7 @@ class AuthService:
         if role is UserRole.CUSTOMER:
             await set_audit_actor(self._session, category=role.value, actor_user_id=None)
             user = await self._repo.create_customer(
-                phone=phone, full_name=full_name, email=email, dob=dob
+                phone=phone, full_name=full_name, email=email, dob=dob, gender=gender
             )
             await set_audit_actor(self._session, category=role.value, actor_user_id=user.id)
             return await self._issue_tokens(user.id, user.role.value)
@@ -167,6 +167,7 @@ class AuthService:
                 dob=dob,
                 city=city,
                 city_id=city_id,
+                gender=gender,
                 national_id=national_id,
                 passport_id=passport_id,
             )
@@ -183,6 +184,7 @@ class AuthService:
         national_id: str | None,
         passport_id: str | None,
         city_id: uuid.UUID | None = None,
+        gender: UserGender | None = None,
     ) -> TokenPair:
         if (city is None) == (city_id is None):
             raise ValidationDomainError("A courier must provide a city of residence.")
@@ -192,18 +194,14 @@ class AuthService:
             if city_id is not None
             else await cities.require_active_city(city or "")
         )
+        national_id = (national_id or "").strip() or None
+        passport_id = (passport_id or "").strip() or None
         if not (national_id or passport_id):
             raise ValidationDomainError("A courier must provide a national id or passport.")
 
-        fingerprint = identity_fingerprint(
-            national_id, passport_id, self._settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
-        )
-        if await self._repo.fingerprint_exists(fingerprint):
-            raise ConflictError("This identity document is already registered.")
-
         await set_audit_actor(self._session, category=UserRole.COURIER.value, actor_user_id=None)
         user = await self._repo.create_courier_user(
-            phone=phone, full_name=full_name, email=email, dob=dob
+            phone=phone, full_name=full_name, email=email, dob=dob, gender=gender
         )
         await set_audit_actor(self._session, category=UserRole.COURIER.value, actor_user_id=user.id)
         cipher = build_cipher(
@@ -230,7 +228,6 @@ class AuthService:
             city=city_record,
             national_id_encrypted=national_enc,
             passport_id_encrypted=passport_enc,
-            identity_fingerprint=fingerprint,
         )
         return await self._issue_tokens(user.id, user.role.value)
 
@@ -262,7 +259,7 @@ class AuthService:
         await self._repo.mark_refresh_used(row, now)
         if user.deleted_at is not None:
             raise UnauthorizedError("Account no longer exists.")
-        if user.status is UserStatus.BANNED:
+        if user.status in {UserStatus.BANNED, UserStatus.DELETED}:
             # A banned account must not mint fresh tokens (audit SEC-1).
             raise UnauthorizedError("This account has been suspended.")
         access, _, _ = create_access_token(

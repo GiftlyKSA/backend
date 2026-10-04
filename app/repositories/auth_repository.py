@@ -9,7 +9,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminSession, City, CourierProfile, RefreshToken, User, Wallet
-from app.models.enums import UserRole, UserStatus, WalletType
+from app.models.enums import UserGender, UserRole, UserStatus, WalletType
 
 
 class AuthRepository:
@@ -20,7 +20,13 @@ class AuthRepository:
         self._session = session
 
     async def create_customer(
-        self, *, phone: str, full_name: str | None, email: str | None, dob: date | None
+        self,
+        *,
+        phone: str,
+        full_name: str | None,
+        email: str | None,
+        dob: date | None,
+        gender: UserGender | None = None,
     ) -> User:
         """Create an ACTIVE customer and their wallet in one unit of work."""
         user = User(
@@ -28,6 +34,7 @@ class AuthRepository:
             full_name=full_name,
             email=email,
             date_of_birth=dob,
+            gender=gender,
             role=UserRole.CUSTOMER,
             status=UserStatus.ACTIVE,
         )
@@ -38,7 +45,13 @@ class AuthRepository:
         return user
 
     async def create_courier_user(
-        self, *, phone: str, full_name: str | None, email: str | None, dob: date | None
+        self,
+        *,
+        phone: str,
+        full_name: str | None,
+        email: str | None,
+        dob: date | None,
+        gender: UserGender | None = None,
     ) -> User:
         """Create a PENDING_VERIFICATION courier user (wallet/profile added after).
 
@@ -50,6 +63,7 @@ class AuthRepository:
             full_name=full_name,
             email=email,
             date_of_birth=dob,
+            gender=gender,
             role=UserRole.COURIER,
             status=UserStatus.PENDING_VERIFICATION,
         )
@@ -64,7 +78,6 @@ class AuthRepository:
         city: City,
         national_id_encrypted: str | None,
         passport_id_encrypted: str | None,
-        identity_fingerprint: str,
     ) -> None:
         """Add the courier's wallet and encrypted identity profile."""
         self._session.add(Wallet(user_id=user_id, type=WalletType.COURIER))
@@ -74,17 +87,9 @@ class AuthRepository:
                 city=city,
                 national_id_encrypted=national_id_encrypted,
                 passport_id_encrypted=passport_id_encrypted,
-                identity_fingerprint=identity_fingerprint,
             )
         )
         await self._session.flush()
-
-    async def fingerprint_exists(self, fingerprint: str) -> bool:
-        """Return whether a courier identity fingerprint is already registered."""
-        found = await self._session.scalar(
-            select(CourierProfile.user_id).where(CourierProfile.identity_fingerprint == fingerprint)
-        )
-        return found is not None
 
     async def add_refresh_token(
         self,

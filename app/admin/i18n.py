@@ -15,6 +15,17 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Gender": "الجنس",
+    "Deletion reason": "سبب الحذف",
+    "Deletion Reason": "سبب الحذف",
+    "Order Notification Recipients": "مستلمو إشعارات الطلبات",
+    "Recipients Snapshotted At": "وقت حفظ قائمة المستلمين",
+    "Token Id": "معرّف رمز الجهاز",
+    "DELETED": "محذوف",
+    "MALE": "ذكر",
+    "FEMALE": "أنثى",
+    "OTHER": "آخر",
+    "PREFER_NOT_TO_SAY": "أفضل عدم الإفصاح",
     "When (UTC+3)": "الوقت (UTC+3)",
     "From (UTC+3)": "من (UTC+3)",
     "To (UTC+3)": "إلى (UTC+3)",

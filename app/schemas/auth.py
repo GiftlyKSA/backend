@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from app.models.enums import UserGender
+
 _Phone = Annotated[str, StringConstraints(pattern=r"^\+9665\d{8}$")]
 _Otp = Annotated[str, StringConstraints(pattern=r"^\d{5,6}$")]
 _PHONE_SEPARATORS = re.compile(r"[\s()-]+")
@@ -104,6 +106,7 @@ class RegisterRequest(BaseModel):
         | None
     ) = None
     dob: date | None = None
+    gender: UserGender | None = None
     city: Annotated[str, StringConstraints(max_length=100)] | None = Field(
         None, description="Legacy city name for couriers; prefer city_id from GET /api/cities."
     )

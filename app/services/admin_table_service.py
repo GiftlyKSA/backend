@@ -10,8 +10,7 @@ from typing import Any
 
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
-from app.core.exceptions import ConflictError, ForbiddenError
-from app.core.identity import identity_fingerprint
+from app.core.exceptions import ConflictError, ForbiddenError, ValidationDomainError
 from app.core.security import hmac_hex
 from app.models.enums import UserRole, UserStatus
 from app.repositories.admin_table_repository import AdminTableRepository, get_table, primary_key
@@ -174,7 +173,7 @@ class AdminTableService:
             self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
         )
         if table == "courier_profiles":
-            self._derive_identity(record_id, values, old)
+            self._normalize_identity(values, old)
         combined = {**(old or {}), **values}
         if table == "messages" and old and combined["conversation_id"] != old["conversation_id"]:
             if "content_encrypted" not in values:
@@ -193,35 +192,14 @@ class AdminTableService:
             if table == "withdrawals" and name == "iban_encrypted":
                 values["iban_last4"] = plaintext[-4:]
 
-    def _derive_identity(
-        self, record_id: uuid.UUID, values: dict[str, Any], old: dict[str, Any] | None
-    ) -> None:
+    @staticmethod
+    def _normalize_identity(values: dict[str, Any], old: dict[str, Any] | None) -> None:
         fields = ("national_id_encrypted", "passport_id_encrypted")
         if old is not None and not any(field in values for field in fields):
             return
-        cipher = build_cipher(
-            self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
-        )
-        documents: list[str | None] = []
         for field in fields:
             if field in values:
                 values[field] = str(values[field]).strip() or None if values[field] else None
-                documents.append(values[field])
-            elif old and old.get(field):
-                documents.append(
-                    cipher.decrypt(
-                        old[field],
-                        build_aad(
-                            "courier_profiles", field.removesuffix("_encrypted"), str(record_id)
-                        ),
-                    )
-                )
-            else:
-                documents.append(None)
-        fingerprint = identity_fingerprint(
-            documents[0],
-            documents[1],
-            self._settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value(),
-        )
-        # Explicit raw maintenance overrides remain available to authorized admins.
-        values.setdefault("identity_fingerprint", fingerprint)
+        combined = {**(old or {}), **values}
+        if not any(combined.get(field) for field in fields):
+            raise ValidationDomainError("A courier must provide a national id or passport.")

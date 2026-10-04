@@ -814,11 +814,14 @@ async def user_delete(
     db: DbDep,
     user_id: uuid.UUID,
     csrf_token: Annotated[str, Form()],
+    reason: Annotated[str, Form(max_length=500)] = "",
 ) -> RedirectResponse:
     """Soft-delete a user and revoke their current access."""
     ctx = await _ctx(request, db)
     verify_csrf(ctx, csrf_token, get_settings_from(request))
-    await ctx.service.delete_user(admin_id=ctx.admin.id, user_id=user_id, ip=client_ip(request))
+    await ctx.service.delete_user(
+        admin_id=ctx.admin.id, user_id=user_id, ip=client_ip(request), reason=reason
+    )
     return RedirectResponse("/v1/admin/admin/tables/users", status_code=303)
 
 

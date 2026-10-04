@@ -12,8 +12,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_context import mark_request_transaction
 from app.core.db import emit_committed_audit_events
-from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
+from app.core.deps import Actor, get_db, get_redis, get_settings, require_auth, require_role
+from app.core.exceptions import UnauthorizedError
 from app.core.money import money_str
 from app.models import Dispute
 from app.models.enums import OrderStatus, UserRole
@@ -54,7 +56,9 @@ _CourierRole = require_role(UserRole.COURIER)
 _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
 
 
-def _service(request: Request, db: AsyncSession) -> OrderService:
+def _service(
+    request: Request, db: AsyncSession, *, media: MediaService | None = None
+) -> OrderService:
     return OrderService(
         session=db,
         orders=OrderRepository(db),
@@ -62,7 +66,8 @@ def _service(request: Request, db: AsyncSession) -> OrderService:
         eligibility=CourierEligibilityService(
             users=UserRepository(db), couriers=CourierRepository(db)
         ),
-        media=MediaService(
+        media=media
+        or MediaService(
             request.app.state.clients.storage, get_settings(request), MediaRepository(db)
         ),
         messages=MessageWriter(db),
@@ -78,18 +83,36 @@ def _service(request: Request, db: AsyncSession) -> OrderService:
     )
 
 
-def _fulfillment(request: Request, db: AsyncSession) -> FulfillmentService:
+def _fulfillment(
+    request: Request, db: AsyncSession, *, media: MediaService | None = None
+) -> FulfillmentService:
     return FulfillmentService(
         orders=OrderRepository(db),
         invoices=InvoiceRepository(db),
         disputes=DisputeRepository(db),
         wallets=WalletRepository(db),
         money=MoneyService(WalletRepository(db)),
-        media=MediaService(
+        media=media
+        or MediaService(
             request.app.state.clients.storage, get_settings(request), MediaRepository(db)
         ),
         settings=get_settings(request),
     )
+
+
+async def _prepare_media(
+    request: Request, db: AsyncSession, actor: Actor, keys: list[str], purpose: str
+) -> MediaService:
+    media = MediaService(
+        request.app.state.clients.storage, get_settings(request), MediaRepository(db)
+    )
+    if not keys:
+        return media
+    await media.prepare_claims(keys, actor_id=actor.id, purpose=purpose, release_reads=db.commit)
+    await mark_request_transaction(db)
+    if await require_auth(request, db) != actor:
+        raise UnauthorizedError("This session is no longer valid.")
+    return media
 
 
 def _dispute(dispute: Dispute) -> DisputeResponse:
@@ -145,7 +168,8 @@ async def create_order(
     actor: Annotated[Actor, Depends(_Customer)],
 ) -> OrderDetail:
     """Create a NEW gift-request order."""
-    service = _service(request, db)
+    media = await _prepare_media(request, db, actor, body.request_media_keys, "ORDER_REQUEST")
+    service = _service(request, db, media=media)
     order = await service.create_order(
         customer_id=actor.id,
         data=NewOrderInput(
@@ -262,7 +286,9 @@ async def deliver_order(
     actor: Annotated[Actor, Depends(_active_courier)],
 ) -> OrderDetail:
     """Mark an in-progress order delivered with photo proof (assigned courier)."""
-    order = await _fulfillment(request, db).submit_delivery(
+    media = await _prepare_media(request, db, actor, body.proof_media_keys, "DELIVERY_PROOF")
+    await _active_courier(request, db, actor)
+    order = await _fulfillment(request, db, media=media).submit_delivery(
         order_id=order_id,
         courier_id=actor.id,
         data=DeliveryInput(

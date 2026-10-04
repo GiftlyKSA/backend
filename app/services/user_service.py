@@ -8,7 +8,7 @@ from datetime import date
 
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationDomainError
 from app.models import CourierProfile, User
-from app.models.enums import UserRole, UserStatus
+from app.models.enums import UserGender, UserRole, UserStatus
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.user_repository import ParticipantProjection, UserRepository
 from app.services.city_service import CityService
@@ -59,6 +59,7 @@ class UserService:
         full_name: str | None,
         email: str | None,
         dob: date | None,
+        gender: UserGender | None = None,
         courier_city: str | None,
         courier_city_id: uuid.UUID | None = None,
         courier_bio: str | None,
@@ -72,6 +73,8 @@ class UserService:
             user.email = email
         if "dob" in supplied:
             user.date_of_birth = dob
+        if "gender" in supplied:
+            user.gender = gender
         courier_fields = {"courier_city", "courier_city_id", "courier_bio"} & supplied
         if courier_fields and (user.role is not UserRole.COURIER or courier is None):
             raise ForbiddenError("Courier profile fields require a courier account.")

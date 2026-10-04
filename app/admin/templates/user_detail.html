@@ -9,7 +9,8 @@
   <tr><td>{{ tr('Email') }}</td><td>{{ user.email or "—" }}</td></tr>
   <tr><td>{{ tr('Role') }}</td><td>{{ tr(user.role) }}</td></tr>
   <tr><td>{{ tr('Status') }}</td><td>{{ tr(user.status) }}</td></tr>
-  <tr><td>{{ tr('Rating') }}</td><td>{{ user.rating }} ({{ user.rating_count }})</td></tr>
+  <tr><td>{{ tr('Gender') }}</td><td>{{ tr(user.gender) if user.gender else "—" }}</td></tr>
+  <tr><td>{{ tr('Deletion reason') }}</td><td>{{ user.deletion_reason or "—" }}</td></tr>
 </table></section>
 <section class="card edit-card">
   <h2>{{ tr('Edit user profile') }}</h2>
@@ -27,6 +28,7 @@
   <form method="post" action="/v1/admin/admin/users/{{ user.id }}/unban">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit">{{ tr('Unban') }}</button></form>
   <form method="post" action="/v1/admin/admin/users/{{ user.id }}/delete">
+    <label>{{ tr('Deletion reason') }}<input name="reason" maxlength="500"></label>
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}"><button type="submit" class="danger">{{ tr('Delete user') }}</button></form>
 </div>
 {% endif %}

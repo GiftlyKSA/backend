@@ -1657,6 +1657,16 @@
             ],
             "title": "Full Name"
           },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "national_id": {
             "anyOf": [
               {
@@ -2159,6 +2169,17 @@
         "title": "UploadUrlResponse",
         "type": "object"
       },
+      "UserGender": {
+        "description": "Optional self-reported gender.",
+        "enum": [
+          "MALE",
+          "FEMALE",
+          "OTHER",
+          "PREFER_NOT_TO_SAY"
+        ],
+        "title": "UserGender",
+        "type": "string"
+      },
       "UserMeResponse": {
         "description": "The authenticated user's own profile.",
         "properties": {
@@ -2172,6 +2193,18 @@
               }
             ],
             "description": "Owner-only courier details; null for non-courier accounts."
+          },
+          "dob": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dob"
           },
           "email": {
             "anyOf": [
@@ -2196,6 +2229,16 @@
             ],
             "description": "Display name.",
             "title": "Full Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "description": "User id.",
@@ -2310,6 +2353,16 @@
               }
             ],
             "title": "Full Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "UserUpdateRequest",

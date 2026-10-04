@@ -17,7 +17,6 @@ from app.core.exceptions import (
     ValidationDomainError,
 )
 from app.core.jwt import create_access_token, decode_access_token
-from app.core.security import hmac_hex
 from app.models.enums import OrderStatus, PaymentPurpose, UserRole, UserStatus
 from app.repositories.order_repository import OrderRepository
 from app.repositories.payment_repository import PaymentRepository
@@ -77,7 +76,7 @@ async def test_logout_does_not_return_success_before_revocation_commits(monkeypa
 
 
 @pytest.mark.parametrize("changed", ["passport", "clear_national"])
-async def test_admin_identity_edit_uses_final_canonical_document(changed):
+async def test_admin_identity_edit_preserves_encryption_without_fingerprint(changed):
     service, repo, _, settings = setup_service()
     identifier = uuid4()
     cipher = build_cipher(settings.encryption_keys(), settings.FIELD_ENCRYPTION_KEY_VERSION)
@@ -107,10 +106,17 @@ async def test_admin_identity_edit_uses_final_canonical_document(changed):
         revision=service._revision(old),
     )
     values = repo.save.call_args.args[2]
-    expected = "national" if changed == "passport" else "passport"
-    assert values["identity_fingerprint"] == hmac_hex(
-        expected, settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
-    )
+    assert "identity_fingerprint" not in values
+    if changed == "passport":
+        assert (
+            cipher.decrypt(
+                values["passport_id_encrypted"],
+                build_aad("courier_profiles", "passport_id", str(identifier)),
+            )
+            == "replacement"
+        )
+    else:
+        assert values["national_id_encrypted"] is None
 
 
 def order_service():
@@ -309,7 +315,9 @@ async def test_fulfillment_revalidates_current_participation(method):
         (" national ", "passport", "national"),
     ],
 )
-async def test_admin_profile_creation_derives_identity(national, passport, expected):
+async def test_admin_profile_creation_encrypts_identity_without_fingerprint(
+    national, passport, expected
+):
     service, repo, _, settings = setup_service()
     submitted = {"user_id": str(uuid4()), "city_of_residence_id": str(uuid4())}
     if national:
@@ -317,15 +325,21 @@ async def test_admin_profile_creation_derives_identity(national, passport, expec
     if passport:
         submitted["passport_id_encrypted"] = passport
     await service.save("courier_profiles", submitted, admin_id=uuid4(), session_id=uuid4())
-    assert repo.save.call_args.args[2]["identity_fingerprint"] == hmac_hex(
-        expected, settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
-    )
+    values = repo.save.call_args.args[2]
+    assert "identity_fingerprint" not in values
+    cipher = build_cipher(settings.encryption_keys(), settings.FIELD_ENCRYPTION_KEY_VERSION)
+    for field, plaintext in (("national_id", national), ("passport_id", passport)):
+        if plaintext:
+            assert (
+                cipher.decrypt(
+                    values[f"{field}_encrypted"],
+                    build_aad("courier_profiles", field, submitted["user_id"]),
+                )
+                == plaintext.strip()
+            )
 
 
-async def test_admin_identity_rejects_removing_last_document_and_preserves_explicit_override():
+async def test_admin_identity_rejects_removing_last_document():
     service, _, _, _ = setup_service()
     with pytest.raises(ValidationDomainError):
         service._encrypt("courier_profiles", uuid4(), {"national_id_encrypted": None}, {})
-    values = {"national_id_encrypted": "national", "identity_fingerprint": "explicit-override"}
-    service._encrypt("courier_profiles", uuid4(), values, None)
-    assert values["identity_fingerprint"] == "explicit-override"

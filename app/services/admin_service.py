@@ -20,7 +20,6 @@ from redis.asyncio import Redis
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import ConflictError, NotFoundError, ValidationDomainError
-from app.core.security import hmac_hex
 from app.models import AuditLog, City, CourierProfile, User, Withdrawal
 from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.repositories.admin_browse_query import BrowseOptions
@@ -467,14 +466,18 @@ class AdminService:
         )
         return user
 
-    async def delete_user(self, *, admin_id: uuid.UUID, user_id: uuid.UUID, ip: str | None) -> None:
+    async def delete_user(
+        self, *, admin_id: uuid.UUID, user_id: uuid.UUID, ip: str | None, reason: str | None = None
+    ) -> None:
         """Soft-delete a user and revoke access without erasing financial history."""
         user = await self._users.get_for_update(user_id)
         if user is None:
             raise NotFoundError("User not found.")
         if user.role is UserRole.ADMIN:
             raise ValidationDomainError("Dashboard administrator accounts are environment-managed.")
-        await self._users.soft_delete(user)
+        if reason is not None and len(reason) > 500:
+            raise ValidationDomainError("Deletion reason must be at most 500 characters.")
+        await self._users.soft_delete(user, reason=reason)
         await self._auth_repo.invalidate_user_credentials(user_id, self._now())
         await self._redis.set(
             f"auth:banned:{user_id}",
@@ -534,15 +537,11 @@ class AdminService:
         if not city_of_residence:
             raise ValidationDomainError("City is required.")
         city_record = await self._active_city(city_of_residence)
+        identity_document = identity_document.strip()
         if not identity_document:
             raise ValidationDomainError("A national ID or passport is required.")
         if identity_type not in {"national_id", "passport_id"}:
             raise ValidationDomainError("Identity document type is invalid.")
-        fingerprint = hmac_hex(
-            identity_document, self._settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
-        )
-        if await self._couriers.fingerprint_exists(fingerprint):
-            raise ConflictError("This identity document is already registered.")
         cipher = build_cipher(
             self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
         )
@@ -556,7 +555,6 @@ class AdminService:
             bio=bio,
             national_id_encrypted=encrypted if identity_type == "national_id" else None,
             passport_id_encrypted=encrypted if identity_type == "passport_id" else None,
-            identity_fingerprint=fingerprint,
         )
         await self._audit.record(
             actor_user_id=admin_id,

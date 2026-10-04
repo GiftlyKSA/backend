@@ -38,6 +38,7 @@ async def _deliver_claim(
             open_order = await repo.order_is_open(claim.order_id)
             page = (
                 await repo.token_page(
+                    order_id=claim.order_id,
                     city_id=claim.city_id,
                     after=claim.cursor_token_id,
                     limit=_PAGE_SIZE,

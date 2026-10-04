@@ -8,7 +8,20 @@ import logging
 import pytest
 from app.core.config import Settings, get_settings
 
+from tests.conftest import make_test_settings
+
 _ZERO_KEY_B64 = base64.b64encode(b"\x00" * 32).decode()
+
+
+def test_rsa_auth_without_hmac_secret_refuses_boot() -> None:
+    with pytest.raises(ValueError, match="OTP_HMAC_KEY is required"):
+        make_test_settings(
+            JWT_ALGORITHM="RS256",
+            JWT_SECRET=None,
+            JWT_PRIVATE_KEY="test-only",
+            JWT_PUBLIC_KEY="test-only",
+            OTP_HMAC_KEY=None,
+        )
 
 
 def _base_env(**overrides: str) -> dict[str, str]:
@@ -21,7 +34,6 @@ def _base_env(**overrides: str) -> dict[str, str]:
         "JWT_ALGORITHM": "HS256",
         "FIELD_ENCRYPTION_KEYS": f'{{"1":"{_ZERO_KEY_B64}"}}',
         "FIELD_ENCRYPTION_KEY_VERSION": "1",
-        "IDENTITY_FINGERPRINT_PEPPER": "p" * 40,
         "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
     }
     env.update(overrides)
@@ -113,12 +125,6 @@ def test_production_provider_urls_require_https(name: str) -> None:
     production[name] = "http://insecure.example.test"
     with pytest.raises(ValueError, match=name):
         Settings(_env_file=None, **production)  # type: ignore[call-arg]
-
-
-def test_pepper_equal_to_key_refuses_boot() -> None:
-    pepper = base64.b64decode(_ZERO_KEY_B64).decode("latin-1")
-    with pytest.raises(ValueError):
-        Settings(_env_file=None, **_base_env(IDENTITY_FINGERPRINT_PEPPER=pepper))  # type: ignore[call-arg]
 
 
 def test_bad_encryption_key_length_refuses_boot() -> None:

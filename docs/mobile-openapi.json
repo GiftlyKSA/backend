@@ -5,7 +5,7 @@
     "version": "0.1.0",
     "description": "Generated from implemented backend routes for mobile integration. Admin routes are excluded. Screen and flow details are vendor extensions; unsupported screen features are future API work and have no route in this specification. Production payment routes currently return PAYMENTS_DISABLED until a verified Dhamen integration is available."
   },
-  "x-integration-reviewed-on": "2026-10-03",
+  "x-integration-reviewed-on": "2026-10-04",
   "paths": {
     "/api/health": {
       "get": {
@@ -2261,11 +2261,11 @@
             }
           }
         },
-        "x-mobile-screen": "None; developer diagnostics only",
-        "x-audience": "No bearer token; development environment only",
-        "x-before": "Development server started",
+        "x-mobile-screen": "None",
+        "x-audience": "Development operators only",
+        "x-before": "ENVIRONMENT=development",
         "x-dependent-api": "None",
-        "x-availability": "development-only",
+        "x-availability": "development only",
         "security": []
       }
     },
@@ -2309,11 +2309,11 @@
             }
           }
         },
-        "x-mobile-screen": "None; developer payment testing only",
-        "x-audience": "No bearer token; development environment only",
-        "x-before": "Simulated payment link ID from a local fake checkout",
-        "x-dependent-api": "Server callback settlement; inspect normal invoice/wallet/order reads",
-        "x-availability": "development-only",
+        "x-mobile-screen": "None",
+        "x-audience": "Development operators only",
+        "x-before": "ENVIRONMENT=development",
+        "x-dependent-api": "None",
+        "x-availability": "development only",
         "security": []
       }
     },
@@ -2822,7 +2822,7 @@
           "CUSTOMER",
           "COURIER"
         ],
-        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-before": "Eligible authenticated participant; see api.md",
         "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
         "x-availability": "Implemented; private-storage and decoder deployment required for recordings"
       }
@@ -2844,7 +2844,7 @@
           "CUSTOMER",
           "COURIER"
         ],
-        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-before": "Eligible authenticated participant; see api.md",
         "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
         "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
         "operationId": "request_chat_upload_api_conversations__conversation_id__media_upload_urls_post",
@@ -2911,7 +2911,7 @@
           "CUSTOMER",
           "COURIER"
         ],
-        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-before": "Eligible authenticated participant; see api.md",
         "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
         "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
         "operationId": "send_chat_media_api_conversations__conversation_id__media_messages_post",
@@ -2978,7 +2978,7 @@
           "CUSTOMER",
           "COURIER"
         ],
-        "x-before": "Eligible authenticated participant; see UI-AGENT-CHAT-MEDIA-PROMPT.md",
+        "x-before": "Eligible authenticated participant; see api.md",
         "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
         "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
         "operationId": "chat_attachment_url_api_chat_attachments__attachment_id__url_get",
@@ -4351,6 +4351,16 @@
               }
             ],
             "title": "Passport Id"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -4747,6 +4757,28 @@
               }
             ],
             "description": "Owner-only courier details; null for non-courier accounts."
+          },
+          "dob": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dob"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -4835,6 +4867,16 @@
               }
             ],
             "title": "Courier Bio"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserGender"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -5334,64 +5376,6 @@
         "title": "ApplyInvoicePromoRequest",
         "description": "Apply a case-insensitive code, or remove it with explicit null."
       },
-      "RejectWithdrawalRequest": {
-        "properties": {
-          "reason": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Reason"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "reason"
-        ],
-        "title": "RejectWithdrawalRequest",
-        "description": "An admin rejection reason for a withdrawal."
-      },
-      "ResolveDisputeRequest": {
-        "properties": {
-          "outcome": {
-            "type": "string",
-            "title": "Outcome",
-            "description": "RESOLVED_CUSTOMER | RESOLVED_COURIER | RESOLVED_SPLIT."
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "courier_amount": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 20
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Courier Amount",
-            "description": "Courier's share for a SPLIT resolution (decimal string)."
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "outcome"
-        ],
-        "title": "ResolveDisputeRequest",
-        "description": "Admin resolution of a dispute."
-      },
       "AttachmentUrlResponse": {
         "properties": {
           "url": {
@@ -5584,6 +5568,17 @@
         ],
         "title": "SendChatMediaRequest",
         "description": "Send up to five images, one video, or one recorded voice note."
+      },
+      "UserGender": {
+        "description": "Optional self-reported gender.",
+        "enum": [
+          "MALE",
+          "FEMALE",
+          "OTHER",
+          "PREFER_NOT_TO_SAY"
+        ],
+        "title": "UserGender",
+        "type": "string"
       }
     },
     "securitySchemes": {
@@ -5599,12 +5594,6 @@
       }
     }
   },
-  "servers": [
-    {
-      "url": "/",
-      "description": "Current backend origin"
-    }
-  ],
   "x-websocket": [
     {
       "path": "/api/ws/conversations/{conversation_id}",
@@ -5629,9 +5618,5 @@
       "dependentApi": "Use REST messages/read for history and unread state"
     }
   ],
-  "x-future-api-work": "Features listed as gaps in MOBILE-API-INTEGRATION.md have no backend route; do not invent or integrate endpoints until separately added.",
-  "externalDocs": {
-    "description": "Screen mapping, call sequences, and unsupported features",
-    "url": "https://github.com/GiftlyKSA/backend/blob/master/docs/MOBILE-API-INTEGRATION.md"
-  }
+  "x-future-api-work": "Features listed as gaps in MOBILE-API-INTEGRATION.md have no backend route; do not invent or integrate endpoints until separately added."
 }

@@ -119,12 +119,7 @@ def form_fields(table: Table, row: dict[str, Any] | None) -> list[TableField]:
                 label=column.name.removesuffix("_encrypted").replace("_", " ").title(),
                 kind=_kind(column),
                 value=value,
-                required=(
-                    row is None
-                    and not column.nullable
-                    and column.server_default is None
-                    and column.name != "identity_fingerprint"
-                ),
+                required=(row is None and not column.nullable and column.server_default is None),
                 nullable=bool(column.nullable),
                 secret=secret,
                 choices=tuple(column.type.enums) if isinstance(column.type, ENUM) else (),
@@ -211,12 +206,7 @@ def _field_value(
             raise ValueError("Required field cannot be null")
         return True, None
     if raw == "":
-        if (
-            creating
-            and not column.nullable
-            and column.server_default is None
-            and name != "identity_fingerprint"
-        ):
+        if creating and not column.nullable and column.server_default is None:
             raise ValueError("Required field")
         return False, None
     if len(raw) > MAX_FIELD_LENGTH:

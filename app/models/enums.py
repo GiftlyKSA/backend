@@ -24,6 +24,16 @@ class UserStatus(StrEnum):
     BANNED = "BANNED"
     PENDING_VERIFICATION = "PENDING_VERIFICATION"
     REJECTED = "REJECTED"
+    DELETED = "DELETED"
+
+
+class UserGender(StrEnum):
+    """Optional self-reported gender."""
+
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+    OTHER = "OTHER"
+    PREFER_NOT_TO_SAY = "PREFER_NOT_TO_SAY"
 
 
 class OrderStatus(StrEnum):

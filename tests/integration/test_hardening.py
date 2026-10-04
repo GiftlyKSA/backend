@@ -39,7 +39,7 @@ async def _skip_unless_db(settings: Settings) -> None:
 
 
 class _BoomRedis:
-    """A Redis stand-in whose every call raises, to exercise the fail-open path."""
+    """A Redis stand-in whose every call raises, to exercise the outage path."""
 
     async def eval(self, *args: object) -> int:
         raise RuntimeError("redis down")
@@ -80,11 +80,11 @@ async def test_rate_limiter_allows_then_blocks() -> None:
         await redis.aclose()
 
 
-async def test_rate_limiter_fails_open_on_backend_error() -> None:
+async def test_rate_limiter_fails_closed_on_backend_error() -> None:
     limiter = RateLimiter(_BoomRedis(), max_requests=1, window_seconds=60)  # type: ignore[arg-type]
     decision = await limiter.check("whoever")
-    # A Redis outage must never take the API down: the request is allowed through.
-    assert decision.allowed is True
+    assert decision.allowed is False
+    assert decision.unavailable is True
     assert decision.retry_after_seconds == 0
 
 

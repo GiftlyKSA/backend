@@ -18,7 +18,7 @@ dependencies = [
     "alembic>=1.14",
     "jinja2>=3.1",
     "cryptography>=50",
-    "pyjwt>=2.10",
+    "pyjwt>=2.15",
     "redis[hiredis]>=5.2",
     "httpx>=0.28",
     "taskiq>=0.11",
@@ -49,7 +49,7 @@ dev = [
 
 [tool.uv]
 package = false
-constraint-dependencies = ["aiohttp>=3.14.3"]
+constraint-dependencies = ["aiohttp>=3.14.3", "urllib3>=2.8"]
 
 [tool.ruff]
 line-length = 100

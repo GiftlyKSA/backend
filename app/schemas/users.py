@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.models.enums import UserGender
+
 
 class CourierProfileResponse(BaseModel):
     """Safe courier details visible only through an authorized profile response."""
@@ -47,6 +49,8 @@ class UserMeResponse(BaseModel):
     status: str = Field(..., description="Account status.")
     full_name: str | None = Field(None, description="Display name.")
     email: str | None = Field(None, description="Email, used only for the paid receipt.")
+    dob: date | None = None
+    gender: UserGender | None = None
     courier_profile: CourierProfileResponse | None = Field(
         None, description="Owner-only courier details; null for non-courier accounts."
     )
@@ -62,6 +66,7 @@ class UserUpdateRequest(BaseModel):
         | None
     ) = None
     dob: date | None = None
+    gender: UserGender | None = None
     courier_city: Annotated[str, StringConstraints(min_length=1, max_length=100)] | None = None
     courier_city_id: UUID | None = None
     courier_bio: Annotated[str, StringConstraints(max_length=1000)] | None = None

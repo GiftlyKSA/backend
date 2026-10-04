@@ -61,16 +61,12 @@ class OtpService:
         self._redis = redis
         self._sms = sms
         self._settings = settings
-        # The OTP HMAC key (audit SEC-3): a dedicated OTP_HMAC_KEY wins; otherwise fall
-        # back to the JWT secret, then the identity pepper — every mode (including
-        # RS256, where JWT_SECRET is absent) ends on a boot-validated >=32-byte secret,
-        # never a constant. The code is ephemeral (180s TTL); this protects a Redis dump.
         if settings.OTP_HMAC_KEY is not None:
             self._hmac_key = settings.OTP_HMAC_KEY.get_secret_value()
         elif settings.JWT_SECRET is not None:
             self._hmac_key = settings.JWT_SECRET.get_secret_value()
         else:
-            self._hmac_key = settings.IDENTITY_FINGERPRINT_PEPPER.get_secret_value()
+            raise ValueError("OTP_HMAC_KEY is required when JWT_SECRET is absent.")
 
     def _code_key(self, phone: str) -> str:
         return f"otp:code:{phone}"

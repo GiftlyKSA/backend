@@ -15,7 +15,7 @@ from contextvars import ContextVar
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.exceptions import DomainError, RateLimitedError
 
@@ -47,6 +47,47 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
             _request_id_ctx.reset(token)
         response.headers["X-Request-ID"] = request_id
         return response
+
+
+class BodySizeMiddleware:
+    """Bound actual HTTP bytes before parsers, dependencies, or writes run."""
+
+    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+        """Wrap an application with a bounded request body buffer."""
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Read a bounded body and replay it, preserving non-HTTP traffic."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > self.max_bytes:
+                response = error_response(
+                    413, "PAYLOAD_TOO_LARGE", "The request body is too large."
+                )
+                await response(scope, receive, send)
+                return
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        delivered = False
+
+        async def replay() -> Message:
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
 
 
 def _envelope(code: str, message: str) -> dict[str, object]:

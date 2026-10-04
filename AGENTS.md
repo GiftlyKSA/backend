@@ -75,6 +75,8 @@
 
 ## Performance and scalability
 
+- Prioritize security first, then application logic and SQL/ORM efficiency, memory and CPU usage, and maintainable code that scales. Measure resource and query costs; do not trade away authorization or data integrity for speed.
+
 - Prevent N+1 queries: inspect loops and serializers for per-row database calls; fetch related data with explicit joins, eager loading, or batched queries. Add query-count regression checks for growing list endpoints; do not rely on hidden lazy loading.
 - Bound lists, batch jobs, attachment sizes, WebSocket messages, and concurrency. Prefer stable indexed cursor pagination for large/changing datasets; avoid unbounded `.all()` reads and expensive counts on hot paths.
 - Inspect generated SQL and use `EXPLAIN (ANALYZE, BUFFERS)` on representative disposable data for costly query changes. Account for index write/storage costs and transaction lock duration.
@@ -89,7 +91,7 @@
 - Keep business rules in services, persistence in repositories, and transport/provider details at boundaries. Prefer explicit typed interfaces and dependency injection over global mutable state.
 - Preserve existing behavior and data contracts with minimal edits. Keep migrations, compatibility, rollback, operational visibility, and tests part of the same change when they are affected.
 - Review security, performance, scalability/reliability, maintainability, readability, and naming/style separately. Report concrete evidence; do not manufacture findings to fill categories.
-- Record requested full reviews as dated Markdown files under `docs/`. Use stable finding IDs, category, severity, status, source paths/lines, trigger/evidence, impact if unresolved, proposed minimal fix, expected system impact, and verification steps.
+- Keep at most five maintained Markdown files in `docs/`. Record the dated current review in `docs/codebase_review.md` and its fresh outstanding tasks in `docs/tasks.md`; consolidate completed plans and obsolete notes into reference documentation. Use stable finding IDs, category, severity, status, source paths/lines, trigger/evidence, impact if unresolved, proposed minimal fix, expected system impact, and verification steps.
 - Order findings by severity and then impact within each category; provide a global priority index. Separate confirmed defects, intentional limitations, and unverified risks. Report what was inspected/tested and what remains unverified.
 
 ## Data integrity, migrations, and performance
@@ -116,6 +118,8 @@
 - Use the verification relevant to the change: migrations, API contracts, Docker build/runtime, and external-provider fakes where applicable. Never infer production integration success from mocks alone.
 
 ## Documentation, continuity, and delivery
+
+- Never save UI-agent integration prompts as Markdown files. Provide requested prompts in chat only; keep `docs/` for maintained reference documentation and review records.
 
 - Read `docs/README.md` when present before changing API documentation. Keep endpoint descriptions, errors, flows, examples, and generated `docs/openapi.json` aligned with implementation.
 - Keep README focused on setup and usage, and AGENTS.md focused on development rules. Include Windows alternatives for platform-specific setup commands.

@@ -1,21 +1,25 @@
-# Giftly mobile API integration catalog
+# Giftly API reference
 
-Latest contract change: the delivery location URL is removed
-from order input/output. Remove those inputs and map navigation from existing screens;
-city selection and delivery date remain supported. Old location properties are rejected
-as undeclared request fields.
+Updated 2026-10-04. This is maintained API documentation, not an implementation prompt.
 
-**OpenAPI 3.1 contract:** [mobile-openapi.json](mobile-openapi.json) is the machine-readable specification for the 56 implemented non-admin HTTP operations. Import it into an OpenAPI viewer or client generator; its schemas define exact wire types, required fields, and status codes, while `x-mobile-screen`, `x-audience`, `x-before`, `x-dependent-api`, and `x-availability` carry integration guidance. This companion guide adds call sequences, the chat and order-status WebSocket contracts, and unsupported-screen gaps.
+[Project documentation](documentation.md) · [Current review](codebase_review.md) · [Tasks](tasks.md)
 
-**Verified against backend source and offline development OpenAPI on 2026-10-03.** This catalogs every implemented non-admin HTTP endpoint (56) plus the chat and order-status WebSockets. Admin dashboard and `/api/admin/*` endpoints are excluded. Screen names come from the [mobile UI handoff](../../mobile/docs/BACKEND-SCREEN-API-MAP.md); that handoff describes a prototype, so backend source is authoritative when they differ. Development-only and simulation routes are inventoried for completeness and explicitly excluded from mobile production integration.
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 56 implemented
+HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
+Schemas are authoritative for types, optional values, limits and status codes. The notes
+below describe screens, prerequisites, dependencies and WebSocket reconciliation.
+No endpoint should be inferred for an unsupported screen: it will be added later.
 
-The backend unit suite compares non-admin operations and their wire schemas in this file
-with generated OpenAPI. Run `uv run --locked pytest tests/unit/test_mobile_openapi_drift.py`
-after API changes; update the handoff only when the contract change is intentional.
-For an implementation brief to give the mobile UI agent, use
-[UI-AGENT-API-INTEGRATION-PROMPT.md](UI-AGENT-API-INTEGRATION-PROMPT.md).
+Latest changes: optional `gender` on registration/profile update; own-profile responses
+now restore `dob` and `gender`. Gender accepts `MALE`, `FEMALE`, `OTHER`,
+`PREFER_NOT_TO_SAY` or null. Deleted accounts use `DELETED` with retained internal
+reason metadata. Courier identity numbers remain encrypted; document fingerprints
+and duplicate-document rejection have been removed. Production payments remain disabled.
+Order APIs accept a city and delivery date. A legacy optional plain-text
+`delivery_address_note` exists in persistence/admin only, outside the mobile contract.
+There is no delivery URL, coordinates, geometry, radius or distance property in the API.
 
-### Current integration update — 2026-09-30
+## Core integration flow
 
 An order participant can now look up its conversation directly with
 `GET /api/orders/{order_id}/conversation`, then page older messages through the existing
@@ -54,8 +58,8 @@ Screens listed as gaps still need later backend work; do not build or guess rout
   matching the other request models. Send only the properties declared in OpenAPI.
 - Base path is `/api`. Send `Authorization: Bearer <access_token>` on protected HTTP calls. Existing users receive 30-minute access and rotating 30-day refresh credentials; use `POST /api/auth/refresh` and replace both stored tokens. Logout invalidates credentials on every device. Do not derive role or ownership from the phone number, local fixture, or a client-supplied user ID.
 - `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money and tax rates are decimal strings**, such as `"125.50"` and `"0.15"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
-- A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings. Do not use offset or invent a next page when `next_cursor` is null.
-- Domain failures generally use `{"error":{"code":"...","message":"...","request_id":"..."}}`; common codes include `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATE_TRANSITION`, `VALIDATION_ERROR`, `RATE_LIMITED`, and `PAYMENTS_DISABLED`. FastAPI request-schema errors may instead return `{"detail":[...]}` with HTTP 422. HTTP 429 carries `Retry-After`. Handle status and both shapes; never assume every failure has a domain envelope.
+- A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; missing/foreign or out-of-filter order/wallet anchors return `404 NOT_FOUND`, so refresh the list when an anchor is no longer valid; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings. Do not use offset or invent a next page when `next_cursor` is null.
+- Domain failures generally use `{"error":{"code":"...","message":"...","request_id":"..."}}`; common codes include `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATE_TRANSITION`, `VALIDATION_ERROR`, `RATE_LIMITED`, `PAYMENTS_DISABLED`, and `RATE_LIMIT_UNAVAILABLE`. FastAPI request-schema errors may instead return `{"detail":[...]}` with HTTP 422. HTTP 429 carries `Retry-After`. Handle status and both shapes; never assume every failure has a domain envelope.
 - Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; Dhamen has no live adapter or verified callback. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
 - This document describes the current backend, not a proposed API. Each **When/how** paragraph is 50–100 words. **Before** is the prerequisite; **Then / dependent API** tells the UI agent which subsequent call consumes or follows this result.
 - **Future API work:** If a screen or action has no matching endpoint documented here, do not create, assume, or integrate a new route for it. Mark that feature as awaiting backend support; its route and contract will be added later in a separate backend change. Use only the implemented calls below for the current UI integration.
@@ -135,7 +139,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Screens:** Customer registration `/register-customer`; courier onboarding when built.
 - **Who / authorization:** Signed-out with registration token; no bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `RegisterRequest` — `registration_token: string`; `role: string [CUSTOMER, COURIER]`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `city_id?: UUID string | null` (preferred) or `city?: string | null` (legacy); `national_id?: string | null`; `passport_id?: string | null`
+- **Request body:** `RegisterRequest` — `registration_token: string`; `role: string [CUSTOMER, COURIER]`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `gender?: string [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY] | null`; `city_id?: UUID string | null` (preferred) or `city?: string | null` (legacy); `national_id?: string | null`; `passport_id?: string | null`
 - **Response:** HTTP 201; `TokenResponse` — `access_token: string`; `refresh_token: string`; `role: string`
 - **Before:** `POST /api/auth/verify-otp` returning `is_new_user=true`.
 - **Then / dependent API:** `GET /api/users/me`; courier verification review before courier operations.
@@ -177,11 +181,11 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated customer or courier; bearer access token.
 - **Path, query, headers:** None.
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `UserMeResponse` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `courier_profile?: CourierProfileResponse | null` (courier rating/count only here)
+- **Response:** HTTP 200; `UserMeResponse` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `gender?: string [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY] | null`; `courier_profile?: CourierProfileResponse | null` (courier rating/count only here)
 - **Before:** Login, register, or refresh.
 - **Then / dependent API:** Role-specific home, `GET /api/wallets/me`, and `GET /api/orders`.
 
-**When/how (65 words):** Fetch the current user's authoritative profile after restoring a stored session and whenever the profile screen opens. Use the returned role and status to select the mobile experience; do not trust a saved role from prototype fixtures. Courier verification details appear only in `courier_profile`. The response does not include date of birth or theme preference, so those values cannot currently be restored from this endpoint.
+**When/how (65 words):** Fetch the current user's authoritative profile after restoring a stored session and whenever the profile screen opens. Use the returned role and status to select the mobile experience; do not trust a saved role from prototype fixtures. Courier verification details appear only in `courier_profile`. The response restores optional date of birth and gender. Theme preference remains a client setting and is not included in the profile contract.
 
 ### PATCH /api/users/me
 
@@ -189,8 +193,8 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Screens:** Profile `/profile`.
 - **Who / authorization:** Authenticated customer or courier; bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `UserUpdateRequest` — `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `courier_city_id?: UUID string | null` (preferred) or `courier_city?: string | null` (legacy); `courier_bio?: string | null`
-- **Response:** HTTP 200; `UserMeResponse` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `courier_profile?: CourierProfileResponse | null`
+- **Request body:** `UserUpdateRequest` — `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `gender?: string [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY] | null`; `courier_city_id?: UUID string | null` (preferred) or `courier_city?: string | null` (legacy); `courier_bio?: string | null`
+- **Response:** HTTP 200; `UserMeResponse` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `gender?: string [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY] | null`; `courier_profile?: CourierProfileResponse | null`
 - **Before:** `GET /api/users/me`.
 - **Then / dependent API:** Refresh `GET /api/users/me` or update local profile from response.
 
@@ -203,7 +207,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Who / authorization:** Authenticated courier with rejected profile; bearer access token.
 - **Path, query, headers:** None.
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `UserMeResponse` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `courier_profile?: CourierProfileResponse | null`
+- **Response:** HTTP 200; `UserMeResponse` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `phone: string`; `role: string`; `status: string`; `full_name?: string | null`; `email?: string | null`; `dob?: date (YYYY-MM-DD) | null`; `gender?: string [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY] | null`; `courier_profile?: CourierProfileResponse | null`
 - **Before:** `GET /api/users/me` shows rejected courier verification.
 - **Then / dependent API:** `GET /api/users/me` to follow review status.
 
@@ -464,7 +468,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 **When/how (63 words):** Read one invoice by its UUID after participant ownership checks. Unlike the order-scoped active-invoice route, this address can identify the particular invoice the screen is showing, including one whose status has changed. Display item lines, fee breakdown, promo snapshot, issue and expiry times, and total directly from the response. The backend does not expose saved card details or a collection of invoice revisions.
 
-### POST /api/invoices/{invoice_id}/promo (2026-10-03)
+### POST /api/invoices/{invoice_id}/promo (2026-10-04)
 
 - **API name / screen:** Apply, replace or remove invoice promo; customer Invoice/Checkout.
 - **Who / authorization:** ACTIVE owning CUSTOMER; bearer token. Foreign invoices return 404.
@@ -486,7 +490,7 @@ invalid input or specific `PROMO_*` eligibility/usage errors; 429 rate limiting.
 Legacy invoices without a stored pricing-policy snapshot return 409 for changes.
 Existing applied codes/no-code removals are safe no-ops. Idempotent replays return
 their original result invoice; refresh active state if it has since been superseded.
-See [UI-AGENT-INVOICE-PROMO-PROMPT.md](UI-AGENT-INVOICE-PROMO-PROMPT.md).
+[project documentation](documentation.md).
 
 ### POST /api/invoices/{invoice_id}/pay
 
@@ -624,10 +628,10 @@ See [UI-AGENT-INVOICE-PROMO-PROMPT.md](UI-AGENT-INVOICE-PROMO-PROMPT.md).
 
 **When/how (61 words):** Acknowledge the caller's inbound messages as read and clear that conversation's unread count. The request has no JSON body and returns 204 without a payload. Call when the chat is genuinely visible to the user, rather than immediately on a background push event. Other participants' read state cannot be set by this caller. Refresh the inbox badge after success if necessary.
 
-## Chat media — 2026-10-03
+## Chat media — 2026-10-04
 
 The customer/courier Chat screen supports private recorded voice notes and camera/
-gallery images and videos. Use [the full chat media handoff](UI-AGENT-CHAT-MEDIA-PROMPT.md)
+gallery images and videos. Use the full chat media handoff (see documentation.md)
 for exact requests, responses, accepted MIME types, limits and error handling.
 
 | API | Input | Output | Authorization / dependencies |
@@ -724,7 +728,7 @@ real private-storage deployment still needs staging verification.
 
 **When/how (61 words):** This callback is for the local simulated gateway, not a mobile app action and not a Dhamen endpoint. Its raw JSON body identifies a simulated payment link, status, and amount; the signature header authenticates the exact bytes. The backend handles idempotent settlement or failure in a transaction and returns an outcome. Never place the simulation signing secret in a phone app.
 
-## Customer occasions API (2026-10-03)
+## Customer occasions API (2026-10-04)
 
 Customers can now manage their own birthdays, anniversaries and other calendar
 dates. All five operations require a CUSTOMER bearer token; missing or foreign
@@ -753,10 +757,10 @@ record to reconcile local state. Titles remain text and must be escaped by clien
 Reminder preferences are stored only: automatic notification delivery and annual
 recurrence are not implemented. These records do not create orders automatically.
 
-See [UI-AGENT-OCCASIONS-PROMPT.md](UI-AGENT-OCCASIONS-PROMPT.md) for examples, errors
+[project documentation](documentation.md) for examples, errors
 and UI instructions. The generated schemas are included in `mobile-openapi.json`.
 
-## Live order status WebSocket (2026-10-03)
+## Live order status WebSocket (2026-10-04)
 
 `/api/ws/orders/{order_id}` is a read-only authenticated stream for the owning customer
 and the assigned active, verified courier. An unassigned courier cannot subscribe.
@@ -767,7 +771,7 @@ selects only `giftly.orders`; do not put credentials in the URL or log protocols
 The first event is `order.snapshot`; subsequent changes use `order.updated`:
 
 ```json
-{"type":"order.updated","order_id":"550e8400-e29b-41d4-a716-446655440000","status":"ASSIGNED","courier_id":"550e8400-e29b-41d4-a716-446655440001","assigned_at":"2026-10-03T10:00:00Z"}
+{"type":"order.updated","order_id":"550e8400-e29b-41d4-a716-446655440000","status":"ASSIGNED","courier_id":"550e8400-e29b-41d4-a716-446655440001","assigned_at":"2026-10-04T10:00:00Z"}
 ```
 
 `order_id` is a UUID string; `status` uses the existing order status enum;
@@ -785,7 +789,7 @@ use bounded backoff and reload `GET /api/orders/{order_id}` after reconnect. Clo
 logout. The shared limit is eight sockets per account across chat/order streams.
 
 For the complete acceptance integration brief, see
-[UI-AGENT-ORDER-ACCEPTANCE-PROMPT.md](UI-AGENT-ORDER-ACCEPTANCE-PROMPT.md).
+[project documentation](documentation.md).
 
 ## Live chat WebSocket
 
@@ -876,7 +880,7 @@ These types appear inside the request/response shapes above. Field names marked 
 - `is_read`: `boolean`.
 - `created_at`: `string`.
 
-## Screen-to-API handoff and current gaps
+## Screen coverage and current gaps
 
 The prototype's labels and local-device data are not server contracts. The table maps each screen to implemented reads/actions and calls out missing backend support. A gap means **API to be added later**, not permission to build or guess a route now; leave that screen action pending until the backend contract exists.
 
@@ -898,7 +902,7 @@ The prototype's labels and local-device data are not server contracts. The table
 | Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
 | Courier Reports `/reports` and settings sheet | Wallet transactions can be read as raw entries | No earnings aggregates, comparison, chart series, target settings, or financial-notification preference API. |
 | Courier Statement `/statement` | Wallet transactions, cursor-paged | No date-range filtering, statement totals, or downloadable statement API. |
-| Profile `/profile` | `users/me`, patch, courier resubmit, logout, device registration | Date of birth is writeable but absent from `users/me` response; no theme preference, avatar upload/read, or phone-change API. |
+| Profile `/profile` | `users/me`, patch, courier resubmit, logout, device registration | Date of birth and gender are writable and returned by `users/me`; no theme preference, avatar upload/read, or phone-change API. |
 
 **Important contract mismatches:** The mobile map proposes halala integers, but the backend uses decimal **strings** for money. It proposes local file URIs/upload IDs, but the backend expects confirmed server-generated `storage_key` values. It proposes a matching/accepted/preparing/delivering timeline, while the actual order status enum is `NEW`, `ASSIGNED`, `WAITING_PAYMENT`, `IN_PROGRESS`, `DELIVERED`, `COMPLETED`, `CANCELLED`, `DISPUTED`, `REFUNDED`. Translate those labels only for display; do not send prototype strings to the API. The server does not enforce the prototype's age-16 minimum. Order delivery dates are constrained by the database to today through 180 days ahead; the UI should prevent out-of-range entries.
 
@@ -906,14 +910,14 @@ The prototype's labels and local-device data are not server contracts. The table
 
 1. **Existing login:** `send-otp` → `verify-otp` → store returned token pair → `users/me` → role-specific home data. **New login:** use the returned `registration_token` with `register`, then follow the same profile flow.
 2. **Create order with photos:** for each of at most three images, request an `ORDER_REQUEST` upload URL → signed PUT bytes → confirm the key → create the order with confirmed keys → navigate to `/waiting/[id]` using the returned UUID.
-3. **Courier fulfillment:** `orders/available` → accept → conversation inbox/chat → create invoice → customer reads invoice and attempts payment only when a supported gateway is enabled → courier uploads/ confirms `DELIVERY_PROOF` → deliver → customer approves or disputes → each participant may rate after completion.
+3. **Courier fulfillment:** `orders/available` → accept → conversation inbox/chat → create invoice → customer reads invoice and attempts payment only when a supported gateway is enabled → courier uploads/ confirms `DELIVERY_PROOF` → deliver → customer approves or disputes → the customer may rate the courier after completion.
 4. **Chat:** get inbox for `conversation_id` → page REST history → open WebSocket while visible → send with REST or JSON WebSocket frames → mark read. On socket reconnect, reload REST history to cover missed ephemeral events.
 5. **Wallet:** fetch snapshot and transactions. For courier withdrawal, send `Idempotency-Key` with amount and IBAN, then refresh wallet. Do not expose top-up or invoice checkout as functional in production until the backend enables a verified Dhamen integration.
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **51 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **56 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
 
-## Invoice PDF and item-only VAT (2026-10-03)
+## Invoice PDF and item-only VAT (2026-10-04)
 
-GET /api/invoices/{invoice_id}/pdf returns private application/pdf bytes to the owning customer or assigned eligible courier. Use the Bearer header; there is no body. Foreign invoices return 404. VAT applies only to discounted items; courier and service fees have zero VAT. Historical invoice amounts are read as stored. See [complete UI handoff](UI-AGENT-INVOICE-PDF-PROMPT.md) for download behavior and errors.
+GET /api/invoices/{invoice_id}/pdf returns private application/pdf bytes to the owning customer or assigned eligible courier. Use the Bearer header; there is no body. Foreign invoices return 404. VAT applies only to discounted items; courier and service fees have zero VAT. Historical invoice amounts are read as stored. See [PDF operations](documentation.md#invoice-pdfs-paid-receipts-and-vat-repair) for deployment limits and receipt behavior.

@@ -70,6 +70,33 @@ async def test_foreign_conversation_upload_denied_before_storage():
 
 
 @pytest.mark.asyncio
+async def test_chat_presign_releases_reads_and_precedes_quota_lock():
+    service, deps = stack()
+    released = False
+
+    async def release():
+        nonlocal released
+        released = True
+
+    async def presign(**kwargs):
+        assert released
+        assert deps.uploads.issue.await_count == 0
+        return "signed-url"
+
+    deps.storage.create_upload_url.side_effect = presign
+    result = await service.request_upload(
+        conversation_id=uuid4(),
+        actor_id=uuid4(),
+        kind="IMAGE",
+        mime="image/jpeg",
+        size=12,
+        release_reads=release,
+        resume_writes=AsyncMock(),
+    )
+    assert result[0] == "signed-url"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "foreign_owner,foreign_conversation,used",
     [(True, False, False), (False, True, False), (False, False, True)],

@@ -176,10 +176,11 @@ class UserRepository:
         user.email = email
         await self._session.flush()
 
-    async def soft_delete(self, user: User) -> None:
+    async def soft_delete(self, user: User, *, reason: str | None = None) -> None:
         """Disable a user while retaining rows required for financial/audit history."""
-        user.status = UserStatus.BANNED
+        user.status = UserStatus.DELETED
         user.deleted_at = datetime.now(UTC)
+        user.deletion_reason = (reason or "").strip() or "Deleted by an administrator."
         await self._session.flush()
 
     async def set_status(self, user: User, status: UserStatus) -> None:

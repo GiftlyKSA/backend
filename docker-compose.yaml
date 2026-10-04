@@ -12,7 +12,6 @@ x-app-environment: &app-environment
   # Base64-encoded 32-byte development-only key.
   FIELD_ENCRYPTION_KEYS: '{"1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
   FIELD_ENCRYPTION_KEY_VERSION: "1"
-  IDENTITY_FINGERPRINT_PEPPER: ${IDENTITY_FINGERPRINT_PEPPER:-local-development-identity-pepper-change-me}
   ADMIN_DASHBOARD_ENABLED: "true"
   ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
@@ -72,6 +71,7 @@ services:
 
   api:
     <<: *app-service
+    entrypoint: []
     command:
       - uvicorn
       - app.main:create_app
@@ -95,6 +95,7 @@ services:
 
   worker:
     <<: *app-service
+    entrypoint: []
     command: ["taskiq", "worker", "app.workers.broker:broker"]
     healthcheck:
       disable: true
@@ -110,6 +111,7 @@ services:
 
   scheduler:
     <<: *app-service
+    entrypoint: []
     command: ["taskiq", "scheduler", "app.workers.scheduler:scheduler"]
     healthcheck:
       disable: true

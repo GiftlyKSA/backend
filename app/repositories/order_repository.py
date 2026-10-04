@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import Select, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError
 from app.models import City, Conversation, Order, OrderMedia, OrderNotification, User
 from app.models.enums import MediaType, OrderStatus
 
@@ -222,13 +223,12 @@ class OrderRepository:
     async def _page(
         self, query: Select[tuple[Order]], limit: int, before_id: uuid.UUID | None
     ) -> list[Order]:
-        query = query.order_by(Order.created_at.desc(), Order.id.desc()).limit(limit)
         if before_id is not None:
-            anchor = await self._session.get(Order, before_id)
-            if anchor is not None:
-                query = query.where(
-                    tuple_(Order.created_at, Order.id) < (anchor.created_at, anchor.id)
-                )
+            anchor = await self._session.scalar(query.where(Order.id == before_id))
+            if anchor is None:
+                raise NotFoundError("Pagination cursor not found in this list.")
+            query = query.where(tuple_(Order.created_at, Order.id) < (anchor.created_at, anchor.id))
+        query = query.order_by(Order.created_at.desc(), Order.id.desc()).limit(limit)
         return list(await self._session.scalars(query))
 
     async def create_conversation(

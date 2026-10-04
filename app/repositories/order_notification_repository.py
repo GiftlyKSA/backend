@@ -6,10 +6,17 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, delete, insert, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CourierProfile, DeviceToken, Order, OrderNotification, User
+from app.models import (
+    CourierProfile,
+    DeviceToken,
+    Order,
+    OrderNotification,
+    OrderNotificationRecipient,
+    User,
+)
 from app.models.enums import OrderStatus, UserRole, UserStatus
 
 
@@ -53,6 +60,24 @@ class OrderNotificationRepository:
         )
         claimed = []
         for row in rows:
+            if row.recipients_snapshotted_at is None:
+                await self._session.execute(
+                    insert(OrderNotificationRecipient).from_select(
+                        ["order_id", "token_id", "user_id"],
+                        select(literal(row.order_id), DeviceToken.id, DeviceToken.user_id)
+                        .join(User, User.id == DeviceToken.user_id)
+                        .join(CourierProfile, CourierProfile.user_id == User.id)
+                        .where(
+                            User.role == UserRole.COURIER,
+                            User.status == UserStatus.ACTIVE,
+                            User.deleted_at.is_(None),
+                            CourierProfile.is_verified.is_(True),
+                            CourierProfile.city_of_residence_id == row.city_id,
+                        ),
+                    )
+                )
+                row.recipients_snapshotted_at = now
+                row.cursor_token_id = None
             lease_id = uuid.uuid4()
             row.lease_id = lease_id
             row.leased_until = now + timedelta(seconds=lease_seconds)
@@ -76,16 +101,30 @@ class OrderNotificationRepository:
         return status is OrderStatus.NEW
 
     async def token_page(
-        self, *, city_id: uuid.UUID, after: uuid.UUID | None, limit: int
+        self,
+        *,
+        order_id: uuid.UUID,
+        city_id: uuid.UUID,
+        after: uuid.UUID | None,
+        limit: int,
     ) -> list[tuple[uuid.UUID, str]]:
-        """Page active courier tokens in stable primary-key order."""
+        """Page the first claim's recipients, excluding revoked or reassigned devices."""
         query = (
             select(DeviceToken.id, DeviceToken.token)
+            .join(
+                OrderNotificationRecipient,
+                and_(
+                    OrderNotificationRecipient.token_id == DeviceToken.id,
+                    OrderNotificationRecipient.user_id == DeviceToken.user_id,
+                ),
+            )
             .join(User, User.id == DeviceToken.user_id)
             .join(CourierProfile, CourierProfile.user_id == User.id)
             .where(
+                OrderNotificationRecipient.order_id == order_id,
                 User.role == UserRole.COURIER,
                 User.status == UserStatus.ACTIVE,
+                User.deleted_at.is_(None),
                 CourierProfile.is_verified.is_(True),
                 CourierProfile.city_of_residence_id == city_id,
             )
@@ -122,7 +161,14 @@ class OrderNotificationRepository:
                 updated_at=now,
             )
         )
-        return bool(getattr(result, "rowcount", 0))
+        saved = bool(getattr(result, "rowcount", 0))
+        if saved and complete:
+            await self._session.execute(
+                delete(OrderNotificationRecipient).where(
+                    OrderNotificationRecipient.order_id == claim.order_id
+                )
+            )
+        return saved
 
     async def retry(self, claim: ClaimedNotification, *, now: datetime) -> None:
         """Release a failed claim with bounded exponential backoff."""

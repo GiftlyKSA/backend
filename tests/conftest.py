@@ -26,7 +26,6 @@ def make_test_settings(**overrides: object) -> Settings:
         "JWT_ALGORITHM": "HS256",
         "FIELD_ENCRYPTION_KEYS": f'{{"1":"{_ZERO_KEY_B64}"}}',
         "FIELD_ENCRYPTION_KEY_VERSION": 1,
-        "IDENTITY_FINGERPRINT_PEPPER": "test-pepper-value-not-real-0000000000000",
         "ADMIN_SESSION_SECRET": "test-admin-session-secret-not-real-00000",
         "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
         # The suite shares one Redis, so every unauthenticated request lands in the same

@@ -66,6 +66,7 @@ async def update_me(
         full_name=body.full_name,
         email=body.email,
         dob=body.dob,
+        gender=body.gender,
         courier_city=body.courier_city,
         courier_city_id=body.courier_city_id,
         courier_bio=body.courier_bio,
@@ -117,6 +118,8 @@ async def _to_response(
         status=str(user.status),
         full_name=user.full_name,
         email=user.email,
+        dob=user.date_of_birth,
+        gender=user.gender,
         courier_profile=(
             CourierProfileResponse(
                 city_of_residence=courier.city_of_residence,

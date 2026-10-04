@@ -15,6 +15,7 @@ from decimal import Decimal
 from sqlalchemy import Numeric, Uuid, cast, func, null, select, true, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction
 
+from app.core.exceptions import NotFoundError
 from app.core.money import ZERO
 from app.models import Transaction, Wallet
 from app.models.enums import TransactionStatus, TransactionType, WalletType
@@ -141,18 +142,16 @@ class WalletRepository:
             .limit(limit)
         )
         if before_id is not None:
-            anchor = await self._session.get(Transaction, before_id)
-            if anchor is not None:
-                query = (
-                    select(Transaction)
-                    .where(
-                        Transaction.wallet_id == wallet_id,
-                        tuple_(Transaction.created_at, Transaction.id)
-                        < (anchor.created_at, anchor.id),
-                    )
-                    .order_by(Transaction.created_at.desc(), Transaction.id.desc())
-                    .limit(limit)
+            anchor = await self._session.scalar(
+                select(Transaction).where(
+                    Transaction.id == before_id, Transaction.wallet_id == wallet_id
                 )
+            )
+            if anchor is None:
+                raise NotFoundError("Pagination cursor not found in this list.")
+            query = query.where(
+                tuple_(Transaction.created_at, Transaction.id) < (anchor.created_at, anchor.id)
+            )
         return list(await self._session.scalars(query))
 
     async def reconciliation_snapshot(self) -> ReconciliationSnapshot:

@@ -143,12 +143,20 @@ async def request_chat_upload(
     actor: Annotated[Actor, Depends(_Participant)],
 ) -> UploadUrlResponse:
     """Issue a private upload grant for a participant's chat attachment."""
+
+    async def resume_writes() -> None:
+        await mark_request_transaction(db)
+        if await require_auth(request, db) != actor:
+            raise UnauthorizedError("This session is no longer valid.")
+
     url, key, expires = await _media_service(request, db).request_upload(
         conversation_id=conversation_id,
         actor_id=actor.id,
         kind=body.media_type,
         mime=body.content_type,
         size=body.byte_size,
+        release_reads=db.commit,
+        resume_writes=resume_writes,
     )
     return UploadUrlResponse(upload_url=url, storage_key=key, expires_in=expires)
 
@@ -183,22 +191,39 @@ async def send_chat_media(
         text=body.text,
     )
     await db.commit()
+    await _deliver_chat_message(request, db, _service(request, db), dto, actor.id)
+    return _message(dto)
+
+
+async def _deliver_chat_message(
+    request: Request | WebSocket,
+    db: AsyncSession,
+    service: ChatService,
+    dto: ChatMessage,
+    actor_id: uuid.UUID,
+) -> bool:
+    """Keep optional delivery failures from changing the result of a committed send."""
+    delivered = False
     try:
         async with asyncio.timeout(5):
-            await _service(request, db).publish_message(dto)
+            await service.publish_message(dto)
+        delivered = True
     except Exception:
         _logger.exception("The chat message was saved, but live delivery failed.")
     try:
         async with asyncio.timeout(5):
-            await _notify_chat_recipient(request, db, conversation_id, actor.id)
+            await _notify_chat_recipient(request, db, uuid.UUID(dto.conversation_id), actor_id)
     except Exception:
         _logger.exception("The chat message was saved, but its push notification failed.")
-        await db.rollback()
-    return _message(dto)
+    finally:
+        # Recipient reads must not leave a failing transaction for request teardown.
+        with contextlib.suppress(Exception):
+            await db.rollback()
+    return delivered
 
 
 async def _notify_chat_recipient(
-    request: Request,
+    request: Request | WebSocket,
     db: AsyncSession,
     conversation_id: uuid.UUID,
     actor_id: uuid.UUID,
@@ -324,22 +349,7 @@ async def send_message(
     )
     # A live event must never race ahead of the durable row it announces.
     await db.commit()
-    # Best-effort push to the recipient — the body carries NO message text (Restricted).
-    conversation = await ChatRepository(db).get_for_actor(conversation_id, actor.id)
-    if conversation is not None:
-        recipient = (
-            conversation.courier_id
-            if actor.id == conversation.customer_id
-            else conversation.customer_id
-        )
-        await NotificationService(
-            devices=DeviceTokenRepository(db), push=request.app.state.clients.push
-        ).notify_user(
-            user_id=recipient,
-            title="New message",
-            body="You have a new message about your order.",
-        )
-    await service.publish_message(dto)
+    await _deliver_chat_message(request, db, service, dto, actor.id)
     return _message(dto)
 
 
@@ -500,15 +510,10 @@ async def _pump_socket_to_chat(
             )
             # Commit before any external side effect or live event can expose the row.
             await session.commit()
-            # Same best-effort push as the REST path; NO message text in the body.
-            await NotificationService(
-                devices=DeviceTokenRepository(session), push=websocket.app.state.clients.push
-            ).notify_user(
-                user_id=recipient_id,
-                title="New message",
-                body="You have a new message about your order.",
-            )
-            await service.publish_message(dto)
+            delivered = await _deliver_chat_message(websocket, session, service, dto, actor.id)
+            if not delivered:
+                await _require_live_authorization(websocket, conversation_id)
+                await websocket.send_text(_message(dto).model_dump_json())
 
 
 def _extract_text(raw: str) -> str:

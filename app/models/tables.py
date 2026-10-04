@@ -38,6 +38,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 # Native PostgreSQL enum types are created by metadata bootstrap on a fresh database.
 _user_role = ENUM(enums.UserRole, name="user_role")
 _user_status = ENUM(enums.UserStatus, name="user_status")
+_user_gender = ENUM(enums.UserGender, name="user_gender")
 _order_status = ENUM(enums.OrderStatus, name="order_status")
 _invoice_status = ENUM(enums.InvoiceStatus, name="invoice_status")
 _payment_purpose = ENUM(enums.PaymentPurpose, name="payment_purpose")
@@ -121,6 +122,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    gender: Mapped[enums.UserGender | None] = mapped_column(_user_gender, nullable=True)
+    deletion_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     role: Mapped[enums.UserRole] = mapped_column(_user_role, nullable=False)
     status: Mapped[enums.UserStatus] = mapped_column(
         _user_status, nullable=False, server_default=enums.UserStatus.ACTIVE.value
@@ -148,8 +151,7 @@ class CourierProfile(TimestampMixin, Base):
     """Courier identity and verification state (PK == users.id).
 
     ``passport_id_encrypted`` / ``national_id_encrypted`` are AES-256-GCM ciphertext.
-    ``identity_fingerprint`` is an HMAC blind index enabling duplicate detection
-    without decryption. Only an ACTIVE, verified courier may accept or invoice.
+    Only an ACTIVE, verified courier may accept or invoice.
     """
 
     __tablename__ = "courier_profiles"
@@ -159,7 +161,6 @@ class CourierProfile(TimestampMixin, Base):
     )
     passport_id_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     national_id_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    identity_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     city_of_residence_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cities.id"), nullable=False
     )
@@ -186,12 +187,6 @@ class CourierProfile(TimestampMixin, Base):
             name="chk_identity_present",
         ),
         Index("idx_courier_profiles_city_verified", "city_of_residence_id", "is_verified"),
-        Index(
-            "uq_courier_identity_fingerprint",
-            "identity_fingerprint",
-            unique=True,
-            postgresql_where=text("identity_fingerprint IS NOT NULL"),
-        ),
         Index(
             "uq_courier_profiles_gateway_supplier",
             "gateway_supplier_id",
@@ -436,6 +431,9 @@ class OrderNotification(TimestampMixin, Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recipients_snapshotted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index(
@@ -444,6 +442,32 @@ class OrderNotification(TimestampMixin, Base):
             "created_at",
             postgresql_where=text("completed_at IS NULL"),
         ),
+    )
+
+
+class OrderNotificationRecipient(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A durable recipient of a new-order notification."""
+
+    __tablename__ = "order_notification_recipients"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("order_notifications.order_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("device_tokens.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "order_id", "token_id", name="uq_order_notification_recipients_order_token"
+        ),
+        Index("idx_order_notification_recipients_token", "token_id"),
+        Index("idx_order_notification_recipients_user", "user_id"),
     )
 
 

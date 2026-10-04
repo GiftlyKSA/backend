@@ -88,6 +88,7 @@ async def register(request: Request, db: DbDep, body: RegisterRequest) -> TokenR
         full_name=body.full_name,
         email=body.email,
         dob=body.dob,
+        gender=body.gender,
         city=body.city,
         city_id=body.city_id,
         national_id=body.national_id,

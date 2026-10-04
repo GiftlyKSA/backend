@@ -21,6 +21,7 @@ from app.core.db import build_engine, build_session_factory
 from app.core.jwt import JwtError, decode_access_token
 from app.core.logging import configure_logging
 from app.core.middleware import (
+    BodySizeMiddleware,
     RequestIdMiddleware,
     error_response,
     register_exception_handlers,
@@ -253,7 +254,8 @@ def _install_request_guards(
     app: FastAPI,
     settings: Settings,
 ) -> None:
-    """One middleware for both request guards (audit PERF-4): body size, then throttle."""
+    """Install header and throttle checks ahead of actual body-byte enforcement."""
+    app.add_middleware(BodySizeMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
 
     @app.middleware("http")
     async def _request_guards(
@@ -299,6 +301,14 @@ def _install_request_guards(
         )
 
         decision = await limiter.check(identity)
+
+        if decision.unavailable:
+            return error_response(
+                503,
+                "RATE_LIMIT_UNAVAILABLE",
+                "Request validation is temporarily unavailable. Please try again later.",
+                headers={"Retry-After": "1"},
+            )
 
         if not decision.allowed:
             return error_response(

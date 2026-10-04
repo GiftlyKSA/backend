@@ -11,7 +11,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_context import mark_request_transaction
 from app.core.deps import Actor, get_db, require_auth
+from app.core.exceptions import UnauthorizedError
 from app.integrations.storage.base import StorageClient
 from app.repositories.media_repository import MediaRepository
 from app.schemas.media import (
@@ -38,11 +40,19 @@ async def create_upload_url(
     actor: Annotated[Actor, Depends(require_auth)],
 ) -> UploadUrlResponse:
     """Issue a pre-signed upload URL with a server-generated key."""
+
+    async def resume_writes() -> None:
+        await mark_request_transaction(db)
+        if await require_auth(request, db) != actor:
+            raise UnauthorizedError("This session is no longer valid.")
+
     url, key, expires_in = await _service(request, db).request_upload_url(
         actor_id=actor.id,
         purpose=body.purpose,
         content_type=body.content_type,
         byte_size=body.byte_size,
+        release_reads=db.commit,
+        resume_writes=resume_writes,
     )
     return UploadUrlResponse(upload_url=url, storage_key=key, expires_in=expires_in)
 
@@ -55,5 +65,16 @@ async def confirm_upload(
     actor: Annotated[Actor, Depends(require_auth)],
 ) -> ConfirmResponse:
     """Confirm an uploaded object exists and is a valid image."""
-    await _service(request, db).confirm(body.storage_key, actor_id=actor.id)
+
+    async def resume_writes() -> None:
+        await mark_request_transaction(db)
+        if await require_auth(request, db) != actor:
+            raise UnauthorizedError("This session is no longer valid.")
+
+    await _service(request, db).confirm(
+        body.storage_key,
+        actor_id=actor.id,
+        release_reads=db.commit,
+        resume_writes=resume_writes,
+    )
     return ConfirmResponse(storage_key=body.storage_key, confirmed=True)
