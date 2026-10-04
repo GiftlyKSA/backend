@@ -118,7 +118,8 @@ secrets-manager client. `SecretStr` masks representations but does not encrypt v
 Inject secrets at runtime from a protected store and keep them out of logs and images
 (task definition / compose override / systemd `EnvironmentFile`). See
 `.env.example` for grouped settings with descriptions and safe example values.
-Blank secret fields must be supplied before starting the application.
+Published template secrets work only as development/test examples. Replace them before
+production use; provider credentials and RSA placeholders are not live credentials/keys.
 See [configuration and secrets](docs/ENVIRONMENT-CONFIGURATION.md) for the usage audit,
 connection budgeting, new timeout controls and production secret-storage guidance.
 

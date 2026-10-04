@@ -9,8 +9,11 @@ Real `.env` files, credentials and deployment settings were not inspected.
 The template contains only consumed settings: 80 active entries and two optional
 RSA key entries. All 79 Pydantic settings are represented; three additional controls
 are read by the deployment entrypoint or Gunicorn/Uvicorn.
-Every entry has a description and an example. Blank secrets are intentionally blank;
-copying the template alone does not supply the required signing/encryption secrets.
+Every entry has a description and an example. Published development/test signing,
+encryption, OTP and admin secrets permit local Settings validation. Replace them before
+production use or encrypting real data. Provider credentials and optional RSA fields use
+obvious placeholders; they cannot authenticate real services. Production integration
+configuration must still be supplied through the deployment secret store.
 
 Removed unused placeholders: `DHAMEN_BASE_URL`, `DHAMEN_APP_KEY`, `DHAMEN_APP_ID`,
 `DHAMEN_CLIENT_ID`, `DHAMEN_AUTHORITY_PROFILE_ID`, `DHAMEN_RETURN_URL` and the
