@@ -116,7 +116,8 @@ ordinary HTTP requests through, while authentication retains its own security ch
 Every secret is an environment variable — there is no secrets manager. Secrets are
 wrapped in `SecretStr`, never logged, and never baked into the image; they are injected
 at runtime (task definition / compose override / systemd `EnvironmentFile`). See
-`.env.example` for the full, always-blank template.
+`.env.example` for grouped settings with descriptions and safe example values.
+Blank secret fields must be supplied before starting the application.
 
 | Name | Required in | Description | Example (never a real value) |
 | --- | --- | --- | --- |
@@ -129,11 +130,10 @@ at runtime (task definition / compose override / systemd `EnvironmentFile`). See
 | `FIELD_ENCRYPTION_KEY_VERSION` | all | active key version in the map | `1` |
 | `IDENTITY_FINGERPRINT_PEPPER` | all | >= 32 bytes, distinct from every enc key | `<32+ random bytes>` |
 | `CORS_ALLOWED_ORIGINS` | production | exact origins; wildcard banned. Ignored in development, where CORS allows any origin without credentials. | `https://app.example.com` |
-| `DHAMEN_*` | reserved only | Future vendor configuration; not loaded or used by an active client | — |
 | `SNDR_*` | production | email api key/base url/from/template | — |
 | `AWS_*`, `S3_BUCKET_NAME`, `CLOUDFRONT_*` | production | storage + signed CDN | — |
 | `ADMIN_SESSION_SECRET` | if dashboard on | >= 32 bytes | `<32+ random bytes>` |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | if dashboard on | environment-backed login; production password >= 12 chars | `admin` / `admin` (development only) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | if dashboard on | environment-backed login; use a strong, unique production password | `admin` / `admin` (development only) |
 | `ADMIN_TOTP_SECRET` | production, if dashboard on | Base32 secret of at least 20 random bytes for an authenticator app; keep it private | `<Base32 secret>` |
 
 The application **refuses to boot** if any production-safety rule is violated (DEBUG on,
