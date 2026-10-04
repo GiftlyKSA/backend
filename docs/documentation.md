@@ -4,6 +4,7 @@
 
 | Reference | Contents |
 | --- | --- |
+| [High-level architecture](architecture.md) | Components, boundaries, data flows and deployment overview. |
 | [API reference](api.md) | Non-admin endpoints, schemas, screens, flows and WebSockets. |
 | [Current review](codebase_review.md) | Findings, accepted risks, evidence and verification limits. |
 | [Task tracker](tasks.md) | Outstanding work from the current review. |
@@ -317,5 +318,5 @@ provide correctness but can write many recipient/audit rows in one claim; capaci
 be measured. Scaling replicas requires shared claims/leases, durable idempotency and
 bounded work, not simply increasing pool sizes or worker counts.
 
-Four Markdown references are maintained in `docs/`; OpenAPI JSON and the dashboard
+Five Markdown references are maintained in `docs/`; OpenAPI JSON and the dashboard
 concept image are supporting artifacts. UI-agent prompts are delivered in chat only.
