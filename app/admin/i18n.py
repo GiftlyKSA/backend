@@ -358,7 +358,6 @@ ARABIC: dict[str, str] = {
     "Held Balance": "الرصيد المحجوز",
     "Iban Last4": "آخر أربعة أرقام من الآيبان",
     "Iban": "رقم الآيبان",
-    "Identity Fingerprint": "بصمة الهوية",
     "Idempotency Key": "مفتاح منع التكرار",
     "Image Storage Key": "مفتاح تخزين الصورة",
     "Invoice Id": "معرّف الفاتورة",

@@ -81,8 +81,8 @@ requires measurements/external proof; **Accepted risk** reflects an explicit use
 #### SEC-20 — GitHub dependency-alert disposition remains unconfirmed
 
 - **Status / score:** Needs validation, Medium 5/10; alert presence is confirmed, current package applicability is UNCONFIRMED.
-- **Evidence:** the master push reported 20 dependency alerts (one Critical, ten High, nine Moderate). A read-only request for alert package/manifest metadata returned HTTP 401. The separate current locked-production audit reported no known advisories after the targeted updates.
-- **Impact:** the scan cannot establish whether remaining alerts concern another manifest, stale dependency metadata or an uncovered deployment graph. The push warning must not be described as resolved or automatically dismissed as stale.
+- **Evidence:** an initial master push reported 20 alerts; the next reported four (three High, one Moderate). Alert metadata access returned HTTP 401. The production graph scan was clear; an expanded production/development scan identified four distinct virtualenv advisories (duplicated by platform markers), resolved by locking the minimal patched version21.7.13. The repeated complete-graph scan is now clear.
+- **Impact:** the local scan cannot prove GitHub's alert disposition or cover another deployment/image graph. The earlier warning must not be automatically dismissed as stale; current remote refresh needs authorized confirmation.
 - **Minimal action:** an authorized repository security maintainer should inspect each alert against the current master lockfile, relevant environment and upstream advisory, resolve applicable versions and document disposition with evidence.
 - **Expected impact:** reliable supply-chain release evidence; no automatic alert suppression or unrelated upgrades.
 - **Verify:** current-master graph scan, package/manifest reconciliation and exact-commit CI audit. System/container packages need their own scan.
@@ -256,7 +256,7 @@ category. SQL/runtime measurements remain necessary before asserting broad optim
 | CLEAN-01 | Fixed | Obsolete180-second OTP comment removed; configured default remains60. |
 | REL-11 | Superseded | Transactional PostgreSQL action auditing already replaced HTTP request audit writes; independent archival remains PERF-09/SEC-17. |
 | ENH-01 | Superseded | Participant order WebSocket and snapshots already implemented; durable replay is a limitation, not a missing route. |
-| SEC-09 | Dependency graph updated and re-audited | Targeted PyJWT/urllib3 updates; no other package changed. Results below. |
+| SEC-09 | Dependency graph updated and re-audited | Targeted PyJWT/urllib3 runtime updates and minimal virtualenv hook-dependency patch. Complete locked graph scan is clear; remote disposition remains SEC-20. |
 | SEC-16 / SEC-17 | Accepted High risks | Explicit user instruction preserves unrestricted admin CRUD; not reported fixed. |
 | SQL-01 / PERF-09 / SEC-15 / INT-01 | Reassessed above | Unverified operational risks kept explicit; no fabricated live proof. |
 
@@ -272,8 +272,9 @@ Independent change review found no additional confirmed introduced High/Medium d
 - Offline Alembic upgrade0015→0018 and downgrade0018→0015 SQL generation passed. No database was migrated.
 - Dependency audit on the full locked production graph initially reported16 advisories in PyJWT2.13.0 and urllib3 2.7.0. Targeted resolution changed only PyJWT→2.15.1 and urllib3→2.8.0. The repeated `pip-audit2.10.1 --strict --no-deps --disable-pip` scan reported **no known vulnerabilities** on 2026-10-04. This excludes system/image packages and undisclosed flaws.
 - Upstream sources checked 2026-10-04: [PyJWT PEM guard advisory](https://github.com/jpadilla/pyjwt/security/advisories/GHSA-ffc3-869f-jxw9), [PyJWT release history](https://github.com/jpadilla/pyjwt/releases), [urllib3 2.8.0](https://github.com/urllib3/urllib3/releases/tag/2.8.0). The application already pins one allowed JWT algorithm; upstream advisory presence is not proof of exploitability in this deployment.
+- Expanded audit found four distinct development-only virtualenv advisories in21.7.10. The locked minimal patch is21.7.13 ([upstream activation-script advisory](https://github.com/pypa/virtualenv/security/advisories/GHSA-p58f-9548-mpm2)). Repeated `uv export --locked --all-groups` plus the same strict audit reported **no known vulnerabilities**. No application runtime dependency changed in this follow-up. Subsequent admin/config tests passed37 checks, and both hook stages passed.
 - Read-only remote CI inspection found successful older runs, latest returned SHA3352467 ([run](https://github.com/GiftlyKSA/backend/actions/runs/37133529592)). These do not validate this change or current source SHA.
-- Push verification confirmed master commit `72e08ba`, with local/origin hashes matching. The remote dependency warning persisted; alert details returned HTTP 401, recorded as SEC-20. This does not contradict the separately scoped clean production-lockfile scan or establish that the remote alerts are stale.
+- Push verification confirmed master commit `72e08ba`, then documentation commit `405b9f3`; each push succeeded. The remote alert count decreased20→4 before the hook-dependency patch; metadata access remained HTTP401. Current complete-lockfile scan and remote alert disposition are separate evidence, recorded as SEC-20.
 - Final aggregate gate: `uv run --locked pytest -n 4 -o addopts="" -q -p no:cacheprovider --basetemp <fresh temporary directory>` finished with **668 passed, 198 skipped, four existing Starlette/httpx deprecation warnings**. The unavailable PostgreSQL/Redis and native decoder checks remain skipped. Ruff lint/format, strict mypy (184 source files), both pre-commit stages, mobile OpenAPI drift, local documentation links and `git diff --check` passed.
 
 No Docker, live PostgreSQL/Redis, production repair, secrets inspection or vendor delivery
