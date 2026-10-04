@@ -113,11 +113,14 @@ preflight are exempt. The dashboard's separate login throttle remains in place.
 Redis failures currently allow
 ordinary HTTP requests through, while authentication retains its own security checks.
 
-Every secret is an environment variable — there is no secrets manager. Secrets are
-wrapped in `SecretStr`, never logged, and never baked into the image; they are injected
-at runtime (task definition / compose override / systemd `EnvironmentFile`). See
+The application reads secrets from runtime environment values; it has no direct
+secrets-manager client. `SecretStr` masks representations but does not encrypt values.
+Inject secrets at runtime from a protected store and keep them out of logs and images
+(task definition / compose override / systemd `EnvironmentFile`). See
 `.env.example` for grouped settings with descriptions and safe example values.
 Blank secret fields must be supplied before starting the application.
+See [configuration and secrets](docs/ENVIRONMENT-CONFIGURATION.md) for the usage audit,
+connection budgeting, new timeout controls and production secret-storage guidance.
 
 | Name | Required in | Description | Example (never a real value) |
 | --- | --- | --- | --- |

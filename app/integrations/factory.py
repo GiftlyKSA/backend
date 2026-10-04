@@ -64,14 +64,17 @@ def _build_production_clients(settings: Settings) -> Clients:
         api_key=_required_secret(settings.SNDR_API_KEY, "SNDR_API_KEY"),
         from_email=settings.SNDR_FROM_EMAIL or "",
         from_name=settings.SNDR_FROM_NAME or "",
+        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
     )
     sms = RealSmsClient(
         provider_key=(
             settings.SMS_PROVIDER_KEY.get_secret_value() if settings.SMS_PROVIDER_KEY else ""
         ),
         base_url=settings.SUPABASE_URL or "",
+        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
     )
     push = RealPushClient(
+        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
         supabase_url=settings.SUPABASE_URL or "",
         service_key=(
             settings.SUPABASE_SERVICE_KEY.get_secret_value()

@@ -34,6 +34,25 @@ def test_valid_test_settings_boot() -> None:
     assert not settings.docs_enabled
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("DB_POOL_SIZE", "0"),
+        ("DB_POOL_SIZE", "101"),
+        ("DB_MAX_OVERFLOW", "-1"),
+        ("DB_MAX_OVERFLOW", "101"),
+        ("DB_POOL_TIMEOUT_SECONDS", "0"),
+        ("DB_POOL_TIMEOUT_SECONDS", "61"),
+        ("INTEGRATION_HTTP_TIMEOUT_SECONDS", "0"),
+        ("INTEGRATION_HTTP_TIMEOUT_SECONDS", "16"),
+        ("INTEGRATION_HTTP_TIMEOUT_SECONDS", "nan"),
+    ],
+)
+def test_invalid_operational_settings_refuse_boot(name: str, value: str) -> None:
+    with pytest.raises(ValueError, match=name):
+        Settings(_env_file=None, **_base_env(**{name: value}))  # type: ignore[call-arg]
+
+
 def test_startup_logs_real_validation_reason_without_environment_values(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

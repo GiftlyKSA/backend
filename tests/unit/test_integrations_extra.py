@@ -356,7 +356,7 @@ def test_build_clients_returns_fakes_in_test() -> None:
     assert type(clients.email).__name__ == "FakeEmailClient"
 
 
-def test_build_clients_returns_real_in_production() -> None:
+async def test_build_clients_returns_real_in_production() -> None:
     settings = make_test_settings(
         ENVIRONMENT=Environment.PRODUCTION.value,
         DEBUG=False,
@@ -376,7 +376,15 @@ def test_build_clients_returns_real_in_production() -> None:
         CLOUDFRONT_DOMAIN="cdn.example.com",
         CLOUDFRONT_KEY_PAIR_ID="K123",
         CLOUDFRONT_PRIVATE_KEY=_private_key_pem(),
+        INTEGRATION_HTTP_TIMEOUT_SECONDS=4,
     )
     clients = build_clients(settings)
     assert type(clients.gateway).__name__ == "DisabledPaymentClient"
     assert type(clients.email).__name__ == "SndrEmailClient"
+    try:
+        for client in (clients.email, clients.sms, clients.push):
+            assert client._client.timeout.read == 4
+            assert client._client.timeout.connect == 4
+    finally:
+        for client in (clients.email, clients.sms, clients.push, clients.storage):
+            await client.aclose()
