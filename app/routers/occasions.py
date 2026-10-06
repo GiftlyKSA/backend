@@ -1,6 +1,5 @@
 """Authenticated customer calendar CRUD."""
 
-from datetime import date
 from typing import Annotated
 from uuid import UUID
 
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import Actor, get_db, require_role
 from app.models.enums import UserRole
 from app.repositories.planning_repository import PlanningRepository
+from app.schemas.date_range import DateRange, date_range
 from app.schemas.occasions import (
     CreateOccasionRequest,
     OccasionPage,
@@ -40,13 +40,17 @@ async def create_occasion(
 async def list_occasions(
     db: DbDep,
     actor: CustomerDep,
+    dates: Annotated[DateRange, Depends(date_range)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     cursor: UUID | None = None,
-    from_date: date | None = None,
 ) -> OccasionPage:
-    """List owned dates, soonest first, with an optional inclusive date filter."""
+    """List owned occasions by date then ID, within optional inclusive Gregorian bounds.
+
+    Use YYYY-MM-DD. Reset the cursor when bounds change and retain identical filters
+    on subsequent pages. Malformed or reversed ranges return HTTP 422.
+    """
     rows, next_cursor = await _service(db).list(
-        actor.id, limit=limit, cursor=cursor, from_date=from_date
+        actor.id, limit=limit, cursor=cursor, from_date=dates.from_date, to_date=dates.to_date
     )
     return OccasionPage(
         items=[OccasionResponse.model_validate(row) for row in rows], next_cursor=next_cursor

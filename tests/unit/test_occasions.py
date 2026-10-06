@@ -107,7 +107,7 @@ async def test_list_reads_one_extra_row_for_real_next_cursor():
     )
     assert items == rows[:2] and cursor == rows[1].id
     repository.list_occasions_for_actor.assert_awaited_once_with(
-        actor, limit=3, from_date=None, after=None
+        actor, limit=3, from_date=None, to_date=None, after=None
     )
     repository.list_occasions_for_actor.return_value = rows[:2]
     _, cursor = await OccasionService(repository).list(actor, limit=2, cursor=None, from_date=None)

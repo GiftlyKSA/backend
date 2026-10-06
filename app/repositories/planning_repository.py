@@ -66,12 +66,15 @@ class PlanningRepository:
         *,
         limit: int,
         from_date: date | None = None,
+        to_date: date | None = None,
         after: Occasion | None = None,
     ) -> list[Occasion]:
         """Return only the actor's occasions, soonest first."""
         query = select(Occasion).where(Occasion.user_id == actor_id)
         if from_date is not None:
             query = query.where(Occasion.occasion_date >= from_date)
+        if to_date is not None:
+            query = query.where(Occasion.occasion_date <= to_date)
         if after is not None:
             query = query.where(
                 tuple_(Occasion.occasion_date, Occasion.id) > (after.occasion_date, after.id)

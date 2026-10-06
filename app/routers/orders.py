@@ -28,6 +28,7 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
+from app.schemas.date_range import DateRange, date_range
 from app.schemas.fulfillment import (
     DeliverRequest,
     DisputeRequest,
@@ -191,11 +192,16 @@ async def list_orders(
     request: Request,
     db: DbDep,
     actor: Annotated[Actor, Depends(_eligible_participant)],
+    dates: Annotated[DateRange, Depends(date_range)],
     status: Annotated[OrderStatus | None, Query()] = None,
     cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
-    """List customer-owned or courier-assigned orders, newest first."""
+    """List owned/assigned orders newest first, optionally within inclusive delivery dates.
+
+    Use Gregorian YYYY-MM-DD bounds. Reset the cursor when dates or status change,
+    and retain identical filters on subsequent pages. Responses remain unchanged.
+    """
     service = _service(request, db)
     views = await service.list_views_for_actor(
         actor_id=actor.id,
@@ -203,6 +209,8 @@ async def list_orders(
         status=status,
         limit=limit,
         before_id=cursor,
+        from_date=dates.from_date,
+        to_date=dates.to_date,
     )
     return _page(views, limit)
 

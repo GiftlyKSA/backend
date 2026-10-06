@@ -3946,7 +3946,7 @@
     },
     "/api/occasions": {
       "get": {
-        "description": "List owned dates, soonest first, with an optional inclusive date filter.",
+        "description": "List owned occasions by date then ID, within optional inclusive Gregorian bounds.\n\nUse YYYY-MM-DD. Reset the cursor when bounds change and retain identical filters\non subsequent pages. Malformed or reversed ranges return HTTP 422.",
         "operationId": "list_occasions_api_occasions_get",
         "parameters": [
           {
@@ -3979,6 +3979,7 @@
             }
           },
           {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
             "in": "query",
             "name": "from_date",
             "required": false,
@@ -3992,7 +3993,27 @@
                   "type": "null"
                 }
               ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
               "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
             }
           }
         ],
@@ -4197,7 +4218,7 @@
     },
     "/api/orders": {
       "get": {
-        "description": "List customer-owned or courier-assigned orders, newest first.",
+        "description": "List owned/assigned orders newest first, optionally within inclusive delivery dates.\n\nUse Gregorian YYYY-MM-DD bounds. Reset the cursor when dates or status change,\nand retain identical filters on subsequent pages. Responses remain unchanged.",
         "operationId": "list_orders_api_orders_get",
         "parameters": [
           {
@@ -4243,6 +4264,44 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
             }
           }
         ],

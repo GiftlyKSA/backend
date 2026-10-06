@@ -174,11 +174,17 @@ class OrderRepository:
         status: OrderStatus | None,
         limit: int,
         before_id: uuid.UUID | None,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> list[Order]:
         """Return a customer's orders, newest first, keyset-paged."""
         query = select(Order).where(Order.customer_id == customer_id)
         if status is not None:
             query = query.where(Order.status == status)
+        if from_date is not None:
+            query = query.where(Order.delivery_date >= from_date)
+        if to_date is not None:
+            query = query.where(Order.delivery_date <= to_date)
         return await self._page(query, limit, before_id)
 
     async def list_for_courier(
@@ -188,11 +194,17 @@ class OrderRepository:
         status: OrderStatus | None,
         limit: int,
         before_id: uuid.UUID | None,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> list[Order]:
         """Return only orders assigned to the courier, including terminal history."""
         query = select(Order).where(Order.courier_id == courier_id)
         if status is not None:
             query = query.where(Order.status == status)
+        if from_date is not None:
+            query = query.where(Order.delivery_date >= from_date)
+        if to_date is not None:
+            query = query.where(Order.delivery_date <= to_date)
         return await self._page(query, limit, before_id)
 
     async def list_order_media_for_actor(

@@ -35,14 +35,22 @@ class OccasionService:
         return occasion
 
     async def list(
-        self, actor_id: UUID, *, limit: int, cursor: UUID | None, from_date: date | None
+        self,
+        actor_id: UUID,
+        *,
+        limit: int,
+        cursor: UUID | None,
+        from_date: date | None,
+        to_date: date | None = None,
     ) -> tuple[list[Occasion], UUID | None]:
         """Validate ownership of pagination anchors before fetching a bounded page."""
         after = await self.get(actor_id, cursor) if cursor is not None else None
         if after is not None and from_date is not None and after.occasion_date < from_date:
             raise NotFoundError("Occasion cursor not found in this date range.")
+        if after is not None and to_date is not None and after.occasion_date > to_date:
+            raise NotFoundError("Occasion cursor not found in this date range.")
         rows = await self._repository.list_occasions_for_actor(
-            actor_id, limit=limit + 1, from_date=from_date, after=after
+            actor_id, limit=limit + 1, from_date=from_date, to_date=to_date, after=after
         )
         return rows[:limit], rows[limit - 1].id if len(rows) > limit else None
 

@@ -244,16 +244,28 @@ class OrderService:
         status: OrderStatus | None,
         limit: int,
         before_id: uuid.UUID | None,
+        from_date: date | None = None,
+        to_date: date | None = None,
     ) -> list[OrderView]:
         """List owned orders and batch-assemble actor-specific response state."""
         if role is UserRole.CUSTOMER:
             orders = await self._orders.list_for_customer(
-                actor_id, status=status, limit=limit, before_id=before_id
+                actor_id,
+                status=status,
+                limit=limit,
+                before_id=before_id,
+                from_date=from_date,
+                to_date=to_date,
             )
         elif role is UserRole.COURIER:
             await self.require_active_verified_courier(actor_id)
             orders = await self._orders.list_for_courier(
-                actor_id, status=status, limit=limit, before_id=before_id
+                actor_id,
+                status=status,
+                limit=limit,
+                before_id=before_id,
+                from_date=from_date,
+                to_date=to_date,
             )
         else:
             raise ForbiddenError("Your role may not list marketplace orders.")

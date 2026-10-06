@@ -328,13 +328,59 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **API name:** List Orders.
 - **Screens:** Customer/Courier Home `/home`; Orders `/orders`; Courier Calendar `/calendar` partial.
 - **Who / authorization:** Authenticated customer or eligible verified courier; bearer access token.
-- **Path, query, headers:** `status?: string | null` (query); `cursor?: string | null` (query); `limit?: integer` (query).
+- **Path, query, headers:** `status?: string | null`; UUID `cursor?`; `limit` 1–100 (default 20); `from_date?`, `to_date?` Gregorian `YYYY-MM-DD` inclusive delivery-date bounds.
 - **Request body:** No JSON body.
 - **Response:** HTTP 200; `OrderListResponse` — `items: OrderSummary[]`; `next_cursor?: string | null`
 - **Before:** Login and profile restoration.
 - **Then / dependent API:** `GET /api/orders/{order_id}`; same endpoint with next cursor.
 
-**When/how (64 words):** List only orders owned by the customer or assigned to the courier, newest first. Use optional status filtering and cursor pagination to build current and history tabs; the server does not provide text search, order-number search, or a date-range filter. Courier availability is a separate route. Keep server status strings authoritative and derive display grouping locally without assuming the prototype's labels are API values.
+**When/how:** List customer-owned or courier-assigned orders by `created_at DESC, id DESC`.
+Optional `from_date` and `to_date` filter `delivery_date` directly, including both
+boundaries; status and ownership restrictions apply to every page and cursor anchor.
+Omitted bounds preserve existing behavior. Courier availability is a separate route
+and has no new filters. Reset the cursor when dates or status change. Reuse identical
+filters on subsequent pages. Malformed dates or reversed ranges return the existing
+HTTP 422 validation response; a cursor outside the filtered authorized list returns 404.
+
+### Calendar range requests (orders and occasions)
+
+```http
+GET /api/orders?from_date=2026-10-04&to_date=2026-10-10&limit=20
+GET /api/occasions?from_date=2026-10-04&to_date=2026-10-10&limit=25
+
+GET /api/orders?from_date=2026-10-06&to_date=2026-10-06
+GET /api/occasions?from_date=2026-10-06&to_date=2026-10-06
+
+GET /api/orders?from_date=2026-10-01&to_date=2026-10-31&status=NEW
+GET /api/occasions?from_date=2026-10-01&to_date=2026-10-31
+```
+
+These examples cover a homepage week, selected day, and calendar month. Bearer
+authentication is required. Orders retain newest-created-first ordering; occasions
+use `occasion_date ASC, id ASC`. Occasions are customer-only. Boundaries compare
+Gregorian DATE fields directly, without UTC/UTC+3 conversions. Either boundary can
+be omitted. No additional calendar-range or historical-read restriction is introduced.
+Existing order-creation date bounds remain unchanged.
+
+Both return existing `{ "items": [...], "next_cursor": UUID-or-null }` responses.
+An empty valid range returns `{ "items": [], "next_cursor": null }`. Continue with
+the returned cursor and identical date/status/limit parameters; clear the cursor
+whenever the range or status changes. Cursor anchors must belong to the same
+authorized filtered collection (404 otherwise). Stable date/ID or timestamp/ID
+keysets prevent duplicates/skips for unchanged datasets. Concurrent edits can change
+membership; this is not a snapshot across multiple HTTP requests.
+
+Invalid dates, timestamps supplied as dates, and `from_date > to_date` return the
+existing HTTP 422 validation format. For example, `2026-02-30` is invalid; the
+reversed-range error identifies query `to_date`. Text search remains unavailable.
+
+Existing indexes scope orders by customer/courier and creation order, and occasions
+by user/date. No speculative migration is added. Date bounds are SQL predicates
+before ORDER BY/LIMIT; order cursor lookup uses the same bounds. Real PostgreSQL
+EXPLAIN/latency validation is pending a disposable environment, particularly for
+narrow delivery-date ranges across large customer/courier histories. A scoped
+delivery-date index would add write/storage costs and still require ordering work;
+add it only when representative plans justify it.
 
 ### GET /api/orders/available
 
@@ -737,7 +783,7 @@ records/cursors return 404. Couriers and admins cannot use these customer APIs.
 | Method | Endpoint | Input | Success |
 | --- | --- | --- | --- |
 | POST | `/api/occasions` | `CreateOccasionRequest` | 201 `OccasionResponse` |
-| GET | `/api/occasions` | `limit` 1–100 (default 25), optional UUID `cursor`, optional inclusive `from_date` YYYY-MM-DD | 200 `OccasionPage` |
+| GET | `/api/occasions` | `limit` 1–100 (default 25), optional UUID `cursor`, inclusive `from_date`/`to_date` Gregorian YYYY-MM-DD | 200 `OccasionPage` |
 | GET | `/api/occasions/{occasion_id}` | UUID path; no body | 200 `OccasionResponse` |
 | PATCH | `/api/occasions/{occasion_id}` | `UpdateOccasionRequest`; nonempty partial update | 200 `OccasionResponse` |
 | DELETE | `/api/occasions/{occasion_id}` | UUID path; no body | 204; no body |
@@ -898,7 +944,7 @@ The prototype's labels and local-device data are not server contracts. The table
 | Chat `/chat/[id]` | `conversations`, messages, read, WebSocket | Conversation ID comes from inbox; WebSocket has no durable replay, so use REST history after reconnect. |
 | Invoice `/invoice/[id]` | `orders/{id}/invoice`, `invoices/{id}`, promo preview/apply/remove; courier create/cancel; customer pay | Pay the returned current invoice ID after promo changes. No saved-card API. Production payment is disabled. |
 | Customer Calendar `/calendar` | `/api/occasions` CRUD | Customer-owned special dates; stored reminder preferences only, no automatic reminders or annual recurrence. |
-| Courier Calendar `/calendar` | `orders` can supply assigned delivery dates | No appointment CRUD, day/month range filter, or one-year appointments API. |
+| Courier Calendar `/calendar` | Assigned orders support inclusive delivery-date ranges for day/week/month views | No appointment CRUD or separate appointments API. |
 | Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
 | Courier Reports `/reports` and settings sheet | Wallet transactions can be read as raw entries | No earnings aggregates, comparison, chart series, target settings, or financial-notification preference API. |
 | Courier Statement `/statement` | Wallet transactions, cursor-paged | No date-range filtering, statement totals, or downloadable statement API. |

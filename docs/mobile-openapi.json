@@ -850,7 +850,7 @@
         },
         "x-mobile-screen": "Customer Create order `/request`",
         "x-audience": "Authenticated customer; bearer access token",
-        "x-before": "Optional `POST /api/media/upload-urls` → direct PUT → confirm for 0–3 photos",
+        "x-before": "Optional `POST /api/media/upload-urls` \u2192 direct PUT \u2192 confirm for 0\u20133 photos",
         "x-dependent-api": "`GET /api/orders/{order_id}` and `/waiting/[id]`; courier `GET /api/orders/available`",
         "x-availability": "configured environments",
         "security": [
@@ -864,12 +864,12 @@
           "orders"
         ],
         "summary": "List Orders",
-        "description": "List customer-owned or courier-assigned orders, newest first.",
+        "description": "List owned/assigned orders newest first, optionally within inclusive delivery dates.\n\nUse Gregorian YYYY-MM-DD bounds. Reset the cursor when dates or status change,\nand retain identical filters on subsequent pages. Responses remain unchanged.",
         "operationId": "list_orders_api_orders_get",
         "parameters": [
           {
-            "name": "status",
             "in": "query",
+            "name": "status",
             "required": false,
             "schema": {
               "anyOf": [
@@ -884,14 +884,14 @@
             }
           },
           {
-            "name": "cursor",
             "in": "query",
+            "name": "cursor",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "uuid"
+                  "format": "uuid",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -901,15 +901,53 @@
             }
           },
           {
-            "name": "limit",
             "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 20,
               "maximum": 100,
               "minimum": 1,
-              "default": 20,
-              "title": "Limit"
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
             }
           }
         ],
@@ -1246,7 +1284,7 @@
         },
         "x-mobile-screen": "Courier Delivery `/delivery/[id]`",
         "x-audience": "Authenticated active verified assigned courier; bearer access token",
-        "x-before": "Order `IN_PROGRESS`; 1–5 confirmed `DELIVERY_PROOF` image keys",
+        "x-before": "Order `IN_PROGRESS`; 1\u20135 confirmed `DELIVERY_PROOF` image keys",
         "x-dependent-api": "Customer `POST /api/orders/{order_id}/approve` or dispute",
         "x-availability": "configured environments",
         "security": [
@@ -1428,7 +1466,7 @@
         },
         "x-mobile-screen": "Courier Invoice `/invoice/[id]` authoring",
         "x-audience": "Authenticated active verified assigned courier; bearer access token",
-        "x-before": "Accepted `ASSIGNED` order; collect 1–20 line items",
+        "x-before": "Accepted `ASSIGNED` order; collect 1\u201320 line items",
         "x-dependent-api": "Customer `GET /api/orders/{order_id}/invoice` and promo/payment flow",
         "x-availability": "configured environments",
         "security": [
@@ -2275,7 +2313,7 @@
           "dev"
         ],
         "summary": "Simulate Payment",
-        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler — it never bypasses webhook processing.",
+        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler \u2014 it never bypasses webhook processing.",
         "operationId": "simulate_payment_api_dev_simulation_simulate_post",
         "requestBody": {
           "content": {
@@ -2427,30 +2465,30 @@
           "occasions"
         ],
         "summary": "List Occasions",
-        "description": "List owned dates, soonest first, with an optional inclusive date filter.",
+        "description": "List owned occasions by date then ID, within optional inclusive Gregorian bounds.\n\nUse YYYY-MM-DD. Reset the cursor when bounds change and retain identical filters\non subsequent pages. Malformed or reversed ranges return HTTP 422.",
         "operationId": "list_occasions_api_occasions_get",
         "parameters": [
           {
-            "name": "limit",
             "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 25,
               "maximum": 100,
               "minimum": 1,
-              "default": 25,
-              "title": "Limit"
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
-            "name": "cursor",
             "in": "query",
+            "name": "cursor",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "uuid"
+                  "format": "uuid",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -2460,20 +2498,41 @@
             }
           },
           {
-            "name": "from_date",
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
             "in": "query",
+            "name": "from_date",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "date"
+                  "format": "date",
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
               "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
             }
           }
         ],
@@ -3239,7 +3298,7 @@
             "type": "array",
             "maxItems": 3,
             "title": "Request Media Keys",
-            "description": "Confirmed request-photo keys (0–3)."
+            "description": "Confirmed request-photo keys (0\u20133)."
           }
         },
         "additionalProperties": false,
