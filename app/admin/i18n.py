@@ -15,6 +15,22 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Database backup": "نسخة احتياطية لقاعدة البيانات",
+    "Export format": "صيغة التصدير",
+    "Encrypted SQL": "ملف SQL مشفر",
+    "Plain SQL": "ملف SQL غير مشفر",
+    "Export password": "كلمة مرور التصدير",
+    "Export database": "تصدير قاعدة البيانات",
+    "Required for encrypted exports: at least 8 characters.": (
+        "مطلوبة للتصدير المشفر: 8 أحرف على الأقل."
+    ),
+    (
+        "Includes database schema and data. Stored encrypted fields stay encrypted. "
+        "Redis and storage files are not included."
+    ): (
+        "يشمل بنية قاعدة البيانات وبياناتها. تبقى الحقول المشفرة مشفرة. "
+        "لا يشمل Redis أو ملفات التخزين."
+    ),
     "Gender": "الجنس",
     "Deletion reason": "سبب الحذف",
     "Deletion Reason": "سبب الحذف",

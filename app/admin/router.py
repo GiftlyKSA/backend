@@ -30,6 +30,7 @@ from app.admin.assets import (
     THEME_SCRIPT,
     THEME_SCRIPT_VERSION,
 )
+from app.admin.backup_router import router as backup_router
 from app.admin.deps import (
     SESSION_COOKIE,
     AdminContext,
@@ -50,6 +51,7 @@ from app.repositories.admin_browse_query import BrowseOptions
 
 router = APIRouter(prefix="/v1/admin/admin", tags=["admin"], include_in_schema=False)
 router.include_router(table_router)
+router.include_router(backup_router)
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _TEMPLATES.env.finalize = finalize_admin_value

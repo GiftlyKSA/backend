@@ -145,6 +145,40 @@ checks, transactional money invariants or authenticated callbacks.
 
 ## 4. Administration and activity
 
+### Database export
+
+Open **Database backup** on the admin homepage. Download plain `giftly.sql` or
+password-encrypted `giftly.sql.enc` (8–1024 characters). Both capture the configured
+PostgreSQL database schema and data through `pg_dump`, including tables, rows,
+constraints, indexes, sequences, functions, triggers and Alembic history. Stored
+encrypted fields are preserved as ciphertext. The dump includes database creation
+and ownership/privilege statements; cluster roles must already exist when restoring.
+Redis state, S3 files, deployment secrets and PostgreSQL cluster roles are separate
+backups. Preserve field encryption keys separately to read encrypted data after restore.
+
+Exports require an active admin session and CSRF validation. One export runs at a
+time across replicas. A 60-second dump timeout and 512 MiB limit fail explicitly;
+there is no successful partial download. Temporary files are private and removed
+after response completion/disconnection or handled failure. Hard process termination
+can leave temporary files until the ephemeral container storage is removed.
+The Docker runtime includes `postgresql-client`; use a client compatible with the
+deployed PostgreSQL server. Container build and real dump/restore verification remain
+deployment checks; do not run backups through a transaction-pooling endpoint if the
+provider requires a direct PostgreSQL connection.
+
+Decrypt locally without importing or executing SQL:
+
+```text
+uv run --locked python -m app.decrypt_backup giftly.sql.enc giftly.sql
+```
+
+The command prompts for the password and refuses to overwrite an existing output.
+Format version 1 is `GIFTLYSQL1` (10 bytes), scrypt salt (16 bytes), GCM nonce
+(12 bytes), ciphertext and GCM tag (16 bytes). AES-256-GCM authenticates the header
+and SQL; scrypt uses N=32768, r=8, p=1 and a 32-byte key. Keep the password separately.
+Admin import is deferred; restoring SQL can replace data and requires a reviewed
+restore procedure and disposable-database verification first.
+
 The dashboard is `/v1/admin/admin`. Generic table pages support authenticated authorized
 CRUD, relationship selectors, allowlisted filters/sorting and 25/50/100-row pagination.
 Datetime fields use compatible pickers with UTC+3 input. Arabic is the default language;

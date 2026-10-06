@@ -2,6 +2,16 @@
 {% block content %}
 <header class="overview-heading"><div><p class="eyebrow">{{ tr('Admin') }}</p><h1>{{ tr('Overview') }}</h1><p class="note">{{ tr('A current view of orders, attention items, and system balances.') }}</p></div></header>
 {% set counts = overview.order_counts %}
+<details class="card">
+  <summary>{{ tr('Database backup') }}</summary>
+  <form method="post" action="/v1/admin/admin/database/export" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
+    <label>{{ tr('Export password') }}<input type="password" name="password" minlength="8" maxlength="1024" autocomplete="new-password" required><small>{{ tr('Required for encrypted exports: at least 8 characters.') }}</small></label>
+    <button type="submit" name="mode" value="encrypted">{{ tr('Encrypted SQL') }}</button>
+    <button type="submit" name="mode" value="plain" formnovalidate class="secondary">{{ tr('Plain SQL') }}</button>
+  </form>
+  <p class="note">{{ tr('Includes database schema and data. Stored encrypted fields stay encrypted. Redis and storage files are not included.') }}</p>
+</details>
 <section class="metrics" aria-label="{{ tr('Order summary') }}">
   <article class="card metric"><span class="metric-icon indigo">▣</span><span>{{ tr('Total orders') }}</span><strong>{{ counts.values()|sum }}</strong><small>{{ tr('All order statuses') }}</small></article>
   <article class="card metric"><span class="metric-icon amber">◷</span><span>{{ tr('Pending') }}</span><strong>{{ counts.get('NEW', 0) + counts.get('ASSIGNED', 0) + counts.get('WAITING_PAYMENT', 0) }}</strong><small>{{ tr('New, assigned, or awaiting payment') }}</small></article>
