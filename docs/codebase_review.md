@@ -1,5 +1,30 @@
 # Giftly codebase review
 
+## Scoped mobile-read review — 2026-10-07
+
+Scope: invoice listing, wallet statement/history date filters, order-media reads and
+their new account eligibility guard. This is not a new full-codebase security certification.
+
+| ID | Category | Severity / score | Status | Evidence / impact | Fix / verification |
+| --- | --- | --- | --- | --- | --- |
+| MOB-R1 | Reliability / validation | Medium (5/10) | Fixed | reporting_dates.py converted the first calendar day before adding the exclusive day, causing an OverflowError/500 for a valid upper-only bound. | Advance the local day before UTC conversion; reproduced failing regression now passes. |
+| MOB-R2 | Performance / SQL verification | Unverified risk | Pending disposable DB | Bounded page queries and SQL sums compiled; real invoice revision/ledger aggregation plans and PostgreSQL integration were not available locally. | Run new integration tests and EXPLAIN on representative data; existing ownership/date indexes reused, no speculative migration. |
+
+Independent read-only review found no other concrete defects in ownership/cursor scope,
+latest-visible invoice revisions, money serialization, signed media URLs or the final
+active-account guard. New reads use private,no-store; collections are bounded and do
+not perform per-row relationship queries. Statement page/totals share one SQL snapshot,
+but later pages refresh totals if ledger state changes. Existing unrestricted financial
+and audit admin CRUD remains an accepted integrity risk; this change does not claim
+immutable statements. Deployment and real-provider behavior remain UNCONFIRMED.
+
+Verification: focused regression tests passed, including HTTP schema/role boundaries
+and inactive/deleted/unverified-account cases. Ruff/format/strict mypy passed on the
+isolated release checkout. Final full suite: 740 passed, 204 skipped, four Starlette deprecation warnings.
+Both pre-commit and pre-push hook suites passed.
+No Docker, real-provider request or production database operation ran.
+
+
 **Review date:** 2026-10-04 · **Status:** current review after prior-finding fixes.
 
 [Project documentation](documentation.md) · [API](api.md) · [Outstanding tasks](tasks.md)

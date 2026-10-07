@@ -30,6 +30,10 @@ class TransactionResponse(BaseModel):
     status: str = Field(..., description="PENDING | SETTLED | REVERSED.")
     balance_after: str = Field(..., description="Wallet balance after this entry.")
     created_at: str = Field(..., description="ISO-8601 UTC timestamp.")
+    description: str | None = None
+    order_id: str | None = None
+    invoice_id: str | None = None
+    payment_intent_id: str | None = None
 
 
 class TransactionPage(BaseModel):

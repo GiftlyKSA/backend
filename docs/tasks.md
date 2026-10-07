@@ -1,5 +1,23 @@
 # Giftly task tracker
 
+## Mobile capability delivery — created 2026-10-07
+
+| Task | Short description | Status | Created | Urgency / note |
+| --- | --- | --- | --- | --- |
+| MOB-01 | Owned invoice list and revision/date filters | Verified; deployment unconfirmed | 2026-10-07 | High; deploy unconfirmed |
+| MOB-02 | Dated wallet statement, SQL totals and linked ledger rows | Verified; deployment unconfirmed | 2026-10-07 | High; totals are live per page |
+| MOB-03 | Authorized paginated order photos/proof reads | Verified; deployment unconfirmed | 2026-10-07 | High; signed URLs expire in five minutes |
+| MOB-04 | Top-up idempotency and lost-request recovery | Pending review of unreleased workspace payment work | 2026-10-07 | High; pushed contract remains three fields |
+| MOB-05 | Courier proceeds/profit reports and target settings | Pending earnings-basis decision | 2026-10-07 | High; balance is not earnings |
+| MOB-06 | Durable inbox and order timeline | Planned | 2026-10-07 | High; push/live snapshots do not provide history |
+| MOB-07 | Delivered occasion reminders | Planned | 2026-10-07 | Medium; stored reminder preferences are not delivery |
+| MOB-08 | Courier avatar flow | Planned | 2026-10-07 | Medium; customer avatars excluded |
+| MOB-09 | Phone change with scoped proof and session revocation | Planned | 2026-10-07 | High; both-number verification proposed |
+| MOB-10 | Recoverable account deletion/contract termination | Policy clarification pending | 2026-10-07 | High; user approved 14-day recovery and detailed email/support-call fund-return notice |
+| MOB-11 | Customer text order search | Search/index policy pending | 2026-10-07 | Medium; preserve dates/status/ownership |
+| MOB-12 | Appointments, bank profiles, annual recurrence, statement PDF | Optional approval pending | 2026-10-07 | Medium; do not expose unsupported switches |
+
+
 **Created / last updated:** 2026-10-04 · **Source:** [current codebase review](codebase_review.md).
 
 Fresh outstanding work only. No demo tasks or completed historical plans. Security

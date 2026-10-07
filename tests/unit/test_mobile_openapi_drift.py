@@ -20,7 +20,7 @@ def test_mobile_openapi_matches_non_admin_wire_contract() -> None:
     operations = {
         (path, method): operation
         for path, path_operations in generated["paths"].items()
-        if not path.startswith("/api/admin/")
+        if not path.startswith(("/api/admin/", "/api/dev/", "/api/webhooks/"))
         for method, operation in path_operations.items()
         if method in _METHODS
     }

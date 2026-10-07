@@ -11,14 +11,15 @@ import uuid
 from asyncio import to_thread
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import Response as HttpResponse
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.money import money_str, parse_money, parse_rate
 from app.models import Invoice, InvoiceItem
-from app.models.enums import UserRole
+from app.models.enums import InvoiceStatus, UserRole
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.invoice_promo_repository import InvoicePromoRepository
 from app.repositories.invoice_repository import InvoiceRepository
@@ -26,6 +27,8 @@ from app.repositories.order_repository import OrderRepository
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
+from app.schemas.date_range import DateRange, date_range
+from app.schemas.invoice_list import InvoicePage
 from app.schemas.invoices import (
     ApplyInvoicePromoRequest,
     CreateInvoiceRequest,
@@ -37,6 +40,7 @@ from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_pdf import render_invoice_pdf
 from app.services.invoice_promo_service import InvoicePromoService
 from app.services.invoice_service import InvoiceLineInput, InvoiceService, NewInvoiceInput
+from app.services.mobile_invoice_service import MobileInvoiceService
 from app.services.payment_reservation_service import build_payment_reservation_service
 from app.services.payment_service import build_payment_service
 from app.services.promo_service import PromoService
@@ -47,6 +51,35 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 _Courier = require_role(UserRole.COURIER)
 _Customer = require_role(UserRole.CUSTOMER)
 _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
+
+
+@router.get("/invoices", response_model=InvoicePage)
+async def list_invoices(
+    response: HttpResponse,
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_Participant)],
+    dates: Annotated[DateRange, Depends(date_range)],
+    status: Annotated[InvoiceStatus | None, Query()] = None,
+    include_historical: Annotated[bool, Query()] = False,
+    cursor: Annotated[uuid.UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> InvoicePage:
+    """List owned invoice revisions; issued-date bounds use Asia/Riyadh days."""
+    response.headers["Cache-Control"] = "private, no-store"
+    service = MobileInvoiceService(
+        InvoiceRepository(db),
+        CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),
+    )
+    return await service.list(
+        actor.id,
+        role=actor.role,
+        limit=limit,
+        cursor=cursor,
+        status=status,
+        include_historical=include_historical,
+        from_date=dates.from_date,
+        to_date=dates.to_date,
+    )
 
 
 def _service(request: Request, db: AsyncSession) -> InvoiceService:

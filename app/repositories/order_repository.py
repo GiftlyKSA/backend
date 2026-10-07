@@ -223,6 +223,44 @@ class OrderRepository:
             )
         )
 
+    async def page_media_for_actor(
+        self,
+        order_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        *,
+        purpose: MediaType | None,
+        limit: int,
+        cursor: uuid.UUID | None,
+    ) -> list[OrderMedia]:
+        """Page only request/proof photos for the order's current participants."""
+        query = (
+            select(OrderMedia)
+            .join(Order, Order.id == OrderMedia.order_id)
+            .where(
+                OrderMedia.order_id == order_id,
+                (Order.customer_id == actor_id) | (Order.courier_id == actor_id),
+                OrderMedia.media_type.in_((MediaType.CUSTOMER_REQUEST, MediaType.DELIVERY_PROOF)),
+            )
+        )
+        if purpose is not None:
+            query = query.where(OrderMedia.media_type == purpose)
+        if cursor is not None:
+            anchor = await self._session.scalar(query.where(OrderMedia.id == cursor))
+            if anchor is None:
+                raise NotFoundError("Pagination cursor not found in this list.")
+            query = query.where(
+                tuple_(OrderMedia.created_at, OrderMedia.id)
+                > (
+                    anchor.created_at,
+                    anchor.id,
+                )
+            )
+        return list(
+            await self._session.scalars(
+                query.order_by(OrderMedia.created_at, OrderMedia.id).limit(limit)
+            )
+        )
+
     async def list_available(
         self, city_id: uuid.UUID, *, limit: int, before_id: uuid.UUID | None
     ) -> list[Order]:

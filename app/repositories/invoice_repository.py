@@ -11,12 +11,14 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import exists, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
+from app.core.exceptions import NotFoundError
 from app.core.pricing import PricingLine, PricingResult
 from app.models import Invoice, InvoiceItem, Order
-from app.models.enums import InvoiceStatus
+from app.models.enums import InvoiceStatus, UserRole
 
 # An invoice in one of these statuses blocks a second active invoice for the order
 # (mirrors the partial unique index ``uq_invoices_one_active_per_order``).
@@ -29,6 +31,59 @@ class InvoiceRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""
         self._session = session
+
+    async def list_for_actor(
+        self,
+        actor_id: uuid.UUID,
+        *,
+        role: UserRole,
+        limit: int,
+        cursor: uuid.UUID | None,
+        status: InvoiceStatus | None,
+        include_historical: bool,
+        start: datetime | None,
+        end: datetime | None,
+    ) -> list[tuple[Invoice, bool]]:
+        """Filter revisions and ownership before a deterministic keyset page."""
+        newer = aliased(Invoice)
+        later = select(newer.id).where(
+            newer.order_id == Invoice.order_id,
+            tuple_(newer.created_at, newer.id) > tuple_(Invoice.created_at, Invoice.id),
+        )
+        if role is UserRole.CUSTOMER:
+            later = later.where(newer.status != InvoiceStatus.DRAFT)
+        current = ~exists(later.correlate(Invoice))
+        owner = Order.customer_id if role is UserRole.CUSTOMER else Order.courier_id
+        query = (
+            select(Invoice, current.label("is_current"))
+            .join(Order, Order.id == Invoice.order_id)
+            .where(owner == actor_id)
+        )
+        if role is UserRole.CUSTOMER:
+            query = query.where(Invoice.status != InvoiceStatus.DRAFT)
+        if not include_historical:
+            query = query.where(current)
+        if status is not None:
+            query = query.where(Invoice.status == status)
+        if start is not None:
+            query = query.where(Invoice.issued_at >= start)
+        if end is not None:
+            query = query.where(Invoice.issued_at < end)
+        if cursor is not None:
+            anchor = await self._session.scalar(query.where(Invoice.id == cursor))
+            if anchor is None:
+                raise NotFoundError("Pagination cursor not found in this list.")
+            query = query.where(
+                tuple_(Invoice.created_at, Invoice.id)
+                < (
+                    anchor.created_at,
+                    anchor.id,
+                )
+            )
+        rows = await self._session.execute(
+            query.order_by(Invoice.created_at.desc(), Invoice.id.desc()).limit(limit)
+        )
+        return [(row[0], bool(row[1])) for row in rows]
 
     async def list_vat_repair_ids(self, *, after: uuid.UUID | None, limit: int) -> list[uuid.UUID]:
         """Page unpaid candidates without exposing customer data to the repair report."""

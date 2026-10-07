@@ -1,11 +1,50 @@
 # Giftly API reference
 
+## Mobile read additions — 2026-10-07
+
+Release verification passed; PaaS deployment is UNCONFIRMED. These operations
+require Bearer authentication and current customer/courier eligibility. They do not
+expose administrative, development or provider operations.
+
+| Screen | Operation | Input | Output / behavior |
+| --- | --- | --- | --- |
+| Wallet invoices | GET `/api/invoices` | Optional status, from_date/to_date (issued date in Riyadh), include_historical=false, UUID cursor, limit1..100 default25 | InvoicePage with compact InvoiceSummary rows, current marker, decimal total; newest created_at/id first. Customers cannot list drafts. |
+| Wallet statement | GET `/api/wallets/me/statement` | Required Gregorian from_date/to_date; inclusive Riyadh days, max366 days; UUID cursor; limit1..100 default25 | WalletStatement: currency, timezone, bounds, as_of, whole-range status-separated money totals, items, next_cursor. Totals and items share one SQL snapshot per response. |
+| Wallet history | GET `/api/wallets/me/transactions` | New optional Gregorian from_date/to_date; existing cursor/default20 preserved | Existing page plus additive nullable description/order_id/invoice_id/payment_intent_id metadata. No filters means existing behavior. |
+| Order photos / delivery proof | GET `/api/orders/{order_id}/media` | Optional purpose ORDER_REQUEST or DELIVERY_PROOF, UUID cursor, limit1..100 default25 | Oldest created_at/id first. Trusted MIME/size, purpose and five-minute signed access_url/expires_at; no raw object key. Current participants only; foreign order404 even if empty. |
+
+Financial date predicates use UTC midnight minus three hours through the following
+local midnight, exclusive. Output timestamps remain UTC. Calendar extremes that cannot
+be represented as UTC bounds are rejected422. Reversed/malformed dates422. Empty pages
+return items=[] and next_cursor=null. New lists overfetch one row to avoid phantom next
+pages. Existing wallet history preserves its existing next-cursor behavior.
+
+Invoice current means the latest visible revision by created_at/id for an order,
+regardless of the status filter; include_historical=true includes earlier revisions.
+No invoice number is invented; use the returned UUID for existing detail/PDF operations.
+Status accepts DRAFT, ISSUED, PAID, CANCELLED, EXPIRED, REFUNDED; drafts remain courier-only.
+
+Statement settled_net is settled_credits minus settled_debits. Pending/reversed sums
+are separate nonnegative credits/debits and do not affect settled_net. Totals cover
+the full selected range, not a page. Each page refreshes totals/as_of if ledger state
+changes: this is a live statement, not a frozen export or historical available balance.
+Reset pagination when filters change; preserve identical filters thereafter. Foreign
+or out-of-range anchors404. All new reads return Cache-Control: private, no-store.
+Do not sum pages or infer earnings/payment success from wallet balances.
+
+Common domain errors use the existing error envelope; schema422 may use detail[].
+Handle401/403/404/422/503 distinctly. On429 honor Retry-After seconds. Render all user
+text as plain text; signed media links must be refreshed after expiry. No response
+cache or schema migration is introduced for these read operations. PostgreSQL execution
+plans/integration behavior require disposable database verification, not Docker locally.
+
+
 Updated 2026-10-04. This is maintained API documentation, not an implementation prompt.
 
 [Project documentation](documentation.md) · [Current review](codebase_review.md) · [Tasks](tasks.md)
 
-The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 56 implemented
-HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 56 supported
+mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
 No endpoint should be inferred for an unsupported screen: it will be added later.
@@ -962,7 +1001,7 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **56 non-admin HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **56 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
 
 ## Invoice PDF and item-only VAT (2026-10-04)
 

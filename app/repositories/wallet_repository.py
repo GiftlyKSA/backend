@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Numeric, Uuid, cast, func, null, select, true, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import NotFoundError
 from app.core.money import ZERO
@@ -29,6 +31,15 @@ class ReconciliationSnapshot:
     correlations_checked: int = 0
     wallet_drifts: list[tuple[uuid.UUID, Decimal, Decimal]] = field(default_factory=list)
     correlation_drifts: list[tuple[uuid.UUID, Decimal]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StatementRows:
+    """A bounded page and whole-range sums from a single SQL statement snapshot."""
+
+    items: list[Transaction]
+    totals: dict[str, Decimal]
+    as_of: datetime
 
 
 class WalletRepository:
@@ -128,7 +139,13 @@ class WalletRepository:
         return Decimal(total if total is not None else 0)
 
     async def list_transactions(
-        self, wallet_id: uuid.UUID, *, limit: int, before_id: uuid.UUID | None = None
+        self,
+        wallet_id: uuid.UUID,
+        *,
+        limit: int,
+        before_id: uuid.UUID | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
     ) -> list[Transaction]:
         """Return a wallet's transactions, newest first, keyset-paginated by id.
 
@@ -141,18 +158,89 @@ class WalletRepository:
             .order_by(Transaction.created_at.desc(), Transaction.id.desc())
             .limit(limit)
         )
+        if start is not None:
+            query = query.where(Transaction.created_at >= start)
+        if end is not None:
+            query = query.where(Transaction.created_at < end)
         if before_id is not None:
-            anchor = await self._session.scalar(
-                select(Transaction).where(
-                    Transaction.id == before_id, Transaction.wallet_id == wallet_id
-                )
+            anchor_query = select(Transaction).where(
+                Transaction.id == before_id, Transaction.wallet_id == wallet_id
             )
+            if start is not None:
+                anchor_query = anchor_query.where(Transaction.created_at >= start)
+            if end is not None:
+                anchor_query = anchor_query.where(Transaction.created_at < end)
+            anchor = await self._session.scalar(anchor_query)
             if anchor is None:
                 raise NotFoundError("Pagination cursor not found in this list.")
             query = query.where(
                 tuple_(Transaction.created_at, Transaction.id) < (anchor.created_at, anchor.id)
             )
         return list(await self._session.scalars(query))
+
+    async def statement(
+        self,
+        wallet_id: uuid.UUID,
+        *,
+        start: datetime,
+        end: datetime,
+        limit: int,
+        cursor: uuid.UUID | None,
+    ) -> StatementRows:
+        """Aggregate all range entries in SQL while returning only a bounded page."""
+        scope = (
+            Transaction.wallet_id == wallet_id,
+            Transaction.created_at >= start,
+            Transaction.created_at < end,
+        )
+        page = select(Transaction).where(*scope)
+        if cursor is not None:
+            anchor = await self._session.scalar(page.where(Transaction.id == cursor))
+            if anchor is None:
+                raise NotFoundError("Pagination cursor not found in this list.")
+            page = page.where(
+                tuple_(Transaction.created_at, Transaction.id)
+                < (
+                    anchor.created_at,
+                    anchor.id,
+                )
+            )
+        names: list[str] = []
+        sums = []
+        for status in TransactionStatus:
+            for positive, suffix in ((True, "credits"), (False, "debits")):
+                name = f"{status.value.lower()}_{suffix}"
+                names.append(name)
+                amount = Transaction.amount if positive else -Transaction.amount
+                sign = Transaction.amount > ZERO if positive else Transaction.amount < ZERO
+                sums.append(
+                    func.coalesce(
+                        func.sum(amount).filter(
+                            Transaction.status == status,
+                            sign,
+                        ),
+                        ZERO,
+                    ).label(name)
+                )
+        totals = select(*sums, func.statement_timestamp().label("as_of")).where(*scope).subquery()
+        page_rows = (
+            page.order_by(Transaction.created_at.desc(), Transaction.id.desc())
+            .limit(limit)
+            .subquery()
+        )
+        entry = aliased(Transaction, page_rows)
+        query = (
+            select(entry, *[totals.c[name] for name in names], totals.c.as_of)
+            .select_from(totals)
+            .outerjoin(page_rows, true())
+            .order_by(entry.created_at.desc(), entry.id.desc())
+        )
+        result = list(await self._session.execute(query))
+        return StatementRows(
+            items=[row[0] for row in result if row[0] is not None],
+            totals={name: Decimal(result[0][index + 1]) for index, name in enumerate(names)},
+            as_of=result[0][-1],
+        )
 
     async def reconciliation_snapshot(self) -> ReconciliationSnapshot:
         """Read counts and only discrepancies in one READ COMMITTED statement snapshot.

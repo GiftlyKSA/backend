@@ -128,6 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         media,
         occasions,
         order_events,
+        order_media,
         orders,
         promos,
         ratings,
@@ -143,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(wallets.router)
     app.include_router(media.router)
     app.include_router(orders.router)
+    app.include_router(order_media.router)
     app.include_router(order_events.router)
     app.include_router(invoices.router)
     app.include_router(promos.router)

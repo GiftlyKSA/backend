@@ -354,3 +354,460 @@ bounded work, not simply increasing pool sizes or worker counts.
 
 Five Markdown references are maintained in `docs/`; OpenAPI JSON and the dashboard
 concept image are supporting artifacts. UI-agent prompts are delivered in chat only.
+
+
+## Mobile capability proposal — 2026-10-07 — awaiting approval
+
+This section is a design proposal, not an available API contract for every feature.
+The first core read batch implements invoice lists, dated wallet statements and order
+media reads; the remaining capabilities below are pending. Before work began, the
+remote `master` baseline was verified as
+`c826d0005ae39644f39ae59ba2e38fcf48ccc338` using `git ls-remote`. Actual PaaS deployment
+is **UNCONFIRMED**. The committed mobile specification at that revision is the pushed
+baseline. Other sections and workspace specifications contain uncommitted payment
+changes and must not be treated as released contracts. Mobile screen names below
+come from the requested screen inventory; the mobile repository was not changed.
+
+### Inventory and reuse
+
+| Capability / screen | Pushed operations to reuse | Remaining work |
+| --- | --- | --- |
+| Courier home / earnings reports | Own wallet and transaction history | Earnings aggregates, charts, comparison, targets |
+| Courier report settings | Own profile read/update | Target and supported notification preferences |
+| Wallet statement | `GET /api/wallets/me/transactions` | Date filtering, period totals, safe links/descriptions; document export optional |
+| Notifications | Device registration; best-effort push; new-order delivery outbox | Owned persistent inbox, unread counts and read actions |
+| Customer occasions | `/api/occasions` CRUD and inclusive date filters | Actual reminder delivery; recurrence optional |
+| Courier calendar | `/api/orders` assigned-order date/status filters | Independent appointments, only if approved |
+| Wallet invoices | Invoice detail, active order invoice, invoice PDF | Account-wide list; no pushed order invoice-history list |
+| Courier avatar / bank | Profile contains nullable avatar URL; encrypted IBAN in withdrawals | Avatar always returns null; no avatar mutation or saved bank profile |
+| Change phone | Login OTP and Saudi phone normalization | Separate authenticated change challenge; do not repurpose login verification |
+| Delete account / terminate contract | Internal DELETED account fields | No mobile submission/status operation or approved business process |
+| Customer order search | `/api/orders` date/status filters and cursor | Text search; no defined order number (UUID is the order identifier) |
+| Order timeline / photos | Order details, live order WebSocket; media upload/confirm; chat attachment reads | Historical status timeline and authorized order-media reads |
+| Top-up recovery | `POST /api/wallets/topup`; own wallet/history | Pushed creation has no idempotency header or recovery operation |
+
+Uncommitted workspace operations already include `GET /api/wallets/me/topup-session`,
+`GET /api/orders/{order_id}/payment-session`, `GET /api/payment-sessions/{intent_id}`,
+and `POST /api/payment-sessions/{intent_id}/refresh` and `/cancel`. Reuse and review
+these rather than creating replacements. Workspace top-up responses also contain
+`status` and `session_reused`, and transaction responses contain links/descriptions.
+None of these additions is pushed. Existing test files do not establish deployment
+or successful real-provider integration. Production payment safeguards stay enabled.
+
+### Common proposed contract
+
+- Every new operation requires a verified Bearer access token. Actor and wallet IDs
+  come from authentication. No request accepts an owner, role, balance or calculated total.
+- Default eligibility: active non-deleted customers; active verified couriers. Existing
+  profile/verification routes keep their current rules. Access to historical financial
+  records for suspended/rejected couriers needs a separate product decision; do not
+  silently weaken the existing wallet eligibility boundary.
+- `UUID` means a UUID string; `timestamp` means ISO-8601 with UTC offset; `date` means
+  strict Gregorian `YYYY-MM-DD`; `money` means a finite decimal string with exactly
+  two fractional digits on output. Currency is `SAR`. No JSON floating-point money.
+- New write schemas reject unknown fields. User text remains text: escape at rendering,
+  never execute it or strip arbitrary code. Validate lengths and control characters
+  where needed. Clients render descriptions/titles without HTML interpretation.
+- New lists use `limit: integer 1..100`, default 25, and an opaque signed cursor or
+  existing UUID cursor where compatible. Use a matching compound indexed keyset,
+  fetch at most limit+1, and return `next_cursor: string|null`. New opaque cursors bind
+  account, filters, ordering and snapshot. Reset a cursor when filters change.
+- Existing list limits/order/cursor semantics remain unchanged when filters are omitted.
+  Do not change all existing endpoints to the new default. Dates on orders/occasions
+  remain direct DATE comparisons without timezone conversion.
+- Financial timestamp ranges use proposed fixed `Asia/Riyadh`: inclusive local dates
+  converted to `[from_date 00:00, day-after-to_date 00:00)` UTC predicates. For example
+  October 1 means UTC September 30 at 21:00 through October 1 at 21:00 exclusive.
+  Responses state timezone and bounds; persisted instants and timestamp output remain UTC.
+- Errors retain `{"error":{"code":"NOT_FOUND","message":"…","request_id":"…"}}`.
+  Missing/foreign objects return 404; invalid authentication 401; ineligible role/account
+  403; conflicting state/version/idempotency 409; malformed input/reversed dates 422.
+  Schema 422 may retain FastAPI `{"detail":[...]}`. 429 includes `Retry-After` seconds:
+  wait that duration, do not loop or retry a financial write with a new key. Dependency
+  failures return safe 503; production payments retain `PAYMENTS_DISABLED`.
+- Load screens with a skeleton, show empty lists/charts explicitly, preserve input on
+  validation failures, refresh after a stale cursor/version, and offer deliberate retry
+  after dependency failures. Reads must never turn permission failures into empty success.
+- Start with bounded indexed SQL and **no new Redis response cache**. Financial/inbox
+  reads use `Cache-Control: private, no-store`; eligibility is checked on every call.
+  Only add account/filter/version-scoped short-lived cache after measuring benefit.
+  Mutation invalidation must cover services, workers and authorized admin CRUD. Existing
+  unrestricted financial/audit admin mutations limit report immutability guarantees.
+
+### 1. Courier earnings: home and reports
+
+**New proposed:** `GET /api/couriers/me/earnings?from_date=2026-10-04&to_date=2026-10-10&granularity=day`.
+Courier-only. Both dates required; granularity `day|week|month`, maximum 366 days and
+366 buckets. Reject reversed ranges/unsupported granularity with 422. No pagination.
+Suggested weeks are Sunday–Saturday in Asia/Riyadh; months are calendar months.
+Zero-fill buckets, clip first/last buckets to requested bounds. Previous comparison
+uses the immediately preceding equally long date range; UI sends a full calendar
+month when it wants a monthly selection (previous comparison is equal days, not
+automatically the previous calendar month). A calendar-month comparison selector
+would require an explicitly approved different policy.
+
+Proposed response example (all fields required unless shown null):
+
+```json
+{"currency":"SAR","timezone":"Asia/Riyadh","from_date":"2026-10-04","to_date":"2026-10-10","basis":"SETTLED_COURIER_PROCEEDS","settled_total":"700.00","pending_total":null,"reversed_total":"0.00","previous":{"from_date":"2026-09-27","to_date":"2026-10-03","settled_total":"500.00","difference":"200.00","percentage":"40.00","comparison":"INCREASE"},"granularity":"day","buckets":[{"from_date":"2026-10-04","to_date":"2026-10-04","amount":"100.00"}],"target":{"enabled":true,"period":"WEEK","amount":"1000.00","period_start":"2026-10-04","period_end":"2026-10-10","settled_total":"700.00","progress_percent":"70.00"}}
+```
+
+Example buckets are abbreviated; actual output contains every bucket. Percentage is
+a decimal string, null when the previous total is zero: comparison `NO_BASELINE` when
+current is nonzero, `UNCHANGED` when both are zero. Otherwise `INCREASE|DECREASE|UNCHANGED`.
+Progress uses the complete current target period, not an arbitrary report subset;
+return null for disabled target, retain earned amounts exceeding the target and allow
+progress over 100%. Label it proceeds unless profit accounting is approved.
+
+Evidence: `MoneyService.release_escrow_on_completion` and `split_escrow` credit owned
+`ESCROW_RELEASE` entries. `core/pricing.py` computes payout from item net plus courier
+fee less commission; item reimbursement is included. Wallet balance also includes
+top-ups/withdrawals and is not earnings. Do not recompute historical payout using
+today's commission. Pending amounts are null until an authoritative accrued-proceeds
+source exists; do not equate paid customer escrow with courier earnings.
+
+Approval required for proceeds versus fee-only profit and correction classification.
+Define net signed settlement entries plus explicit linked compensating adjustments;
+exclude top-ups, withdrawals and unrelated rewards. PENDING/REVERSED entries never
+contribute to settled total. Add a true `settled_at` if settlement can follow creation;
+`updated_at` is not an immutable settlement date. Do not fabricate historical times.
+SQL aggregates/grouping, no loading full ledger; existing wallet/created index is useful,
+but a settlement-time index/backfill needs measured plans. Test fee/dispute accounting,
+pending/reversed exclusion, corrections, previous zero, timezone boundaries and isolation.
+Possible 15-second private cache only after measurement, invalidated after settlement,
+correction and target updates. Home maps total/comparison/target; report maps buckets.
+
+### 2. Courier report settings
+
+**New proposed:** `GET` and `PATCH /api/couriers/me/report-settings`, eligible courier-only.
+PATCH example (required optimistic version; omitted preferences stay unchanged):
+
+```json
+{"version":1,"target_enabled":true,"target_amount":"1000.00","target_period":"WEEK","financial_notifications":{"earnings_settled":true,"withdrawal_status_changed":true}}
+```
+
+GET/PATCH output:
+
+```json
+{"version":2,"updated_at":"2026-10-07T09:00:00Z","target_enabled":true,"target_amount":"1000.00","target_period":"WEEK","financial_notifications":{"earnings_settled":true,"withdrawal_status_changed":true},"supported_financial_events":["EARNINGS_SETTLED","WITHDRAWAL_STATUS_CHANGED"]}
+```
+
+Types: version positive integer; enabled/preferences booleans; amount positive money
+when enabled, maximum proposed `1000000.00`; period `WEEK|MONTH`; disabled initial
+target amount/period may be null. Version conflict 409; invalid/null enabled target 422.
+Notifications are offered only when a durable event/inbox delivery implementation is
+available. Until then omit functional switches and supported events, not a fake success.
+Propose in-app delivery always, optional push where registered; approve events first.
+New owned settings row with version; no date filtering/pagination/cache initially.
+Tests cover lost updates, ownership, eligibility, target math and real notification dispatch.
+
+### 3. Wallet statement
+
+**Extend** `GET /api/wallets/me/transactions` with optional from_date/to_date, retaining
+its default limit 20 and UUID cursor. **New:** `GET /api/wallets/me/statement` with
+required date bounds, maximum 366 days, cursor and limit default 25. Eligible customers
+and couriers, own wallet only. No initial type/status filters: avoid totals ambiguities.
+
+```json
+{"currency":"SAR","timezone":"Asia/Riyadh","from_date":"2026-10-01","to_date":"2026-10-31","as_of":"2026-10-07T09:00:00Z","totals":{"settled_credits":"700.00","settled_debits":"100.00","settled_net":"600.00","pending_credits":"0.00","pending_debits":"0.00","reversed_credits":"0.00","reversed_debits":"0.00"},"items":[{"id":"11111111-1111-4111-8111-111111111111","amount":"700.00","type":"ESCROW_RELEASE","status":"SETTLED","balance_after":"700.00","created_at":"2026-10-06T09:00:00Z","description":"Order settlement","order_id":"22222222-2222-4222-8222-222222222222","invoice_id":null,"payment_intent_id":null}],"next_cursor":null}
+```
+
+Totals are whole-range SQL sums, not current-page sums; credits/debits are nonnegative
+money strings, net signed. Existing enum transaction types remain authoritative.
+Links UUID|null; description string|null with safe server-authored presentation.
+Workspace already adds links: review/reuse rather than duplicate. Order by created_at
+DESC,id DESC; ensure anchors belong to same wallet/date scope. Consistent totals/pages
+need a documented `as_of` cutoff plus ledger change version: reject/restart a snapshot
+when pending statuses or corrections change. READ COMMITTED alone does not freeze
+multiple HTTP pages. No promised opening/closing balance: historical held balances are
+not reconstructed by this schema. No PDF/export until approved. Existing wallet/time
+index; evaluate plans for aggregation. Tests: exact signs/status sums, same-day UTC+3,
+unchanged multipage dataset, snapshot changes, foreign anchors and no full-memory scan.
+
+### 4. In-app notifications
+
+**New:** `GET /api/notifications?unread_only=true&limit=25&cursor=…`,
+`GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`,
+`POST /api/notifications/read-all`. Active customers/eligible couriers; actor-owned rows.
+No POST body for read actions. List newest created_at/id first, opaque scoped cursor.
+
+```json
+{"items":[{"id":"11111111-1111-4111-8111-111111111111","type":"ORDER_STATUS_CHANGED","title_key":"notification.order_status_changed.title","body_key":"notification.order_status_changed.body","parameters":{"status":"ASSIGNED"},"created_at":"2026-10-07T09:00:00Z","read_at":null,"navigation":{"kind":"ORDER","order_id":"22222222-2222-4222-8222-222222222222"}}],"next_cursor":null,"unread_count":1}
+```
+
+Unread-count response `{"unread_count":1}`; read-one returns the item with UTC read_at;
+read-all `{"marked_count":1,"read_at":"2026-10-07T09:01:00Z"}`. Counts nonnegative ints;
+parameters are typed per allowlisted event, not arbitrary HTML/provider payloads.
+Navigation allowlist `ORDER|OCCASION|WALLET`, only relevant typed IDs; destination read
+must reauthorize. No PII/chat text in push. New owned inbox with deduplication key,
+owned-time and unread indexes; read-all uses one bounded-condition SQL update, not a
+per-item loop. New arrivals after its cutoff remain unread. Outbox records/in-app insertion
+share the originating transaction; push failure does not lose inbox data. Define retention
+before production. Tests: foreign read, duplicate event, idempotent reads, concurrent
+read-all/new insert, unread paging and revoked destination. No Redis cache initially.
+
+### 5. Occasion reminders and recurrence
+
+**Reuse** existing POST/GET `/api/occasions`, GET/PATCH/DELETE `/api/occasions/{id}`.
+Customer-only. Current fields: title string 1..120, occasion_date date,
+reminder_days_before integer 0..365; response adds UUID and UTC created/updated_at.
+Lists use date ASC,id ASC, default limit 20; inclusive from_date/to_date already pushed.
+Example creation `{"title":"Anniversary","occasion_date":"2027-02-01","reminder_days_before":7}`.
+
+Proposed additive request fields `reminder_enabled: boolean` and `recurrence: NONE|ANNUAL`;
+output also `timezone: "Asia/Riyadh"`, `next_occurrence_date: date|null`,
+`next_reminder_at: timestamp|null`. Example additions:
+`{"reminder_enabled":true,"recurrence":"NONE","timezone":"Asia/Riyadh","next_occurrence_date":"2027-02-01","next_reminder_at":"2027-01-25T06:00:00Z"}`.
+Do not activate existing stored reminders automatically without an approved rollout.
+Recommend opt-in in-app plus registered-device push at 09:00 Riyadh, not SMS/email.
+Permission denied/no device still yields in-app notification. Bounded worker batches,
+unique occasion/occurrence/channel deduplication, leased retries with backoff and finite
+cutoff; delivery cannot guarantee exactly-once external push after uncertain timeouts.
+
+Annual recurrence and February 29 (`FEBRUARY_28|MARCH_1|LEAP_YEARS_ONLY`) need approval.
+Keep saved-occasion list semantics stable; if recurrence approved, add explicit
+`GET /api/occasions/occurrences?from_date=…&to_date=…` (max 366 days) with bounded
+expanded rows `occasion_id, occurrence_date, title` and occurrence-date/id cursor.
+Do not silently change saved occasion IDs/dates into virtual records. Reminder schedule
+and dedup/outbox migration needed; test leap dates, edits/cancellation, retries, date
+filters and ownership. No response cache initially; any later range cache invalidates
+on actual occasion/recurrence changes, not unrelated new orders.
+
+### 6. Independent courier appointments — optional decision
+
+If approved, **new** POST/GET `/api/couriers/me/appointments`, GET/PATCH/DELETE
+`/api/couriers/me/appointments/{id}`. Eligible courier-only. Proposed date-only entries
+match current delivery calendar; no invented duration/status/reminder.
+POST `{"title":"Supplier visit","appointment_date":"2026-10-10","notes":null}`;
+PATCH accepts supplied title/date/notes, at least one; notes nullable max 2000,
+nonblank title 1..120. Response same fields plus UUID, UTC created_at/updated_at.
+DELETE 204. List `{items:[appointment],next_cursor:null}`, inclusive optional from/to,
+default 25; appointment_date ASC,id ASC. UI uses distinct appointment and order IDs.
+Owned appointments table/index `(courier_id,appointment_date,id)`; no cache initially.
+Test all CRUD ownership, equal-date pages, bounds and courier eligibility. If timed
+appointments are desired instead, approve timestamp/duration/overlap semantics first.
+
+### 7. Account-wide invoice list
+
+**New:** `GET /api/invoices?status=PAID&from_date=2026-10-01&to_date=2026-10-31&include_historical=false&limit=25`.
+Eligible customer/courier, join orders scoped to their own participation. Dates mean
+issued_at in Riyadh, not delivery_date. Optional dates/status; status uses existing
+invoice enum `DRAFT|ISSUED|PAID|CANCELLED|EXPIRED|REFUNDED`.
+Default current invoice per order; historical flag explicitly includes replaced/cancelled
+revisions. Return `is_current` to explain duplicate-looking orders; no invented number.
+
+```json
+{"items":[{"id":"11111111-1111-4111-8111-111111111111","order_id":"22222222-2222-4222-8222-222222222222","status":"PAID","currency":"SAR","total_amount":"125.00","issued_at":"2026-10-06T09:00:00Z","expires_at":"2026-10-08T09:00:00Z","is_current":true}],"next_cursor":null}
+```
+
+Issued/expiry timestamps nullable for unissued historical records; define drafts visibility
+as courier-only if approved. Deterministic created_at DESC,id DESC initially, explicit
+issued_at date predicate; use existing detail/PDF paths on tap. Batched joined reads,
+no per-row invoice items. Inspect order ownership/invoice time indexes before adding
+an index. Tests: revision replacement, cancelled histories, draft visibility, foreign
+participant, status/date/cursor intersections. No initial cache; later 15-second cache
+invalidates on issue/promo replacement/cancellation/payment and admin corrections.
+
+### 8. Courier avatar and optional bank profile
+
+**Avatar proposal:** extend existing `/api/media/upload-urls` purpose with
+`COURIER_AVATAR` (courier-only), retain secure direct PUT and `/api/media/confirm`.
+Then PUT `/api/users/me/courier-avatar` body `{"storage_key":"<issued-owned-key>"}`;
+output `{"avatar_url":"https://<signed-private-asset>","expires_at":"2026-10-07T09:05:00Z","version":1}`.
+DELETE same path 204 removes reference, background cleanup deletes unreferenced object.
+JPEG/PNG only, existing 10 MiB cap, decoder/pixel limits and immutable confirmed object;
+never accept arbitrary URLs or another user's key. Existing profile/participant URL fields
+can be populated after their existing authorization checks. Signed URL expires within
+five minutes. Customer upload is excluded. Migration extends media-purpose constraint
+and stores courier avatar reference/version. Test forged/claimed/purpose-mismatched keys,
+non-image/oversize/decompression cases, replacement and authorized participant reads.
+No public caching of API/signed access; asset versioning must preserve privacy rules.
+
+**Bank profile only if approved:** GET/PUT/DELETE `/api/couriers/me/bank-profile`.
+PUT `{"version":1,"beneficiary_name":"Example Courier","iban":"SA<22 digits>"}`;
+return `{"beneficiary_name":"Example Courier","iban_last4":"1234","verification_status":"UNVERIFIED","version":2,"updated_at":"2026-10-07T09:00:00Z"}`.
+Beneficiary max120, Saudi normalization/checksum, encryption at rest, optimistic version;
+never return plaintext IBAN, log body or claim verified without verification integration.
+Initial GET when absent returns 404; DELETE204. No automatic change to already-submitted
+withdrawals. Confirm required beneficiary/legal fields and verification process first.
+Owned bank table migration; tests redaction/encryption, foreign access, stale version.
+
+### 9. Phone change
+
+**New proposed:** POST `/api/users/me/phone-change/request` with
+`{"new_phone":"+9665XXXXXXXX","reauthentication_token":"<short-lived-current-phone-proof>"}`;
+response202 `{"challenge_id":"11111111-1111-4111-8111-111111111111","expires_in":60,"resend_after":60}`.
+POST `/api/users/me/phone-change/confirm` with `{"challenge_id":"…","otp":"12345"}`;
+response `{"phone":"+9665XXXXXXXX","reauthentication_required":true}` then login again.
+New scoped reauth challenge operations POST `/api/users/me/reauthentication/request`
+(no body) and `/confirm` (`{"challenge_id":"…","otp":"12345"}`) return respectively
+challenge metadata and `{"reauthentication_token":"<opaque>","expires_in":300}`.
+All tokens/challenges purpose- and actor-bound, single-use. These operations are proposals,
+not existing login endpoints. Proof may also serve deletion approval under separate scope.
+
+Recommend current-phone OTP proof plus new-phone verification, canonical Saudi formats
+using existing normalizer, uniqueness checked under transaction/unique constraint,
+all access/refresh/admin sessions revoked as applicable, device registrations removed.
+No tokens silently reused after change. Generic safe failures avoid phone enumeration;
+specific conflict only after valid owned proof. OTP HMAC in Redis with 60-second expiry,
+same existing send/block policy plus dedicated per-account/new-number/IP abuse quotas
+to approve; do not cache raw OTP or profile auth decisions. Tests races, challenge replay,
+expiry, wrong purpose, rate-limit/provider outage and post-change token rejection.
+Redis scoped proofs need no phone column migration; token-version revocation reuses
+existing mechanism. Lost-current-phone recovery requires an approved support process.
+
+### 10. Deletion / courier termination — business policy blocked
+
+**Proposed after policy approval:** POST and GET `/api/users/me/account-request`.
+POST `{"kind":"DELETE_ACCOUNT","confirmation":"DELETE","reauthentication_token":"<scoped-proof>","reason":null}`;
+courier kind `TERMINATE_CONTRACT`, confirmation `TERMINATE`.
+Response202/GET `{"id":"11111111-1111-4111-8111-111111111111","kind":"DELETE_ACCOUNT","status":"PENDING_REVIEW","submitted_at":"2026-10-07T09:00:00Z","updated_at":"2026-10-07T09:00:00Z"}`.
+Reason nullable max500; status proposal `PENDING_REVIEW|APPROVED|REJECTED|COMPLETED`;
+one active request per account, repeat submission reuses it. Missing own request404.
+No implementation before deciding customer self-service versus review and courier
+contract process, outstanding-order/dispute/payment/withdrawal/balance handling and
+legal retention/anonymization periods. Do not invent forfeiture or promise immediate
+erasure. Proposed guard rejects completion while unresolved obligations exist; provide
+safe own-account blocker codes if approved. Lock account and relevant obligations when
+completing; revoke sessions/push, scrub approved PII, retain required financial records.
+New request table/audited transitions; no cache. Tests reauth/replay/foreign IDs,
+concurrent obligations, idempotent requests and session revocation. Completion polling
+after revocation requires an approved access policy, not a bypass of deleted-account auth.
+
+### 11. Customer order search
+
+**Extend** GET `/api/orders` with optional `q: string 1..100` (trimmed, nonblank).
+Customer-only search; courier supplying q receives403. Combine existing delivery-date
+bounds/status before pagination; keep existing OrderSummary, created_at DESC,id DESC,
+default limit20, UUID cursor. Example `/api/orders?q=flowers&from_date=2026-10-01&to_date=2026-10-31`.
+Response remains `{"items":[<existing OrderSummary>],"next_cursor":null}`.
+Recommended search only own description plus exact full UUID; no new public order
+number without approval. Literal matching escapes SQL LIKE wildcard characters.
+Substring search needs measured pg_trgm GIN index cost/availability; otherwise approve
+token/prefix semantics with appropriate indexed text search. Do not ship an unbounded
+ILIKE history scan or application-memory filter. Need Arabic/English search semantics
+approved; no contact/phone/private chat search. Tests literal `%/_`, Unicode, injection
+strings, role restriction, ownership and unchanged pages combining filters. No cache initially.
+
+### 12. Order timeline and order-media reads
+
+**New:** GET `/api/orders/{order_id}/timeline` and `/media`, current authorized
+participants only. Timeline created_at ASC,id ASC, limit25, scoped cursor.
+Output `{"items":[{"id":"11111111-1111-4111-8111-111111111111","event_type":"STATUS_CHANGED","status":"ASSIGNED","created_at":"2026-10-07T09:00:00Z","actor":{"role":"COURIER","display_name":"Example Courier"}}],"next_cursor":null}`.
+Actor nullable for system; no emails/identity fields/internal audit metadata.
+Current WebSocket `/api/ws/orders/{order_id}` sends snapshots, not durable history.
+Create dedicated events atomically with transitions including workers/admin corrections;
+append deduplicated real changes only. Existing audit logs are not automatically a safe,
+complete mobile timeline. Do not synthesize old transitions: historical data available
+only where verified, and return `history_complete: false` for pre-event orders.
+
+Media list optional purpose `ORDER_REQUEST|DELIVERY_PROOF`, created_at ASC,id ASC;
+response `{"items":[{"id":"11111111-1111-4111-8111-111111111111","purpose":"ORDER_REQUEST","content_type":"image/jpeg","byte_size":12345,"created_at":"2026-10-07T09:00:00Z","access_url":"https://<signed-private-object>","expires_at":"2026-10-07T09:05:00Z"}],"next_cursor":null}`.
+Reuse existing confirmed upload/order-media links and storage adapter; persist trusted
+metadata if absent. Renew URLs by re-reading authorized list, never expose storage keys
+as URLs. Chat attachment endpoint does not authorize unrelated order_media objects.
+Events owned-order/time index; media existing order/type index inspected then augment
+only if plans justify. Tests foreign order/media, removed participation, expiry, duplicate
+transitions, rollback and bounded queries. No initial cache; private conditional event
+reads possible after accounting for authorized admin edits; signed media no-store.
+
+### 13. Top-up reliability — preserve pushed contract
+
+Pushed POST `/api/wallets/topup`, body `{"amount":"100.00"}`, response201
+`{"payment_intent_id":"11111111-1111-4111-8111-111111111111","amount":"100.00","payment_url":null}`.
+Eligible customers/couriers; amount follows MIN_TOPUP_AMOUNT/MAX_TOPUP_AMOUNT,
+defaults100.00/20000.00, not a client-defined amount or payment success flag.
+Development currently settles directly; production blocks external payments. Test
+provider responses do not prove real funded settlement.
+
+**Proposal:** optional `Idempotency-Key` header length1..128 to preserve old callers;
+mobile MUST send/persist a unique random key before its first submission. Same actor/key
+and normalized amount replays the same intent and three-field response; different amount
+409. Concurrent retry creates no second checkout/credit. Keep durable financial replay
+mapping; define retention before deleting keys. Provider unknown result remains unresolved
+and must not trigger a replacement checkout. Unique DB actor/key constraint and lock.
+
+Reuse unreleased owned session operations from the inventory after review/approval.
+Their existing workspace response is:
+
+```json
+{"payment_intent_id":"11111111-1111-4111-8111-111111111111","provider":"dhamen","status":"PENDING","checkout_state":"ACTIVE","order_id":null,"invoice_id":null,"currency":"SAR","amount_from_wallet":"0.00","amount_from_gateway":"100.00","expires_at":"2026-10-07T10:00:00Z","payment_url":"https://<checkout>","invoice":null,"purpose":"WALLET_TOPUP","title":"Top up","description":null,"use_wallet":false}
+```
+
+IDs/URLs/descriptions/invoice are nullable as shown; invoice otherwise uses existing
+InvoiceResponse. Other scalar fields are strings except use_wallet boolean. Status maps
+NEW to PENDING, otherwise PAID/FAILED/EXPIRED/CANCELLED; checkout_state/provider are
+currently unconstrained strings and need allowlisted public definitions before release.
+GETs have no body. Refresh/cancel POSTs have no body and may call the provider, with
+bounded timeout/rate limits; they are not safe cached status reads.
+For a minimal recovery addition, proposed GET `/api/wallets/me/topup-attempts/by-key/{key}`
+returns `{"payment_intent_id":"…","amount":"100.00","currency":"SAR","status":"PENDING","payment_url":"https://<checkout>","expires_at":"2026-10-07T10:00:00Z"}`;
+status `PENDING|PAID|FAILED|CANCELLED|EXPIRED`, URL nullable. This by-key lookup is needed
+when the initial intent ID is lost; choose it OR equivalent header-based lookup on the
+existing session operation, not both. Read/cancel/refresh is payer-only, foreign404.
+Persist transaction reference_intent_id; wallet balance change alone cannot confirm a
+specific top-up. Reuse workspace linked transaction metadata and tests. Refresh verifies
+provider amount/currency/reference/status, not browser redirect. Expiry/cancel releases
+only after authoritative unpaid closure; paid-during-cancel settles once. Current
+production safeguard remains until provider authentication is independently verified.
+No caching/automatic new-key retries. Tests two concurrent same-key requests, conflicting
+amounts, lost response, provider timeout, signed duplicate/out-of-order callbacks,
+foreign recovery, late payment and settlement correlation. Reuse pending workspace
+migrations only after inspecting actual deployed migration state.
+
+### Approval decisions and implementation sequence
+
+1. Approve proceeds (includes item reimbursement) or commission-adjusted fee profit;
+   correction/settlement timestamp semantics; Sunday weeks, Riyadh reporting and equal-day
+   comparison; target limit/periods. Existing schema cannot honestly report profit yet.
+2. Approve in-app inbox plus optional push events (order changes, earnings settled,
+   withdrawal status, occasion reminder), retention and reminder09:00/retry cutoff.
+   Approve whether annual recurrence is needed and its February29 policy.
+3. Explicitly approve or defer independent date-only appointments, saved bank profiles,
+   statement PDF, and a public order number. Avatar remains courier-only.
+4. Approve both-number phone proof and forced new login; define lost-number support.
+   Supply deletion/contract policy, retention and obligations handling; define access
+   to financial history for suspended/terminated accounts.
+5. Approve search fields/Arabic matching and minimal top-up idempotency/recovery contract;
+   decide whether to release existing broader payment-session workspace work now.
+
+Recommended order: (a) reconcile release baseline and approved decisions; (b) top-up
+reliability; (c) invoice list, statement dates/totals, media reads and customer search;
+(d) durable order timeline/inbox; (e) ledger earnings and target settings;
+(f) reminders/approved optional calendar/profile features; (g) phone change;
+(h) account lifecycle only after retention/business rules. Each step is separately
+reviewable and preserves existing callers. No new endpoints are added before approval.
+
+Migrations must be additive, reviewed and tested on disposable PostgreSQL. Backfills
+must not invent historical events/settlement timestamps. Rollback disables new routes/
+jobs first and keeps recorded ledger/history; destructive downgrades need a reviewed
+data plan. Check EXPLAIN plans and index/write cost on representative disposable data;
+local database plans, real provider behavior and deployment remain UNCONFIRMED.
+
+After approved implementation: regenerate and validate mobile-openapi.json, update
+docs/api.md (maintained integration reference; MOBILE-API-INTEGRATION.md was explicitly
+excluded earlier), exclude admin/provider/dev/simulation routes from mobile features,
+and provide UI handoff in chat only. Run focused authorization/concurrency/date/money
+tests, full pytest, Ruff, format, mypy and repository hooks; report unavailable database
+integration checks. This proposal inspected source, schemas, tests and pushed contracts;
+the proposal stage did not execute the test suite or modify API schemas/routes/migrations.
+
+### Read-batch delivery and account-policy update
+
+2026-10-07: implemented GET /api/invoices, GET /api/wallets/me/statement and
+GET /api/orders/{order_id}/media, plus optional financial date filters on wallet history.
+No migration or response cache. The existing wallet/time, invoice/order and order-media
+indexes support initial bounded reads; actual PostgreSQL plans remain unverified.
+New reads require an active customer or active verified courier. Latest visible invoice
+revision is current; customer drafts are excluded. Statement totals are live per HTTP
+response with one SQL snapshot for totals/page, rather than a frozen multipage document.
+Private URLs expire in five minutes; stored instants and output timestamps remain UTC.
+
+The user specified a 14-day recoverable account-deletion window, a detailed email and
+support-call coordination for returning funds/data. Account deletion/restore and that
+email are not yet implemented. Confirmation of anonymization/financial-record retention
+and deferral while obligations remain is pending; do not promise automated erasure,
+automatic fund return or functioning recovery before the lifecycle APIs exist.
+
+Read-batch verification: 740 tests passed, 204 skipped; both hook suites passed.
+Four existing Starlette/httpx deprecation warnings; no dependency change for this batch.

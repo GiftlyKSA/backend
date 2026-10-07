@@ -1,11 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Giftly mobile and non-admin API",
-    "version": "0.1.0",
-    "description": "Generated from implemented backend routes for mobile integration. Admin routes are excluded. Screen and flow details are vendor extensions; unsupported screen features are future API work and have no route in this specification. Production payment routes currently return PAYMENTS_DISABLED until a verified Dhamen integration is available."
+    "title": "Giftly API",
+    "version": "0.1.0"
   },
-  "x-integration-reviewed-on": "2026-10-04",
   "paths": {
     "/api/health": {
       "get": {
@@ -30,13 +28,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "None; service health only",
-        "x-audience": "Signed-out or signed-in; no bearer token",
-        "x-before": "None",
-        "x-dependent-api": "None",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/health/ready": {
@@ -56,13 +48,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "None; service diagnostics only",
-        "x-audience": "Signed-out or signed-in; no bearer token",
-        "x-before": "None",
-        "x-dependent-api": "None",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/cities": {
@@ -88,13 +74,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer order creation /request; courier onboarding/profile editing",
-        "x-audience": "Customer, courier, or signed-out visitor; no bearer token",
-        "x-before": "None; load before showing city selector",
-        "x-dependent-api": "POST /api/auth/register; PATCH /api/users/me; POST /api/orders",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/auth/send-otp": {
@@ -136,13 +116,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Phone login `/login`; OTP `/verify-otp`",
-        "x-audience": "Signed-out; no bearer token",
-        "x-before": "None",
-        "x-dependent-api": "`POST /api/auth/verify-otp`",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/auth/verify-otp": {
@@ -184,13 +158,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "OTP `/verify-otp`",
-        "x-audience": "Signed-out; no bearer token",
-        "x-before": "Successful send-otp and its five-digit development or six-digit non-development code",
-        "x-dependent-api": "Existing account: `GET /api/users/me`; new account: `POST /api/auth/register`",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/auth/register": {
@@ -232,13 +200,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer registration `/register-customer`; courier onboarding when built",
-        "x-audience": "Signed-out with registration token; no bearer access token",
-        "x-before": "`POST /api/auth/verify-otp` returning `is_new_user=true`",
-        "x-dependent-api": "`GET /api/users/me`; courier verification review before courier operations",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/auth/refresh": {
@@ -280,13 +242,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Shared session restoration and background token renewal",
-        "x-audience": "Holder of a refresh token; no bearer access token required",
-        "x-before": "A previous login or registration token pair",
-        "x-dependent-api": "Retry the originally requested protected API with the new access token",
-        "x-availability": "configured environments",
-        "security": []
+        }
       }
     },
     "/api/auth/logout": {
@@ -301,17 +257,7 @@
           "204": {
             "description": "Successful Response"
           }
-        },
-        "x-mobile-screen": "Profile `/profile`; shared sign-out action",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "Valid access JWT",
-        "x-dependent-api": "Clear local credentials; next use starts at `/login`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/users/me": {
@@ -333,17 +279,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Home `/home`; Profile `/profile`; session restoration",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "Login, register, or refresh",
-        "x-dependent-api": "Role-specific home, `GET /api/wallets/me`, and `GET /api/orders`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       },
       "patch": {
         "tags": [
@@ -383,17 +319,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Profile `/profile`",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "`GET /api/users/me`",
-        "x-dependent-api": "Refresh `GET /api/users/me` or update local profile from response",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/users/me/courier-verification/resubmit": {
@@ -415,17 +341,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Profile `/profile` verification state",
-        "x-audience": "Authenticated courier with rejected profile; bearer access token",
-        "x-before": "`GET /api/users/me` shows rejected courier verification",
-        "x-dependent-api": "`GET /api/users/me` to follow review status",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/users/{user_id}/participant": {
@@ -438,13 +354,13 @@
         "operationId": "get_participant_profile_api_users__user_id__participant_get",
         "parameters": [
           {
-            "name": "user_id",
             "in": "path",
+            "name": "user_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "User Id",
+              "type": "string"
             }
           }
         ],
@@ -469,17 +385,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Order detail `/order/[id]`; Chat `/chat/[id]`",
-        "x-audience": "Authenticated order or conversation participant; bearer access token",
-        "x-before": "Obtain the other party's ID from an owned order or inbox item",
-        "x-dependent-api": "Optionally `GET /api/users/{user_id}/ratings/summary`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/wallets/me": {
@@ -501,17 +407,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Home `/home`; Wallet `/wallet`",
-        "x-audience": "Authenticated customer or eligible verified courier; bearer access token",
-        "x-before": "Login and role/profile restoration",
-        "x-dependent-api": "`GET /api/wallets/me/transactions`; optional top-up or withdrawal",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/wallets/topup": {
@@ -553,17 +449,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Wallet `/wallet` add-funds action",
-        "x-audience": "Authenticated customer or eligible verified courier; bearer access token",
-        "x-before": "`GET /api/wallets/me` and a user-entered positive decimal amount",
-        "x-dependent-api": "Return to wallet and transaction list after settlement",
-        "x-availability": "production payment disabled",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/wallets/withdrawals": {
@@ -576,14 +462,14 @@
         "operationId": "request_withdrawal_api_wallets_withdrawals_post",
         "parameters": [
           {
-            "name": "Idempotency-Key",
             "in": "header",
+            "name": "Idempotency-Key",
             "required": true,
             "schema": {
-              "type": "string",
-              "minLength": 1,
               "maxLength": 128,
-              "title": "Idempotency-Key"
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
             }
           }
         ],
@@ -618,17 +504,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Wallet `/wallet` withdrawal action",
-        "x-audience": "Authenticated active verified courier; bearer access token",
-        "x-before": "`GET /api/wallets/me` confirms available funds",
-        "x-dependent-api": "Refresh wallet and transactions; no courier withdrawal-list API exists",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/wallets/me/transactions": {
@@ -641,14 +517,14 @@
         "operationId": "list_my_transactions_api_wallets_me_transactions_get",
         "parameters": [
           {
-            "name": "cursor",
             "in": "query",
+            "name": "cursor",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "uuid"
+                  "format": "uuid",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -658,15 +534,53 @@
             }
           },
           {
-            "name": "limit",
             "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 20,
               "maximum": 100,
               "minimum": 1,
-              "default": 20,
-              "title": "Limit"
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
             }
           }
         ],
@@ -691,17 +605,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Wallet `/wallet`; courier Statement `/statement` preview",
-        "x-audience": "Authenticated customer or eligible verified courier; bearer access token",
-        "x-before": "Login; usually `GET /api/wallets/me`",
-        "x-dependent-api": "Same endpoint with `next_cursor` for more rows",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/media/upload-urls": {
@@ -743,17 +647,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Create order `/request`; Delivery `/delivery/[id]`",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "Choose image, purpose, MIME type, and exact byte size",
-        "x-dependent-api": "Direct signed PUT, then `POST /api/media/confirm`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/media/confirm": {
@@ -795,17 +689,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Create order `/request`; Delivery `/delivery/[id]`",
-        "x-audience": "Authenticated owner of the upload grant; bearer access token",
-        "x-before": "Successful direct PUT from `POST /api/media/upload-urls`",
-        "x-dependent-api": "`POST /api/orders` or `POST /api/orders/{order_id}/deliver`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders": {
@@ -847,17 +731,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Create order `/request`",
-        "x-audience": "Authenticated customer; bearer access token",
-        "x-before": "Optional `POST /api/media/upload-urls` \u2192 direct PUT \u2192 confirm for 0\u20133 photos",
-        "x-dependent-api": "`GET /api/orders/{order_id}` and `/waiting/[id]`; courier `GET /api/orders/available`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       },
       "get": {
         "tags": [
@@ -972,17 +846,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Home `/home`; Orders `/orders`; Courier Calendar `/calendar` partial",
-        "x-audience": "Authenticated customer or eligible verified courier; bearer access token",
-        "x-before": "Login and profile restoration",
-        "x-dependent-api": "`GET /api/orders/{order_id}`; same endpoint with next cursor",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/available": {
@@ -995,14 +859,14 @@
         "operationId": "available_orders_api_orders_available_get",
         "parameters": [
           {
-            "name": "cursor",
             "in": "query",
+            "name": "cursor",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "uuid"
+                  "format": "uuid",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -1012,15 +876,15 @@
             }
           },
           {
-            "name": "limit",
             "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 20,
               "maximum": 100,
               "minimum": 1,
-              "default": 20,
-              "title": "Limit"
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -1045,17 +909,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Orders `/orders` available tab; Home `/home` radar",
-        "x-audience": "Authenticated active verified courier; bearer access token",
-        "x-before": "Courier verification complete; matching city stored on profile",
-        "x-dependent-api": "`POST /api/orders/{order_id}/accept`",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}": {
@@ -1068,13 +922,13 @@
         "operationId": "get_order_api_orders__order_id__get",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1099,17 +953,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Waiting `/waiting/[id]`; Order detail `/order/[id]`; Delivery `/delivery/[id]`",
-        "x-audience": "Authenticated customer or assigned eligible courier; bearer access token",
-        "x-before": "Order UUID from create, owned list, or accepted order",
-        "x-dependent-api": "Active invoice, participant profile, chat, rating, or state transition",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/accept": {
@@ -1122,13 +966,13 @@
         "operationId": "accept_order_api_orders__order_id__accept_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1153,17 +997,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Orders `/orders` available tab; Order detail `/order/[id]`",
-        "x-audience": "Authenticated active verified courier; bearer access token",
-        "x-before": "`GET /api/orders/available` supplies a `NEW` order UUID",
-        "x-dependent-api": "`GET /api/orders/{order_id}`, chat, then invoice creation",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/cancel": {
@@ -1176,13 +1010,13 @@
         "operationId": "cancel_order_api_orders__order_id__cancel_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1217,17 +1051,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Waiting `/waiting/[id]`; Order detail `/order/[id]`",
-        "x-audience": "Authenticated customer or assigned eligible courier; bearer access token",
-        "x-before": "Participant order still in a cancellable pre-progress state",
-        "x-dependent-api": "Refresh `GET /api/orders/{order_id}` and owned list",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/deliver": {
@@ -1240,13 +1064,13 @@
         "operationId": "deliver_order_api_orders__order_id__deliver_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1281,17 +1105,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Delivery `/delivery/[id]`",
-        "x-audience": "Authenticated active verified assigned courier; bearer access token",
-        "x-before": "Order `IN_PROGRESS`; 1\u20135 confirmed `DELIVERY_PROOF` image keys",
-        "x-dependent-api": "Customer `POST /api/orders/{order_id}/approve` or dispute",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/approve": {
@@ -1304,13 +1118,13 @@
         "operationId": "approve_order_api_orders__order_id__approve_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1335,17 +1149,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Order detail `/order/[id]` after delivery",
-        "x-audience": "Authenticated customer who owns the order; bearer access token",
-        "x-before": "Order is `DELIVERED` and proof reviewed",
-        "x-dependent-api": "`POST /api/orders/{order_id}/ratings`; refresh wallet/order",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/dispute": {
@@ -1358,13 +1162,13 @@
         "operationId": "dispute_order_api_orders__order_id__dispute_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1399,17 +1203,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Order detail `/order/[id]` dispute action",
-        "x-audience": "Authenticated customer or assigned eligible courier; bearer access token",
-        "x-before": "Participant order in a disputable state",
-        "x-dependent-api": "Refresh order; admin resolution occurs outside mobile API",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/invoices": {
@@ -1422,13 +1216,13 @@
         "operationId": "create_invoice_api_orders__order_id__invoices_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1463,17 +1257,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Invoice `/invoice/[id]` authoring",
-        "x-audience": "Authenticated active verified assigned courier; bearer access token",
-        "x-before": "Accepted `ASSIGNED` order; collect 1\u201320 line items",
-        "x-dependent-api": "Customer `GET /api/orders/{order_id}/invoice` and promo/payment flow",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/invoice": {
@@ -1486,13 +1270,13 @@
         "operationId": "get_order_invoice_api_orders__order_id__invoice_get",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1517,17 +1301,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Order detail `/order/[id]`; Invoice `/invoice/[id]`",
-        "x-audience": "Authenticated customer or assigned courier participant; bearer access token",
-        "x-before": "Owned/assigned order with an active invoice",
-        "x-dependent-api": "`GET /api/invoices/{invoice_id}`, promo preview, pay, or courier cancel",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/invoices/{invoice_id}": {
@@ -1540,13 +1314,13 @@
         "operationId": "get_invoice_api_invoices__invoice_id__get",
         "parameters": [
           {
-            "name": "invoice_id",
             "in": "path",
+            "name": "invoice_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Invoice Id"
+              "title": "Invoice Id",
+              "type": "string"
             }
           }
         ],
@@ -1571,17 +1345,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Invoice `/invoice/[id]`; Order detail `/order/[id]`",
-        "x-audience": "Authenticated customer or assigned courier participant; bearer access token",
-        "x-before": "Invoice UUID from creation or active-order invoice",
-        "x-dependent-api": "Customer payment or courier cancellation when eligible",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/invoices/{invoice_id}/pay": {
@@ -1594,13 +1358,13 @@
         "operationId": "pay_invoice_api_invoices__invoice_id__pay_post",
         "parameters": [
           {
-            "name": "invoice_id",
             "in": "path",
+            "name": "invoice_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Invoice Id"
+              "title": "Invoice Id",
+              "type": "string"
             }
           }
         ],
@@ -1625,17 +1389,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Invoice and checkout `/invoice/[id]`",
-        "x-audience": "Authenticated customer who owns the invoice order; bearer access token",
-        "x-before": "Issued invoice and, if using wallet funds, current wallet snapshot",
-        "x-dependent-api": "Refresh invoice, order, wallet, and transactions after verified settlement",
-        "x-availability": "production payment disabled",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/invoices/{invoice_id}/cancel": {
@@ -1648,13 +1402,13 @@
         "operationId": "cancel_invoice_api_invoices__invoice_id__cancel_post",
         "parameters": [
           {
-            "name": "invoice_id",
             "in": "path",
+            "name": "invoice_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Invoice Id"
+              "title": "Invoice Id",
+              "type": "string"
             }
           }
         ],
@@ -1679,17 +1433,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Courier Invoice `/invoice/[id]` correction action",
-        "x-audience": "Authenticated issuing courier; bearer access token",
-        "x-before": "Issued, unpaid invoice on assigned order",
-        "x-dependent-api": "`POST /api/orders/{order_id}/invoices` for corrected version",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/promos/validate": {
@@ -1731,71 +1475,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Invoice and checkout `/invoice/[id]` promo entry",
-        "x-audience": "Authenticated customer who owns the order; bearer access token",
-        "x-before": "Active invoice for `order_id`",
-        "x-dependent-api": "Review discount; payment or courier invoice creation owns actual reservation",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/webhooks/simulation": {
-      "post": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Simulation Webhook",
-        "description": "Verify and process a simulated payment callback (signature over the raw body).",
-        "operationId": "simulation_webhook_api_webhooks_simulation_post",
-        "parameters": [
-          {
-            "name": "x-webhook-signature",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "X-Webhook-Signature"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebhookAck"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "x-mobile-screen": "None; integration/test harness only",
-        "x-audience": "No bearer token; valid `X-Webhook-Signature` over raw body; absent in production",
-        "x-before": "A simulated payment intent in nonproduction and gateway test signature",
-        "x-dependent-api": "Server-side settlement; mobile refreshes wallet/invoice/order",
-        "x-availability": "non-production simulation",
-        "security": [
-          {
-            "SimulationSignature": []
-          }
-        ]
+        }
       }
     },
     "/api/orders/{order_id}/ratings": {
@@ -1808,13 +1488,13 @@
         "operationId": "rate_order_api_orders__order_id__ratings_post",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -1849,17 +1529,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Order detail `/order/[id]` after completion",
-        "x-audience": "Authenticated order customer after COMPLETED status; bearer access token",
-        "x-before": "Order completed and caller has not already rated it",
-        "x-dependent-api": "`GET /api/users/{user_id}/ratings/summary`; refresh order detail",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/users/{user_id}/ratings/summary": {
@@ -1872,13 +1542,13 @@
         "operationId": "user_rating_summary_api_users__user_id__ratings_summary_get",
         "parameters": [
           {
-            "name": "user_id",
             "in": "path",
+            "name": "user_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "User Id",
+              "type": "string"
             }
           }
         ],
@@ -1903,17 +1573,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Order detail `/order/[id]`; Chat `/chat/[id]` profile header",
-        "x-audience": "Any authenticated customer or courier; bearer access token",
-        "x-before": "User UUID from an order or participant profile",
-        "x-dependent-api": "Optionally participant profile or rating action on completed order",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/conversations": {
@@ -1926,8 +1586,8 @@
         "operationId": "list_conversations_api_conversations_get",
         "parameters": [
           {
-            "name": "cursor",
             "in": "query",
+            "name": "cursor",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1942,15 +1602,15 @@
             }
           },
           {
-            "name": "limit",
             "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 20,
               "maximum": 100,
               "minimum": 1,
-              "default": 20,
-              "title": "Limit"
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -1975,17 +1635,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Chat inbox; Customer/Courier Home `/home` optional summary",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "An accepted order creates a conversation",
-        "x-dependent-api": "Messages page or WebSocket for selected conversation",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/conversations/{conversation_id}/messages": {
@@ -1998,24 +1648,24 @@
         "operationId": "list_messages_api_conversations__conversation_id__messages_get",
         "parameters": [
           {
-            "name": "conversation_id",
             "in": "path",
+            "name": "conversation_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Conversation Id"
+              "title": "Conversation Id",
+              "type": "string"
             }
           },
           {
-            "name": "cursor",
             "in": "query",
+            "name": "cursor",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "uuid"
+                  "format": "uuid",
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -2025,15 +1675,15 @@
             }
           },
           {
-            "name": "limit",
             "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
-              "type": "integer",
+              "default": 30,
               "maximum": 100,
               "minimum": 1,
-              "default": 30,
-              "title": "Limit"
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -2058,17 +1708,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Chat `/chat/[id]`",
-        "x-audience": "Authenticated conversation participant; bearer access token",
-        "x-before": "Conversation ID from inbox after order assignment",
-        "x-dependent-api": "Same endpoint with next cursor; WebSocket or REST send",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       },
       "post": {
         "tags": [
@@ -2079,13 +1719,13 @@
         "operationId": "send_message_api_conversations__conversation_id__messages_post",
         "parameters": [
           {
-            "name": "conversation_id",
             "in": "path",
+            "name": "conversation_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Conversation Id"
+              "title": "Conversation Id",
+              "type": "string"
             }
           }
         ],
@@ -2120,17 +1760,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Chat `/chat/[id]` composer",
-        "x-audience": "Authenticated conversation participant; bearer access token",
-        "x-before": "Conversation exists and actor is a participant",
-        "x-dependent-api": "WebSocket receives committed event; refresh messages/inbox as needed",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/conversations/{conversation_id}/read": {
@@ -2143,13 +1773,13 @@
         "operationId": "mark_read_api_conversations__conversation_id__read_post",
         "parameters": [
           {
-            "name": "conversation_id",
             "in": "path",
+            "name": "conversation_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Conversation Id"
+              "title": "Conversation Id",
+              "type": "string"
             }
           }
         ],
@@ -2167,17 +1797,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier Chat `/chat/[id]` when opened/read",
-        "x-audience": "Authenticated conversation participant; bearer access token",
-        "x-before": "Conversation and visible messages loaded",
-        "x-dependent-api": "Refresh inbox unread count if displayed",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/devices": {
@@ -2219,17 +1839,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Shared app startup/login; notification permission flow",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "OS push token obtained after user permission",
-        "x-dependent-api": "Push delivery for order and chat notices; delete on sign-out",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       },
       "delete": {
         "tags": [
@@ -2262,97 +1872,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Shared logout/device settings",
-        "x-audience": "Authenticated customer or courier; bearer access token",
-        "x-before": "A token previously registered by this account",
-        "x-dependent-api": "`POST /api/auth/logout` when signing out",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/dev/ping": {
-      "get": {
-        "tags": [
-          "dev"
-        ],
-        "summary": "Development liveness marker",
-        "description": "Confirm dev routes are registered (development only).",
-        "operationId": "dev_ping_api_dev_ping_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Dev Ping Api Dev Ping Get"
-                }
-              }
-            }
-          }
-        },
-        "x-mobile-screen": "None",
-        "x-audience": "Development operators only",
-        "x-before": "ENVIRONMENT=development",
-        "x-dependent-api": "None",
-        "x-availability": "development only",
-        "security": []
-      }
-    },
-    "/api/dev/simulation/simulate": {
-      "post": {
-        "tags": [
-          "dev"
-        ],
-        "summary": "Simulate Payment",
-        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler \u2014 it never bypasses webhook processing.",
-        "operationId": "simulate_payment_api_dev_simulation_simulate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SimulatePaymentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebhookAck"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "x-mobile-screen": "None",
-        "x-audience": "Development operators only",
-        "x-before": "ENVIRONMENT=development",
-        "x-dependent-api": "None",
-        "x-availability": "development only",
-        "security": []
+        }
       }
     },
     "/api/orders/{order_id}/conversation": {
@@ -2365,13 +1885,13 @@
         "operationId": "get_order_conversation_api_orders__order_id__conversation_get",
         "parameters": [
           {
-            "name": "order_id",
             "in": "path",
+            "name": "order_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Order Id"
+              "title": "Order Id",
+              "type": "string"
             }
           }
         ],
@@ -2396,17 +1916,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer/Courier old-order detail and Chat `/chat/[id]`",
-        "x-audience": "Authenticated order customer or assigned courier; bearer access token",
-        "x-before": "Order accepted and conversation created",
-        "x-dependent-api": "GET /api/conversations/{conversation_id}/messages; optional WebSocket",
-        "x-availability": "configured environments",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/occasions": {
@@ -2448,17 +1958,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Calendar /calendar",
-        "x-audience": "Authenticated CUSTOMER; own records only",
-        "x-availability": "Implemented; reminders and recurrence unavailable",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-before": "Customer login; saved occasion UUID for record operations",
-        "x-dependent-api": "Reload occasion detail or list after changes"
+        }
       },
       "get": {
         "tags": [
@@ -2557,17 +2057,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Calendar /calendar",
-        "x-audience": "Authenticated CUSTOMER; own records only",
-        "x-availability": "Implemented; reminders and recurrence unavailable",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-before": "Customer login; saved occasion UUID for record operations",
-        "x-dependent-api": "Reload occasion detail or list after changes"
+        }
       }
     },
     "/api/occasions/{occasion_id}": {
@@ -2580,13 +2070,13 @@
         "operationId": "get_occasion_api_occasions__occasion_id__get",
         "parameters": [
           {
-            "name": "occasion_id",
             "in": "path",
+            "name": "occasion_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Occasion Id"
+              "title": "Occasion Id",
+              "type": "string"
             }
           }
         ],
@@ -2611,17 +2101,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Calendar /calendar",
-        "x-audience": "Authenticated CUSTOMER; own records only",
-        "x-availability": "Implemented; reminders and recurrence unavailable",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-before": "Customer login; saved occasion UUID for record operations",
-        "x-dependent-api": "Reload occasion detail or list after changes"
+        }
       },
       "patch": {
         "tags": [
@@ -2632,13 +2112,13 @@
         "operationId": "update_occasion_api_occasions__occasion_id__patch",
         "parameters": [
           {
-            "name": "occasion_id",
             "in": "path",
+            "name": "occasion_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Occasion Id"
+              "title": "Occasion Id",
+              "type": "string"
             }
           }
         ],
@@ -2673,17 +2153,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Calendar /calendar",
-        "x-audience": "Authenticated CUSTOMER; own records only",
-        "x-availability": "Implemented; reminders and recurrence unavailable",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-before": "Customer login; saved occasion UUID for record operations",
-        "x-dependent-api": "Reload occasion detail or list after changes"
+        }
       },
       "delete": {
         "tags": [
@@ -2694,13 +2164,13 @@
         "operationId": "delete_occasion_api_occasions__occasion_id__delete",
         "parameters": [
           {
-            "name": "occasion_id",
             "in": "path",
+            "name": "occasion_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Occasion Id"
+              "title": "Occasion Id",
+              "type": "string"
             }
           }
         ],
@@ -2718,17 +2188,7 @@
               }
             }
           }
-        },
-        "x-mobile-screen": "Customer Calendar /calendar",
-        "x-audience": "Authenticated CUSTOMER; own records only",
-        "x-availability": "Implemented; reminders and recurrence unavailable",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-before": "Customer login; saved occasion UUID for record operations",
-        "x-dependent-api": "Reload occasion detail or list after changes"
+        }
       }
     },
     "/api/invoices/{invoice_id}/promo": {
@@ -2741,24 +2201,24 @@
         "operationId": "apply_invoice_promo_api_invoices__invoice_id__promo_post",
         "parameters": [
           {
-            "name": "invoice_id",
             "in": "path",
+            "name": "invoice_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Invoice Id"
+              "title": "Invoice Id",
+              "type": "string"
             }
           },
           {
-            "name": "Idempotency-Key",
             "in": "header",
+            "name": "Idempotency-Key",
             "required": true,
             "schema": {
-              "type": "string",
-              "minLength": 1,
               "maxLength": 128,
-              "title": "Idempotency-Key"
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
             }
           }
         ],
@@ -2793,17 +2253,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-mobile-screen": "Customer Invoice /invoice/[id]",
-        "x-audience": "Authenticated ACTIVE owning CUSTOMER",
-        "x-before": "Load current ISSUED invoice; no unresolved payment attempt",
-        "x-dependent-api": "Pay returned invoice ID; refresh order active invoice on conflict",
-        "x-availability": "Implemented; legacy invoices without frozen policy return CONFLICT"
+        }
       }
     },
     "/api/invoices/{invoice_id}/pdf": {
@@ -2816,13 +2266,13 @@
         "operationId": "download_invoice_pdf_api_invoices__invoice_id__pdf_get",
         "parameters": [
           {
-            "name": "invoice_id",
             "in": "path",
+            "name": "invoice_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Invoice Id"
+              "title": "Invoice Id",
+              "type": "string"
             }
           }
         ],
@@ -2870,52 +2320,26 @@
         "description": "Return configured bounds to an eligible authenticated chat user.",
         "tags": [
           "chat"
-        ],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
-        "x-audience": [
-          "CUSTOMER",
-          "COURIER"
-        ],
-        "x-before": "Eligible authenticated participant; see api.md",
-        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
-        "x-availability": "Implemented; private-storage and decoder deployment required for recordings"
+        ]
       }
     },
     "/api/conversations/{conversation_id}/media-upload-urls": {
       "post": {
         "summary": "Request Chat Upload",
         "description": "Issue a private upload grant for a participant's chat attachment.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "tags": [
           "chat"
         ],
-        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
-        "x-audience": [
-          "CUSTOMER",
-          "COURIER"
-        ],
-        "x-before": "Eligible authenticated participant; see api.md",
-        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
-        "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
         "operationId": "request_chat_upload_api_conversations__conversation_id__media_upload_urls_post",
         "parameters": [
           {
-            "name": "conversation_id",
             "in": "path",
+            "name": "conversation_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Conversation Id"
+              "title": "Conversation Id",
+              "type": "string"
             }
           }
         ],
@@ -2957,32 +2381,19 @@
       "post": {
         "summary": "Send Chat Media",
         "description": "Validate uploaded bytes, then atomically attach them to a new chat message.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "tags": [
           "chat"
         ],
-        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
-        "x-audience": [
-          "CUSTOMER",
-          "COURIER"
-        ],
-        "x-before": "Eligible authenticated participant; see api.md",
-        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
-        "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
         "operationId": "send_chat_media_api_conversations__conversation_id__media_messages_post",
         "parameters": [
           {
-            "name": "conversation_id",
             "in": "path",
+            "name": "conversation_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Conversation Id"
+              "title": "Conversation Id",
+              "type": "string"
             }
           }
         ],
@@ -3024,32 +2435,19 @@
       "get": {
         "summary": "Chat Attachment Url",
         "description": "Sign private playback after checking current participant permissions.",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "tags": [
           "chat"
         ],
-        "x-mobile-screen": "Customer/Courier Chat /chat/[id]",
-        "x-audience": [
-          "CUSTOMER",
-          "COURIER"
-        ],
-        "x-before": "Eligible authenticated participant; see api.md",
-        "x-dependent-api": "Chat history, live WebSocket and signed attachment playback",
-        "x-availability": "Implemented; private-storage and decoder deployment required for recordings",
         "operationId": "chat_attachment_url_api_chat_attachments__attachment_id__url_get",
         "parameters": [
           {
-            "name": "attachment_id",
             "in": "path",
+            "name": "attachment_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "Attachment Id"
+              "title": "Attachment Id",
+              "type": "string"
             }
           }
         ],
@@ -3076,6 +2474,313 @@
           }
         }
       }
+    },
+    "/api/invoices": {
+      "get": {
+        "description": "List owned invoice revisions; issued-date bounds use Asia/Riyadh days.",
+        "operationId": "list_invoices_api_invoices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InvoiceStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_historical",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Historical",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invoices",
+        "tags": [
+          "invoices"
+        ]
+      }
+    },
+    "/api/orders/{order_id}/media": {
+      "get": {
+        "description": "Return confirmed order photos with five-minute signed access URLs.",
+        "operationId": "list_order_media_api_orders__order_id__media_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ORDER_REQUEST",
+                    "DELIVERY_PROOF"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Purpose"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderMediaPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Order Media",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/wallets/me/statement": {
+      "get": {
+        "description": "Return owned current totals and transactions for at most 366 Riyadh days.",
+        "operationId": "get_wallet_statement_api_wallets_me_statement_get",
+        "parameters": [
+          {
+            "description": "Inclusive Asia/Riyadh start day.",
+            "in": "query",
+            "name": "from_date",
+            "required": true,
+            "schema": {
+              "description": "Inclusive Asia/Riyadh start day.",
+              "format": "date",
+              "title": "From Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive Asia/Riyadh end day.",
+            "in": "query",
+            "name": "to_date",
+            "required": true,
+            "schema": {
+              "description": "Inclusive Asia/Riyadh end day.",
+              "format": "date",
+              "title": "To Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletStatement"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Wallet Statement",
+        "tags": [
+          "wallets"
+        ]
+      }
     }
   },
   "components": {
@@ -3085,8 +2790,8 @@
           "reason": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 255
+                "maxLength": 255,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3227,9 +2932,9 @@
           "promo_code": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 32,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3251,8 +2956,8 @@
           "description": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 2000
+                "maxLength": 2000,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3263,8 +2968,8 @@
           "delivery_city": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 100
+                "maxLength": 100,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3276,8 +2981,8 @@
           "delivery_city_id": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3324,8 +3029,8 @@
           "note": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 500
+                "maxLength": 500,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3588,8 +3293,8 @@
           "description": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 500
+                "maxLength": 500,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4187,8 +3892,8 @@
           "comment": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 500
+                "maxLength": 500,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4327,8 +4032,8 @@
           "full_name": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 120
+                "maxLength": 120,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4339,9 +4044,9 @@
           "email": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 255,
-                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4352,8 +4057,8 @@
           "dob": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date"
+                "format": "date",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4364,8 +4069,8 @@
           "city": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 100
+                "maxLength": 100,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4377,8 +4082,8 @@
           "city_id": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4389,8 +4094,8 @@
           "national_id": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 64
+                "maxLength": 64,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4402,8 +4107,8 @@
           "passport_id": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 64
+                "maxLength": 64,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4481,9 +4186,9 @@
           "otp_dev": {
             "anyOf": [
               {
-                "type": "integer",
                 "maximum": 99999.0,
-                "minimum": 10000.0
+                "minimum": 10000.0,
+                "type": "integer"
               },
               {
                 "type": "null"
@@ -4499,30 +4204,6 @@
         ],
         "title": "SendOtpResponse",
         "description": "OTP request accepted."
-      },
-      "SimulatePaymentRequest": {
-        "properties": {
-          "payment_link_id": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Payment Link Id"
-          },
-          "status": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Status",
-            "default": "PAID"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "payment_link_id"
-        ],
-        "title": "SimulatePaymentRequest",
-        "description": "Development-only: simulate a simulated payment callback for a payment-link ID."
       },
       "TokenResponse": {
         "properties": {
@@ -4660,6 +4341,50 @@
             "type": "string",
             "title": "Created At",
             "description": "ISO-8601 UTC timestamp."
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "invoice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Id"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "payment_intent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Intent Id"
           }
         },
         "type": "object",
@@ -4856,8 +4581,8 @@
           "full_name": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 120
+                "maxLength": 120,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4868,9 +4593,9 @@
           "email": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 255,
-                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4881,8 +4606,8 @@
           "dob": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date"
+                "format": "date",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4893,9 +4618,9 @@
           "courier_city": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 100,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4906,8 +4631,8 @@
           "courier_city_id": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4918,8 +4643,8 @@
           "courier_bio": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 1000
+                "maxLength": 1000,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -5112,20 +4837,6 @@
         "title": "WalletResponse",
         "description": "A user's wallet snapshot."
       },
-      "WebhookAck": {
-        "properties": {
-          "outcome": {
-            "type": "string",
-            "title": "Outcome"
-          }
-        },
-        "type": "object",
-        "required": [
-          "outcome"
-        ],
-        "title": "WebhookAck",
-        "description": "The webhook acknowledgement returned to the gateway."
-      },
       "WithdrawalRequest": {
         "properties": {
           "amount": {
@@ -5298,9 +5009,9 @@
           "title": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 120,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -5311,8 +5022,8 @@
           "occasion_date": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date"
+                "format": "date",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -5323,9 +5034,9 @@
           "reminder_days_before": {
             "anyOf": [
               {
-                "type": "integer",
                 "maximum": 365.0,
-                "minimum": 0.0
+                "minimum": 0.0,
+                "type": "integer"
               },
               {
                 "type": "null"
@@ -5394,8 +5105,8 @@
           "next_cursor": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -5416,9 +5127,9 @@
           "code": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 32,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -5638,44 +5349,302 @@
         ],
         "title": "UserGender",
         "type": "string"
-      }
-    },
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
       },
-      "SimulationSignature": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Webhook-Signature"
-      }
-    }
-  },
-  "x-websocket": [
-    {
-      "path": "/api/ws/conversations/{conversation_id}",
-      "description": "Open this WebSocket only while the conversation screen needs live updates. Send JSON text frames shaped as `{\"text\":\"...\"}`; the server persists accepted messages before publishing message-shaped JSON events to participants. Invalid, oversized, or throttled frames may be dropped. Reconnect with a fresh access token after refresh, close on logout, and fetch REST history after reconnection because pub/sub is not a durable replay log.",
-      "screen": "Customer/Courier Chat `/chat/[id]` live stream",
-      "authentication": "Access JWT in token query parameter; conversation membership required",
-      "clientMessage": {
-        "type": "object",
-        "required": [
-          "text"
-        ],
+      "InvoicePage": {
+        "description": "Newest-created invoices first, with an owned UUID cursor.",
         "properties": {
-          "text": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "InvoicePage",
+        "type": "object"
+      },
+      "InvoiceStatus": {
+        "description": "Invoice lifecycle status.",
+        "enum": [
+          "DRAFT",
+          "ISSUED",
+          "PAID",
+          "CANCELLED",
+          "EXPIRED",
+          "REFUNDED"
+        ],
+        "title": "InvoiceStatus",
+        "type": "string"
+      },
+      "InvoiceSummary": {
+        "description": "One visible invoice revision and its current-revision marker.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvoiceStatus"
+          },
+          "total_amount": {
+            "title": "Total Amount",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "id",
+          "order_id",
+          "status",
+          "currency",
+          "total_amount",
+          "issued_at",
+          "expires_at",
+          "is_current"
+        ],
+        "title": "InvoiceSummary",
+        "type": "object"
       },
-      "serverMessage": {
-        "$ref": "#/components/schemas/MessageResponse"
+      "OrderMediaPage": {
+        "description": "Oldest-created order media first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderMediaResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "OrderMediaPage",
+        "type": "object"
       },
-      "before": "Conversation ID from inbox and a valid access token",
-      "dependentApi": "Use REST messages/read for history and unread state"
+      "OrderMediaResponse": {
+        "description": "One photo, without exposing its internal object key.",
+        "properties": {
+          "access_url": {
+            "title": "Access Url",
+            "type": "string"
+          },
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "ORDER_REQUEST",
+              "DELIVERY_PROOF"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "purpose",
+          "content_type",
+          "byte_size",
+          "created_at",
+          "access_url",
+          "expires_at"
+        ],
+        "title": "OrderMediaResponse",
+        "type": "object"
+      },
+      "StatementTotals": {
+        "description": "Status-separated credits/debits and settled net; all decimal strings.",
+        "properties": {
+          "pending_credits": {
+            "title": "Pending Credits",
+            "type": "string"
+          },
+          "pending_debits": {
+            "title": "Pending Debits",
+            "type": "string"
+          },
+          "reversed_credits": {
+            "title": "Reversed Credits",
+            "type": "string"
+          },
+          "reversed_debits": {
+            "title": "Reversed Debits",
+            "type": "string"
+          },
+          "settled_credits": {
+            "title": "Settled Credits",
+            "type": "string"
+          },
+          "settled_debits": {
+            "title": "Settled Debits",
+            "type": "string"
+          },
+          "settled_net": {
+            "title": "Settled Net",
+            "type": "string"
+          }
+        },
+        "required": [
+          "settled_credits",
+          "settled_debits",
+          "settled_net",
+          "pending_credits",
+          "pending_debits",
+          "reversed_credits",
+          "reversed_debits"
+        ],
+        "title": "StatementTotals",
+        "type": "object"
+      },
+      "WalletStatement": {
+        "description": "Totals and page share a snapshot; later pages refresh current totals.",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "items": {
+            "description": "Newest first.",
+            "items": {
+              "$ref": "#/components/schemas/TransactionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass back to fetch the next page.",
+            "title": "Next Cursor"
+          },
+          "timezone": {
+            "const": "Asia/Riyadh",
+            "default": "Asia/Riyadh",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/StatementTotals"
+          }
+        },
+        "required": [
+          "items",
+          "currency",
+          "from_date",
+          "to_date",
+          "as_of",
+          "totals"
+        ],
+        "title": "WalletStatement",
+        "type": "object"
+      }
     }
-  ],
-  "x-future-api-work": "Features listed as gaps in MOBILE-API-INTEGRATION.md have no backend route; do not invent or integrate endpoints until separately added."
+  }
 }

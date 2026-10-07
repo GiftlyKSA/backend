@@ -824,6 +824,35 @@
         "title": "InvoiceLineRequest",
         "type": "object"
       },
+      "InvoicePage": {
+        "description": "Newest-created invoices first, with an owned UUID cursor.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "InvoicePage",
+        "type": "object"
+      },
       "InvoiceResponse": {
         "description": "A full invoice view for its participants (every amount server-computed).",
         "properties": {
@@ -930,6 +959,85 @@
           "items"
         ],
         "title": "InvoiceResponse",
+        "type": "object"
+      },
+      "InvoiceStatus": {
+        "description": "Invoice lifecycle status.",
+        "enum": [
+          "DRAFT",
+          "ISSUED",
+          "PAID",
+          "CANCELLED",
+          "EXPIRED",
+          "REFUNDED"
+        ],
+        "title": "InvoiceStatus",
+        "type": "string"
+      },
+      "InvoiceSummary": {
+        "description": "One visible invoice revision and its current-revision marker.",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvoiceStatus"
+          },
+          "total_amount": {
+            "title": "Total Amount",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "order_id",
+          "status",
+          "currency",
+          "total_amount",
+          "issued_at",
+          "expires_at",
+          "is_current"
+        ],
+        "title": "InvoiceSummary",
         "type": "object"
       },
       "MessagePage": {
@@ -1201,6 +1309,86 @@
           "items"
         ],
         "title": "OrderListResponse",
+        "type": "object"
+      },
+      "OrderMediaPage": {
+        "description": "Oldest-created order media first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderMediaResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "OrderMediaPage",
+        "type": "object"
+      },
+      "OrderMediaResponse": {
+        "description": "One photo, without exposing its internal object key.",
+        "properties": {
+          "access_url": {
+            "title": "Access Url",
+            "type": "string"
+          },
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "ORDER_REQUEST",
+              "DELIVERY_PROOF"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "purpose",
+          "content_type",
+          "byte_size",
+          "created_at",
+          "access_url",
+          "expires_at"
+        ],
+        "title": "OrderMediaResponse",
         "type": "object"
       },
       "OrderStatus": {
@@ -1892,6 +2080,50 @@
         "title": "SimulatePaymentRequest",
         "type": "object"
       },
+      "StatementTotals": {
+        "description": "Status-separated credits/debits and settled net; all decimal strings.",
+        "properties": {
+          "pending_credits": {
+            "title": "Pending Credits",
+            "type": "string"
+          },
+          "pending_debits": {
+            "title": "Pending Debits",
+            "type": "string"
+          },
+          "reversed_credits": {
+            "title": "Reversed Credits",
+            "type": "string"
+          },
+          "reversed_debits": {
+            "title": "Reversed Debits",
+            "type": "string"
+          },
+          "settled_credits": {
+            "title": "Settled Credits",
+            "type": "string"
+          },
+          "settled_debits": {
+            "title": "Settled Debits",
+            "type": "string"
+          },
+          "settled_net": {
+            "title": "Settled Net",
+            "type": "string"
+          }
+        },
+        "required": [
+          "settled_credits",
+          "settled_debits",
+          "settled_net",
+          "pending_credits",
+          "pending_debits",
+          "reversed_credits",
+          "reversed_debits"
+        ],
+        "title": "StatementTotals",
+        "type": "object"
+      },
       "TokenResponse": {
         "description": "An issued access + refresh token pair.",
         "properties": {
@@ -2015,10 +2247,54 @@
             "title": "Created At",
             "type": "string"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "id": {
             "description": "Transaction id.",
             "title": "Id",
             "type": "string"
+          },
+          "invoice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Id"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "payment_intent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Intent Id"
           },
           "status": {
             "description": "PENDING | SETTLED | REVERSED.",
@@ -2535,6 +2811,69 @@
           "currency"
         ],
         "title": "WalletResponse",
+        "type": "object"
+      },
+      "WalletStatement": {
+        "description": "Totals and page share a snapshot; later pages refresh current totals.",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "items": {
+            "description": "Newest first.",
+            "items": {
+              "$ref": "#/components/schemas/TransactionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pass back to fetch the next page.",
+            "title": "Next Cursor"
+          },
+          "timezone": {
+            "const": "Asia/Riyadh",
+            "default": "Asia/Riyadh",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/StatementTotals"
+          }
+        },
+        "required": [
+          "items",
+          "currency",
+          "from_date",
+          "to_date",
+          "as_of",
+          "totals"
+        ],
+        "title": "WalletStatement",
         "type": "object"
       },
       "WebhookAck": {
@@ -3615,6 +3954,133 @@
         "summary": "Readiness probe",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/invoices": {
+      "get": {
+        "description": "List owned invoice revisions; issued-date bounds use Asia/Riyadh days.",
+        "operationId": "list_invoices_api_invoices_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InvoiceStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_historical",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Historical",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invoices",
+        "tags": [
+          "invoices"
         ]
       }
     },
@@ -4872,6 +5338,99 @@
         ]
       }
     },
+    "/api/orders/{order_id}/media": {
+      "get": {
+        "description": "Return confirmed order photos with five-minute signed access URLs.",
+        "operationId": "list_order_media_api_orders__order_id__media_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ORDER_REQUEST",
+                    "DELIVERY_PROOF"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Purpose"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderMediaPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Order Media",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
     "/api/orders/{order_id}/ratings": {
       "post": {
         "description": "Rate the assigned courier after order completion.",
@@ -5162,6 +5721,93 @@
         ]
       }
     },
+    "/api/wallets/me/statement": {
+      "get": {
+        "description": "Return owned current totals and transactions for at most 366 Riyadh days.",
+        "operationId": "get_wallet_statement_api_wallets_me_statement_get",
+        "parameters": [
+          {
+            "description": "Inclusive Asia/Riyadh start day.",
+            "in": "query",
+            "name": "from_date",
+            "required": true,
+            "schema": {
+              "description": "Inclusive Asia/Riyadh start day.",
+              "format": "date",
+              "title": "From Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive Asia/Riyadh end day.",
+            "in": "query",
+            "name": "to_date",
+            "required": true,
+            "schema": {
+              "description": "Inclusive Asia/Riyadh end day.",
+              "format": "date",
+              "title": "To Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletStatement"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Wallet Statement",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
     "/api/wallets/me/transactions": {
       "get": {
         "description": "Return the authenticated user's ledger entries, newest first (keyset paged).",
@@ -5194,6 +5840,44 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start date (Gregorian YYYY-MM-DD).",
+              "title": "From Date"
+            }
+          },
+          {
+            "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive end date (Gregorian YYYY-MM-DD).",
+              "title": "To Date"
             }
           }
         ],

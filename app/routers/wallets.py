@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
@@ -22,7 +22,9 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.repositories.withdrawal_repository import WithdrawalRepository
+from app.schemas.date_range import CalendarDate, DateRange, date_range
 from app.schemas.payments import TopupRequest, TopupResponse
+from app.schemas.wallet_statement import WalletStatement
 from app.schemas.wallets import (
     TransactionPage,
     TransactionResponse,
@@ -33,6 +35,8 @@ from app.schemas.wallets import (
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.money_service import MoneyService
 from app.services.payment_service import build_payment_service
+from app.services.reporting_dates import reporting_bounds
+from app.services.wallet_statement_service import WalletStatementService
 from app.services.withdrawal_service import WithdrawalService
 
 router = APIRouter(prefix="/api/wallets", tags=["wallets"])
@@ -146,6 +150,7 @@ async def request_withdrawal(
 async def list_my_transactions(
     db: DbDep,
     actor: Annotated[Actor, Depends(_eligible_customer_or_courier)],
+    dates: Annotated[DateRange, Depends(date_range)],
     cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> TransactionPage:
@@ -155,7 +160,13 @@ async def list_my_transactions(
     if wallet is None:
         raise NotFoundError("Wallet not found.")
     before = cursor
-    rows = await repo.list_transactions(wallet.id, limit=limit, before_id=before)
+    start, end = reporting_bounds(dates.from_date, dates.to_date)
+    if start is None and end is None:
+        rows = await repo.list_transactions(wallet.id, limit=limit, before_id=before)
+    else:
+        rows = await repo.list_transactions(
+            wallet.id, limit=limit, before_id=before, start=start, end=end
+        )
     items = [
         TransactionResponse(
             id=str(t.id),
@@ -164,8 +175,30 @@ async def list_my_transactions(
             status=str(t.status),
             balance_after=money_str(t.balance_after),
             created_at=t.created_at.isoformat(),
+            description=t.description,
+            order_id=str(t.reference_order_id) if t.reference_order_id else None,
+            invoice_id=str(t.reference_invoice_id) if t.reference_invoice_id else None,
+            payment_intent_id=str(t.reference_intent_id) if t.reference_intent_id else None,
         )
         for t in rows
     ]
     next_cursor = str(rows[-1].id) if len(rows) == limit else None
     return TransactionPage(items=items, next_cursor=next_cursor)
+
+
+@router.get("/me/statement", response_model=WalletStatement)
+async def get_wallet_statement(
+    response: Response,
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_CustomerOrCourier)],
+    from_date: Annotated[CalendarDate, Query(description="Inclusive Asia/Riyadh start day.")],
+    to_date: Annotated[CalendarDate, Query(description="Inclusive Asia/Riyadh end day.")],
+    cursor: Annotated[uuid.UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> WalletStatement:
+    """Return owned current totals and transactions for at most 366 Riyadh days."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return await WalletStatementService(
+        WalletRepository(db),
+        CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),
+    ).read(actor.id, from_date=from_date, to_date=to_date, limit=limit, cursor=cursor)
