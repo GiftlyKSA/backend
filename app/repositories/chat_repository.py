@@ -16,7 +16,7 @@ from sqlalchemy import insert, literal, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.models import Conversation, Message, MessageAttachment
+from app.models import ChatNotification, Conversation, Message, MessageAttachment
 from app.models.enums import MessageType
 
 
@@ -91,6 +91,14 @@ class ChatRepository:
         )
         self._session.add(message)
         await self._session.flush()
+        self._session.add(
+            ChatNotification(
+                message_id=message.id,
+                recipient_id=(
+                    conversation.courier_id if sender_is_customer else conversation.customer_id
+                ),
+            )
+        )
 
         conversation.last_message_preview_encrypted = preview_encrypted
         conversation.last_message_timestamp = message.created_at or datetime.now(UTC)

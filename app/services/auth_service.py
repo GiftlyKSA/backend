@@ -27,6 +27,7 @@ from app.core.jwt import (
     decode_registration_token,
 )
 from app.core.security import generate_session_token, sha256_hex
+from app.models import User
 from app.models.enums import UserGender, UserRole, UserStatus
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.city_repository import CityRepository
@@ -43,6 +44,11 @@ async def validate_access_claims(
     if denylisted:
         raise UnauthorizedError("This session has been revoked.")
     user = await users.get(uuid.UUID(claims.sub))
+    validate_account_claims(claims, user)
+
+
+def validate_account_claims(claims: AccessClaims, user: User | None) -> None:
+    """Validate a currently selected account against its access credentials."""
     if (
         user is None
         or user.deleted_at is not None

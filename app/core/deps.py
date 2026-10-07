@@ -14,6 +14,7 @@ from typing import Any
 
 from fastapi import Depends, Request
 from redis.asyncio import Redis
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_context import mark_request_transaction, set_audit_actor
@@ -52,7 +53,15 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
     factory = request.app.state.session_factory
     async with factory() as session:
         try:
-            await mark_request_transaction(session)
+            if (
+                request.method in {"GET", "HEAD"}
+                and request.url.path.startswith("/api/")
+                and not request.url.path.startswith("/api/admin/")
+            ):
+                session.info["read_only_request"] = True
+                await session.execute(text("SET TRANSACTION READ ONLY"))
+            else:
+                await mark_request_transaction(session)
             yield session
             await session.commit()
             emit_committed_audit_events(session)

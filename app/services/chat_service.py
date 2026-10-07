@@ -16,7 +16,7 @@ from datetime import datetime
 from redis.asyncio import Redis
 
 from app.core.config import Settings
-from app.core.crypto import FieldCipher, build_aad, build_cipher
+from app.core.crypto import build_aad, build_cipher
 from app.core.exceptions import NotFoundError
 from app.models import Conversation, Message, MessageAttachment
 from app.models.enums import MessageType
@@ -95,27 +95,25 @@ class ChatService:
         self._redis = redis
         self._settings = settings
         self._eligibility = eligibility
-
-    def _cipher(self) -> FieldCipher:
-        return build_cipher(
-            self._settings.encryption_keys(), self._settings.FIELD_ENCRYPTION_KEY_VERSION
+        self._field_cipher = build_cipher(
+            settings.encryption_keys(), settings.FIELD_ENCRYPTION_KEY_VERSION
         )
 
     def _encrypt_content(self, conversation_id: uuid.UUID, text: str) -> str:
         aad = build_aad("messages", "content", str(conversation_id))
-        return self._cipher().encrypt(text, aad)
+        return self._field_cipher.encrypt(text, aad)
 
     def _decrypt_content(self, conversation_id: uuid.UUID, blob: str) -> str:
         aad = build_aad("messages", "content", str(conversation_id))
-        return self._cipher().decrypt(blob, aad)
+        return self._field_cipher.decrypt(blob, aad)
 
     def _encrypt_preview(self, conversation_id: uuid.UUID, text: str) -> str:
         aad = build_aad("conversations", "last_message_preview", str(conversation_id))
-        return self._cipher().encrypt(text[:_PREVIEW_CHARS], aad)
+        return self._field_cipher.encrypt(text[:_PREVIEW_CHARS], aad)
 
     def _decrypt_preview(self, conversation_id: uuid.UUID, blob: str) -> str:
         aad = build_aad("conversations", "last_message_preview", str(conversation_id))
-        return self._cipher().decrypt(blob, aad)
+        return self._field_cipher.decrypt(blob, aad)
 
     async def _require_conversation(
         self, conversation_id: uuid.UUID, actor_id: uuid.UUID, *, for_update: bool = False

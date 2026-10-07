@@ -9,6 +9,7 @@ never fetch-then-compare.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import exists, select, tuple_
@@ -135,21 +136,28 @@ class InvoiceRepository:
 
     async def add_item(self, *, invoice_id: uuid.UUID, line: PricingLine) -> None:
         """Attach one computed line (a :class:`PricingLine`) to an invoice."""
-        self._session.add(
-            InvoiceItem(
-                invoice_id=invoice_id,
-                position=line.position,
-                title=line.title,
-                description=line.description,
-                unit_price_amount=line.unit_price_amount,
-                quantity=line.quantity,
-                tax_rate=line.tax_rate,
-                line_net_amount=line.line_net_amount,
-                line_discount_amount=line.line_discount_amount,
-                line_taxable_amount=line.line_taxable_amount,
-                line_tax_amount=line.line_tax_amount,
-                line_total_amount=line.line_total_amount,
-            )
+        await self.add_items(invoice_id=invoice_id, lines=[line])
+
+    async def add_items(self, *, invoice_id: uuid.UUID, lines: Sequence[PricingLine]) -> None:
+        """Persist computed lines together while the parent invoice is still DRAFT."""
+        self._session.add_all(
+            [
+                InvoiceItem(
+                    invoice_id=invoice_id,
+                    position=line.position,
+                    title=line.title,
+                    description=line.description,
+                    unit_price_amount=line.unit_price_amount,
+                    quantity=line.quantity,
+                    tax_rate=line.tax_rate,
+                    line_net_amount=line.line_net_amount,
+                    line_discount_amount=line.line_discount_amount,
+                    line_taxable_amount=line.line_taxable_amount,
+                    line_tax_amount=line.line_tax_amount,
+                    line_total_amount=line.line_total_amount,
+                )
+                for line in lines
+            ]
         )
         await self._session.flush()
 

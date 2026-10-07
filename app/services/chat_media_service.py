@@ -247,4 +247,6 @@ class ChatMediaService:
         attachment = await self._repository.attachment_for_actor(attachment_id, actor_id)
         if attachment is None:
             raise NotFoundError("Attachment not found.")
-        return self._storage.signed_read_url(attachment.storage_key, ttl_seconds=300)
+        return await asyncio.to_thread(
+            self._storage.signed_read_url, attachment.storage_key, ttl_seconds=300
+        )

@@ -173,8 +173,7 @@ class InvoiceService:
             promo_id=promo_obj.id if promo_obj is not None else None,
             promo_code_snapshot=promo_obj.code if promo_obj is not None else None,
         )
-        for line in result.lines:
-            await self._invoices.add_item(invoice_id=invoice.id, line=line)
+        await self._invoices.add_items(invoice_id=invoice.id, lines=result.lines)
 
         if promo_obj is not None:
             await self._promos.reserve(

@@ -390,7 +390,16 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("idx_orders_city_status", "delivery_city_id", "status"),
         Index("idx_orders_created_at", text("created_at DESC")),
-        Index("idx_orders_customer_created", "customer_id", text("created_at DESC")),
+        Index(
+            "idx_orders_customer_created", "customer_id", text("created_at DESC"), text("id DESC")
+        ),
+        Index(
+            "idx_orders_radar_keyset",
+            "delivery_city_id",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("status = 'NEW'"),
+        ),
         Index(
             "idx_orders_overdue_unaccepted",
             "delivery_date",
@@ -401,6 +410,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idx_orders_courier_created",
             "courier_id",
             text("created_at DESC"),
+            text("id DESC"),
             postgresql_where=text("courier_id IS NOT NULL"),
         ),
         Index(
@@ -654,7 +664,7 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "OR (promo_id IS NOT NULL AND discount_amount > 0)",
             name="chk_invoice_promo_pairing",
         ),
-        Index("idx_invoices_order", "order_id"),
+        Index("idx_invoices_order", "order_id", text("created_at DESC"), text("id DESC")),
         Index(
             "uq_invoices_one_active_per_order",
             "order_id",
@@ -909,11 +919,13 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idx_conversations_customer_inbox",
             "customer_id",
             text("last_message_timestamp DESC"),
+            text("id DESC"),
         ),
         Index(
             "idx_conversations_courier_inbox",
             "courier_id",
             text("last_message_timestamp DESC"),
+            text("id DESC"),
         ),
     )
 
@@ -942,6 +954,37 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "conversation_id",
             text("created_at DESC"),
             text("id DESC"),
+        ),
+    )
+
+
+class ChatNotification(TimestampMixin, Base):
+    """Durable, leased push intent created atomically with a chat message."""
+
+    __tablename__ = "chat_notifications"
+
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    recipient_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    cursor_token_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "idx_chat_notifications_pending",
+            "available_at",
+            "created_at",
+            postgresql_where=text("completed_at IS NULL AND failed_at IS NULL"),
         ),
     )
 

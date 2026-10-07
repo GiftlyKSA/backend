@@ -20,6 +20,8 @@ from app.services.rating_service import RatingService
 from app.services.user_service import UserService
 from app.services.withdrawal_service import WithdrawalService
 
+from tests.conftest import make_test_settings
+
 
 class _RejectedUsers:
     def __init__(self) -> None:
@@ -538,7 +540,7 @@ def _rejected_chat() -> ChatService:
     return ChatService(
         chat=_VisibleChat(),  # type: ignore[arg-type]
         redis=Any,
-        settings=Any,
+        settings=make_test_settings(),
         eligibility=_rejected_eligibility(),
     )
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import City, CourierProfile, User
 from app.models.enums import UserRole, UserStatus
+from app.repositories.read_snapshot import get_read_row
 
 
 class CourierRepository:
@@ -21,7 +22,7 @@ class CourierRepository:
 
     async def get(self, user_id: uuid.UUID) -> CourierProfile | None:
         """Return a courier profile by user id, or None."""
-        return await self._session.get(CourierProfile, user_id)
+        return await get_read_row(self._session, CourierProfile, user_id)
 
     async def lock(self, user_id: uuid.UUID) -> CourierProfile | None:
         """Keep city assignment and verification stable through an operation."""

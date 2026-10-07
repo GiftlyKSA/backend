@@ -11,6 +11,7 @@ import logging
 import re
 import uuid
 from contextvars import ContextVar
+from time import perf_counter
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -18,6 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.exceptions import DomainError, RateLimitedError
+from app.core.query_metrics import begin_query_metrics, end_query_metrics
 
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 _logger = logging.getLogger("app.request")
@@ -41,9 +43,28 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         supplied = request.headers.get("X-Request-ID", "")
         request_id = supplied if _SAFE_REQUEST_ID.fullmatch(supplied) else str(uuid.uuid4())
         token = _request_id_ctx.set(request_id)
+        metrics, metrics_token = begin_query_metrics()
+        started = perf_counter()
         try:
             response = await call_next(request)
         finally:
+            elapsed_ms = (perf_counter() - started) * 1000
+            if elapsed_ms >= 500:
+                route = request.scope.get("route")
+                _logger.warning(
+                    "Slow request completed; inspect database time and dependency waits.",
+                    extra={
+                        "request_id": request_id,
+                        "extra_fields": {
+                            "route": str(getattr(route, "path", "unmatched")),
+                            "method": request.method,
+                            "elapsed_ms": round(elapsed_ms, 2),
+                            "sql_count": metrics.count,
+                            "sql_ms": round(metrics.elapsed_seconds * 1000, 2),
+                        },
+                    },
+                )
+            end_query_metrics(metrics_token)
             _request_id_ctx.reset(token)
         response.headers["X-Request-ID"] = request_id
         return response

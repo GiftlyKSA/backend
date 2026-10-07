@@ -1,5 +1,9 @@
 """Sign bounded order-photo pages only after current participant authorization."""
 
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -55,6 +59,12 @@ class OrderMediaReadService:
             cursor=cursor,
         )
         expires_at = datetime.now(UTC) + timedelta(seconds=_READ_TTL_SECONDS)
+        page_rows = rows[:limit]
+        access_urls = (
+            await asyncio.to_thread(self._sign_page, [row.storage_key for row in page_rows])
+            if page_rows
+            else []
+        )
         items = [
             OrderMediaResponse(
                 id=row.id,
@@ -64,14 +74,19 @@ class OrderMediaReadService:
                 content_type=row.content_type,
                 byte_size=row.byte_size,
                 created_at=row.created_at,
-                access_url=self._storage.signed_read_url(
-                    row.storage_key, ttl_seconds=_READ_TTL_SECONDS
-                ),
+                access_url=access_url,
                 expires_at=expires_at,
             )
-            for row in rows[:limit]
+            for row, access_url in zip(page_rows, access_urls, strict=True)
         ]
         return OrderMediaPage(
             items=items,
             next_cursor=str(items[-1].id) if len(rows) > limit else None,
         )
+
+    def _sign_page(self, storage_keys: Sequence[str]) -> Sequence[str]:
+        """Sign the bounded page sequentially within one executor task."""
+        return [
+            self._storage.signed_read_url(key, ttl_seconds=_READ_TTL_SECONDS)
+            for key in storage_keys
+        ]

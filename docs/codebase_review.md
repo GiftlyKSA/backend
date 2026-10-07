@@ -306,3 +306,35 @@ No Docker, live PostgreSQL/Redis, production repair, secrets inspection or vendo
 was performed. Native decoder availability, database concurrency/query plans, actual
 deployment settings, independent backups/audit export and production load remain
 UNCONFIRMED. New tasks contain only outstanding work from this review.
+
+## Courier performance verification — 2026-10-08
+
+Scope: courier-accessible order/radar/realtime, chat/media, invoices, account lookup
+and wallet read paths. This is a scoped performance/security regression review,
+not a new whole-codebase security certification. Production latency was not measured.
+
+| ID | Category | Severity / score | Status | Evidence / unresolved impact | Minimal change / expected impact / verification |
+| --- | --- | --- | --- | --- | --- |
+| CP-01 | Reliability / resource use | Medium6 | Fixed | `app/services/invoice_pdf_cache.py:97`: cancelled requests released permits while render threads kept running, admitting excess work. | Shielded rendering owns permit until completion; blocked-thread cancellation regression now enforces four renderers. |
+| CP-02 | Reliability / background work | Medium5 | Fixed | `app/services/chat_notification_service.py:91`: retirement of exhausted retries was treated as an empty queue, delaying healthy work by scheduled sweeps. | Named claim batch distinguishes retirement from exhaustion; mixed backlog and bounded20retirement regressions. |
+| CP-03 | Performance / latency | Medium5 | Fixed | `app/routers/chat.py` waited for synchronous push after message persistence. | Transactional outbox, bounded paged worker and retries; provider calls outside transactions; response no longer waits for push. |
+| CP-04 | Performance / SQL | Medium5 | Fixed | `app/repositories/invoice_repository.py:141` flushed every item; repeated user/courier repository lookups and realtime order hydration caused avoidable round trips. | One item-batch flush; transaction-local read reuse; one scoped realtime projection; query-count and authorization regressions. |
+| CP-05 | Performance / CPU | Medium4 | Fixed | media signing and per-message cipher construction repeated synchronous work on the event loop. | Off-loop signing, reused signer/cipher, rotation snapshot and thread regressions. |
+| CP-06 | Performance / SQL | Low3 | Fixed | `app/services/order_service.py:322` queried customer rating eligibility even for couriers; keyset indexes omitted ID tie-breakers. | Skip courier-only futile lookup; migration0021 covers actor/revision ordering and NEW city radar. Compiled indexes tested; real plans pending. |
+| CP-07 | Performance / cache | Low3 | Fixed | identical invoice PDFs regenerated for each owned download. | Content/template fingerprint reuse, one-hour TTL, capped memory/concurrency,100msRedis budgets and outage regressions. |
+| CP-08 | Performance / evidence | Unverified risk | Needs deployment validation | Query plans, actual pool/Redis/network costs and endpoint p95 are unmeasured. | Run disposable PostgreSQL/Redis integrations and representative EXPLAIN/load comparisons; timing logs now separate successful SQL execution from other waits. |
+
+Priority: CP-08 is the remaining validation work; no unresolved concrete defect was
+found in the final scoped review. Fresh authorization and financial aggregates are
+intentional costs, not justified candidates for stale response caching. Index builds
+can block writes; chat push is at least once and may arrive after the next minute
+sweep. Local database/container/provider checks did not run. Existing findings below
+and unrelated unreleased payment work retain their previous status.
+
+Verification on the isolated master-based release: full pytest suite **788 passed,
+207 skipped** (four upstream Starlette deprecation warnings); both all-file
+pre-commit and pre-push gates passed, including Ruff and strict mypy. Generated
+development OpenAPI exactly matches the pushed specification. Skips include absent
+disposable PostgreSQL/Redis services; migration graph/compiled DDL tests do not
+substitute for migration execution or query plans. Final independent scoped review
+found no remaining concrete defects after CP-01/CP-02 regressions were corrected.

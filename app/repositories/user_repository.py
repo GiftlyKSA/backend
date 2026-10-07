@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit_context import set_audit_actor
 from app.models import City, Conversation, CourierProfile, Order, User
 from app.models.enums import UserRole, UserStatus
+from app.repositories.read_snapshot import get_read_row
 
 _DASHBOARD_ADMIN_NAMESPACE = uuid.UUID("48c72a54-78e4-4a0e-a20f-54378ed7f950")
 
@@ -39,7 +40,7 @@ class UserRepository:
 
     async def get(self, user_id: uuid.UUID) -> User | None:
         """Return a user by id, or None."""
-        return await self._session.get(User, user_id)
+        return await get_read_row(self._session, User, user_id)
 
     async def get_for_update(self, user_id: uuid.UUID) -> User | None:
         """Lock and return a user so competing status transitions serialize."""

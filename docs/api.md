@@ -1006,3 +1006,15 @@ Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/
 ## Invoice PDF and item-only VAT (2026-10-04)
 
 GET /api/invoices/{invoice_id}/pdf returns private application/pdf bytes to the owning customer or assigned eligible courier. Use the Bearer header; there is no body. Foreign invoices return 404. VAT applies only to discounted items; courier and service fees have zero VAT. Historical invoice amounts are read as stored. See [PDF operations](documentation.md#invoice-pdfs-paid-receipts-and-vat-repair) for deployment limits and receipt behavior.
+
+## Courier performance compatibility — 2026-10-08
+
+This release changes no public endpoint paths, request/response schemas, role rules,
+filters or cursor contracts. Mobile clients require no contract changes. Order reads
+and WebSocket snapshots continue to authorize against current account/order state.
+Chat push delivery is durable and asynchronous: saved-message acknowledgements do
+not wait for push providers; minute-based scheduling and retries can delay pushes.
+Redis live-message publication retains its existing timeout. Invoice PDF reuse occurs
+only after fresh ownership/content reads; responses remain private,no-store. No
+cached balance or stale payment/claim state is used to authorize writes. See
+[operational performance details](documentation.md#courier-read-and-delivery-performance--2026-10-08).

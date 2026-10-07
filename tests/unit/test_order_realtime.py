@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.jwt import create_access_token
+from app.models.enums import UserRole, UserStatus
 from app.routers import order_events
 from app.schemas.order_events import OrderStatusEvent
 from app.services import order_realtime_service as realtime
@@ -39,15 +40,23 @@ async def test_unrelated_customer_cannot_read_order(monkeypatch):
     token, _, _ = create_access_token(settings, user_id=actor_id, role="CUSTOMER")
     session = AsyncMock()
     factory = Mock(return_value=session)
-    monkeypatch.setattr(realtime, "validate_access_claims", AsyncMock())
-    monkeypatch.setattr(realtime, "CourierEligibilityService", Mock(return_value=AsyncMock()))
+    redis = AsyncMock()
+    redis.get.return_value = None
     repository = AsyncMock()
-    repository.get_for_actor.return_value = None
+    repository.get_live_state.return_value = SimpleNamespace(
+        user=SimpleNamespace(
+            role=UserRole.CUSTOMER,
+            status=UserStatus.ACTIVE,
+            deleted_at=None,
+            auth_version=0,
+        ),
+        order_id=None,
+    )
     monkeypatch.setattr(realtime, "OrderRepository", Mock(return_value=repository))
-    service = realtime.OrderRealtimeService(settings, AsyncMock(), factory)
+    service = realtime.OrderRealtimeService(settings, redis, factory)
     with pytest.raises(NotFoundError):
         await service.snapshot(order_id, token)
-    repository.get_for_actor.assert_awaited_once_with(order_id, actor_id)
+    repository.get_live_state.assert_awaited_once_with(order_id, actor_id)
 
 
 async def test_revocation_during_updates_sends_no_state():

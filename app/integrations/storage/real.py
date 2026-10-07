@@ -53,6 +53,9 @@ class S3StorageClient(StorageClient):
         if not isinstance(key, RSAPrivateKey):
             raise ValueError("CLOUDFRONT_PRIVATE_KEY must contain an RSA private key.")
         self._cloudfront_private_key = key
+        self._cloudfront_signer = CloudFrontSigner(
+            self._cloudfront_key_pair_id, self._sign_cloudfront_policy
+        )
         self._client_config = Config(signature_version="s3v4")
         self._session = aioboto3.Session(
             aws_access_key_id=access_key_id,
@@ -188,10 +191,9 @@ class S3StorageClient(StorageClient):
 
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a short-lived, RSA-signed CloudFront read URL."""
-        signer = CloudFrontSigner(self._cloudfront_key_pair_id, self._sign_cloudfront_policy)
         signed = cast(
             str,
-            signer.generate_presigned_url(
+            self._cloudfront_signer.generate_presigned_url(
                 f"https://{self._cloudfront_domain}/{storage_key}",
                 date_less_than=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
             ),

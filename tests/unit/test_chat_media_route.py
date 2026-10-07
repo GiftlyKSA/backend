@@ -16,8 +16,7 @@ from tests.conftest import make_test_settings
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["publish", "devices", "rollback"])
-async def test_committed_text_returns_success_despite_delivery_failure(failure):
+async def test_committed_text_returns_success_despite_delivery_failure():
     actor = Actor(uuid4(), UserRole.CUSTOMER, "session")
     conversation = uuid4()
     chat, db = AsyncMock(), AsyncMock()
@@ -31,22 +30,10 @@ async def test_committed_text_returns_success_despite_delivery_failure(failure):
         "2026-10-04T00:00:00+00:00",
     )
     chat.send_message.return_value = dto
-    if failure == "publish":
-        chat.publish_message.side_effect = RuntimeError("Redis unavailable")
-    if failure == "rollback":
-        db.rollback.side_effect = RuntimeError("Database unavailable")
-    notify = AsyncMock(
-        side_effect=RuntimeError("Devices unavailable") if failure != "publish" else None
-    )
+    chat.publish_message.side_effect = RuntimeError("Redis unavailable")
     with (
         patch("app.routers.chat._service", return_value=chat),
-        patch("app.routers.chat.ChatRepository") as repository,
-        patch("app.routers.chat.NotificationService") as notifications,
     ):
-        repository.return_value.get_for_actor = AsyncMock(
-            return_value=SimpleNamespace(customer_id=actor.id, courier_id=uuid4())
-        )
-        notifications.return_value.notify_user = notify
         response = await send_message(
             SimpleNamespace(
                 app=SimpleNamespace(
@@ -95,10 +82,6 @@ async def test_websocket_acknowledges_saved_message_when_delivery_fails():
         patch("app.routers.chat.set_audit_actor", new=AsyncMock()),
         patch("app.routers.chat._require_live_authorization", new=AsyncMock()),
         patch("app.routers.chat.RateLimiter") as limiter,
-        patch(
-            "app.routers.chat.NotificationService", side_effect=RuntimeError("Devices unavailable")
-        ),
-        patch("app.routers.chat._notify_chat_recipient", new=AsyncMock(side_effect=RuntimeError)),
     ):
         limiter.return_value.check_guarded = AsyncMock(
             return_value=SimpleNamespace(blocked=False, allowed=True)
@@ -110,7 +93,7 @@ async def test_websocket_acknowledges_saved_message_when_delivery_fails():
 
 
 @pytest.mark.asyncio
-async def test_committed_media_returns_success_when_live_and_push_fail():
+async def test_committed_media_returns_success_when_live_delivery_fails():
     actor = Actor(uuid4(), UserRole.CUSTOMER, "session")
     conversation = uuid4()
     media, chat, db = AsyncMock(), AsyncMock(), AsyncMock()
@@ -130,14 +113,13 @@ async def test_committed_media_returns_success_when_live_and_push_fail():
         patch("app.routers.chat._service", return_value=chat),
         patch("app.routers.chat.require_auth", new=AsyncMock(return_value=actor)),
         patch("app.routers.chat.mark_request_transaction", new=AsyncMock()),
-        patch("app.routers.chat._notify_chat_recipient", new=AsyncMock(side_effect=RuntimeError)),
     ):
         response = await send_chat_media(
             SimpleNamespace(), db, conversation, SendChatMediaRequest(storage_keys=["key"]), actor
         )
     assert response.id == dto.id
     db.commit.assert_awaited_once()
-    db.rollback.assert_awaited_once()
+    db.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

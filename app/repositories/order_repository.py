@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from sqlalchemy import Select, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.models import City, Conversation, Order, OrderMedia, OrderNotification, User
+from app.models import (
+    City,
+    Conversation,
+    CourierProfile,
+    Order,
+    OrderMedia,
+    OrderNotification,
+    User,
+)
 from app.models.enums import MediaType, OrderStatus
 
 # Statuses that count against a customer's concurrent-order limit.
@@ -29,12 +38,49 @@ _COURIER_ACTIVE = (
 )
 
 
+@dataclass(frozen=True)
+class LiveOrderState:
+    """Current account authorization and minimal order state from one statement."""
+
+    user: User
+    courier_verified: bool | None
+    order_id: uuid.UUID | None
+    status: OrderStatus | None
+    courier_id: uuid.UUID | None
+    assigned_at: datetime | None
+
+
 class OrderRepository:
     """Creates and reads orders, with FOR UPDATE locking for the accept race."""
 
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""
         self._session = session
+
+    async def get_live_state(
+        self, order_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> LiveOrderState | None:
+        """Project ownership and courier verification without loading city relationships."""
+        row = (
+            await self._session.execute(
+                select(
+                    User,
+                    CourierProfile.is_verified,
+                    Order.id,
+                    Order.status,
+                    Order.courier_id,
+                    Order.assigned_at,
+                )
+                .outerjoin(CourierProfile, CourierProfile.user_id == User.id)
+                .outerjoin(
+                    Order,
+                    (Order.id == order_id)
+                    & ((Order.customer_id == actor_id) | (Order.courier_id == actor_id)),
+                )
+                .where(User.id == actor_id)
+            )
+        ).one_or_none()
+        return LiveOrderState(*row) if row is not None else None
 
     async def create(
         self,

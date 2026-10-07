@@ -136,8 +136,7 @@ class InvoiceVatRepairService:
             promo_id=invoice.promo_id,
             promo_code_snapshot=invoice.promo_code_snapshot,
         )
-        for line in result.lines:
-            await self.invoices.add_item(invoice_id=replacement.id, line=line)
+        await self.invoices.add_items(invoice_id=replacement.id, lines=result.lines)
         if redemption is not None:
             await self.promos.set_redemption_status(
                 redemption, PromoRedemptionStatus.RELEASED, datetime.now(UTC)

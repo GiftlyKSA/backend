@@ -28,6 +28,7 @@ broker = ListQueueBroker(
 # Taskiq loads this broker entry point without discovering modules named outside tasks.py.
 for _module in (
     "auto_approve",
+    "chat_notifications",
     "expiry",
     "media_cleanup",
     "order_notifications",

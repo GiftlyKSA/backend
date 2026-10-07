@@ -811,3 +811,53 @@ automatic fund return or functioning recovery before the lifecycle APIs exist.
 
 Read-batch verification: 740 tests passed, 204 skipped; both hook suites passed.
 Four existing Starlette/httpx deprecation warnings; no dependency change for this batch.
+
+## Courier read and delivery performance — 2026-10-08
+
+Mobile GET/HEAD sessions are explicitly read-only. Within each transaction, repeated
+user and courier-profile reads reuse the same row; mutations, admin sessions and
+later transactions always perform their own checks. Read requests avoid database
+audit-context writes. Courier order reads skip customer-only rating eligibility
+queries. Live order snapshots use one participant-scoped SQL projection and retain
+fresh token revocation, account status/version and courier verification checks.
+
+Invoice creation, promo replacement and VAT repair insert their bounded item batch
+with one flush instead of one flush per item. Migration0021 extends actor/revision
+keyset indexes with deterministic ID ordering and adds a partial city/NEW-order
+radar index. Five existing indexes are replaced and one added: this costs index
+storage/write maintenance and can block writes during transactional builds. Use a
+maintenance window on larger databases; downgrade restores the prior indexes.
+Representative PostgreSQL plans and load benefits remain unverified locally.
+
+Chat messages commit a durable chat_notifications push intent in the same transaction.
+Migration0022 creates this table and its audit trigger; downgrade drops pending push
+intents, not messages. Run the existing Taskiq worker AND scheduler. The scheduler
+checks once per minute; each sweep handles at most20device pages of500 tokens,
+uses a60-second fenced lease, a20-second page timeout and at most8attempts per
+page. Exhausted rows consume the sweep budget without blocking healthy rows.
+Providers are called outside database transactions. Delivery is at least once:
+a crash after provider acceptance can repeat a push. Failed intents remain visible
+for operational investigation. Chat Redis publication still has its five-second
+bound; push-provider waits no longer hold the HTTP/WebSocket acknowledgement.
+
+CloudFront signing runs off the event loop and reuses its signer; chat encryption
+reuses one cipher/key-version snapshot per service. Media URLs retain ownership
+checks and their existing expiry. PDF downloads authorize and reread content first,
+then may reuse identical output for one hour in private Redis. Changes to displayed
+invoice/items or template source invalidate reuse by content fingerprint. The cache
+caps128entries,256KiB each and four render threads per process; cancellation does
+not release capacity until rendering finishes. Redis reads/writes each have a100ms
+budget and fail softly. HTTP PDF responses remain private,no-store.
+
+Orders, available balances, claim eligibility, ledger totals and live authorization
+are not cached as authority. Statement totals still use one SQL aggregate each page;
+rating aggregates retain their existing indexed SQL. No measured evidence justified
+additional shared response caches yet. All collection processing is bounded or batched;
+these changes introduce no per-row database queries or quadratic collection scans.
+
+Requests taking at least500 ms emit operational timing diagnostics: route pattern,
+method, request ID, elapsed time and successful SQL count/time. SQL text, parameters
+and user identifiers are not logged. Pool checkout waits, failed SQL and response
+streaming are outside the SQL measurement. These diagnostics do not create database
+HTTP audit entries. Compare endpoint p50/p95, SQL/pool time and worker lag after
+deployment; same-region hosting alone does not eliminate repeated round trips.

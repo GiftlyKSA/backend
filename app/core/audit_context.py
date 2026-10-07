@@ -19,6 +19,10 @@ async def set_audit_actor(
     """Bind a verified role and optional user to the current transaction only."""
     if category not in {"CUSTOMER", "COURIER", "ADMIN", "SYSTEM"}:
         raise ValueError("Invalid audit actor category.")
+    session.info["audit_actor_category"] = category
+    session.info["audit_actor_id"] = actor_user_id
+    if session.info.get("read_only_request") is True:
+        return
     await session.execute(
         select(
             func.set_config("giftly.audit_category", category, True),
@@ -27,4 +31,3 @@ async def set_audit_actor(
             ),
         )
     )
-    session.info["audit_actor_category"] = category

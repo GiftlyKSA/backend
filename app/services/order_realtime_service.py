@@ -9,13 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
-from app.models.enums import UserRole
-from app.repositories.courier_repository import CourierRepository
+from app.models.enums import UserRole, UserStatus
 from app.repositories.order_repository import OrderRepository
-from app.repositories.user_repository import UserRepository
 from app.schemas.order_events import OrderStatusEvent
-from app.services.auth_service import validate_access_claims
-from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.auth_service import validate_account_claims
 
 logger = logging.getLogger(__name__)
 
@@ -52,19 +49,23 @@ class OrderRealtimeService:
             raise UnauthorizedError("Invalid or expired token.") from exc
         if claims.role not in (UserRole.CUSTOMER.value, UserRole.COURIER.value):
             raise ForbiddenError()
+        if await self.redis.get(f"jwt:denylist:{claims.jti}"):
+            raise UnauthorizedError("This session has been revoked.")
         async with self.factory() as session:
-            users = UserRepository(session)
-            await validate_access_claims(claims, redis=self.redis, users=users)
             actor_id = UUID(claims.sub)
-            await CourierEligibilityService(
-                users=users, couriers=CourierRepository(session)
-            ).require_eligible_actor(actor_id)
-            order = await OrderRepository(session).get_for_actor(order_id, actor_id)
-            if order is None:
+            state = await OrderRepository(session).get_live_state(order_id, actor_id)
+            validate_account_claims(claims, state.user if state else None)
+            assert state is not None
+            if state.user.role is UserRole.COURIER and (
+                state.user.status is not UserStatus.ACTIVE or not state.courier_verified
+            ):
+                raise ForbiddenError("This courier account is not eligible for this action.")
+            if state.order_id is None:
                 raise NotFoundError("Order not found.")
+            assert state.status is not None
             return OrderStatusEvent(
-                order_id=order.id,
-                status=order.status.value,
-                courier_id=order.courier_id,
-                assigned_at=order.assigned_at,
+                order_id=state.order_id,
+                status=state.status.value,
+                courier_id=state.courier_id,
+                assigned_at=state.assigned_at,
             )

@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 
-from sqlalchemy import inspect
+from sqlalchemy import event, inspect
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import Settings
 from app.core.middleware import current_request_id
+from app.core.query_metrics import after_query, before_query
 
 _audit_logger = logging.getLogger("giftly.audit")
 
@@ -47,7 +48,7 @@ def emit_committed_audit_events(session: AsyncSession) -> None:
 
 def build_engine(settings: Settings) -> AsyncEngine:
     """Create the async engine for the configured database URL."""
-    return create_async_engine(
+    engine = create_async_engine(
         settings.DATABASE_URL.get_secret_value(),
         echo=False if settings.is_production else settings.DEBUG,
         hide_parameters=True,
@@ -58,6 +59,9 @@ def build_engine(settings: Settings) -> AsyncEngine:
         # PgBouncer transaction mode: no server-side statement cache.
         connect_args={"statement_cache_size": 0},
     )
+    event.listen(engine.sync_engine, "before_cursor_execute", before_query)
+    event.listen(engine.sync_engine, "after_cursor_execute", after_query)
+    return engine
 
 
 def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

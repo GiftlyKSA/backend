@@ -50,3 +50,12 @@ Accepted SEC-16/SEC-17 admin CRUD risks are recorded in the review, not represen
 as pending restrictions that contradict the user's decision. Independent archival and
 reconciliation work remains necessary. Mark tasks complete only with recorded evidence;
 update the review and this tracker together when findings or verification change.
+
+## Courier performance follow-up — created 2026-10-08
+
+| Task | Short description | Status | Created / last update | Urgency / note |
+| --- | --- | --- | --- | --- |
+| CP-DEPLOY | Apply0021–22 and run worker/scheduler | Needs deployment validation | 2026-10-08 | High; transactional index builds may block writes; downgrade0022 discards pending push intents. |
+| CP-MEASURE | Measure endpoint p50/p95, query plans, pool waits and resource costs | Needs validation | 2026-10-08 | Medium; use disposable PostgreSQL/Redis and representative data, not production mutations. |
+| CP-PUSH | Check chat push backlog, terminal failures and crash retries | Needs validation | 2026-10-08 | Medium; at-least-once delivery, minute schedule, bounded20 pages per run; no guaranteed instant push. |
+| CP-CACHE | Verify bounded PDF Lua eviction/TTL on Redis | Needs validation | 2026-10-08 | Medium; real-Redis integration added; local service unavailable. Additional order/ledger caches require measured benefit and safe invalidation. |

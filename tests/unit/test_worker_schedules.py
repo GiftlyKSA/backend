@@ -23,6 +23,7 @@ async def test_maintenance_tasks_registered_with_label_schedule_source() -> None
 
     expected = {
         "app.workers.auto_approve:run_auto_approve": "*/15 * * * *",
+        "app.workers.chat_notifications:deliver_chat_notifications": "* * * * *",
         "app.workers.expiry:run_expire_stale": "*/10 * * * *",
         "app.workers.expiry:cancel_overdue_orders": "0 0 * * *",
         "app.workers.expiry:run_purge_refresh_tokens": "0 * * * *",

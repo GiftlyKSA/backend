@@ -206,7 +206,12 @@ async def download_invoice_pdf(
     invoice, items = await _service(request, db).get_invoice_for_actor(
         invoice_id=invoice_id, actor_id=actor.id
     )
-    document = await to_thread(render_invoice_pdf, invoice, items)
+    cache = getattr(request.app.state, "invoice_pdf_cache", None)
+    document = (
+        await cache.render(invoice, items)
+        if cache is not None
+        else await to_thread(render_invoice_pdf, invoice, items)
+    )
     return Response(
         document,
         media_type="application/pdf",

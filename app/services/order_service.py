@@ -269,7 +269,9 @@ class OrderService:
             )
         else:
             raise ForbiddenError("Your role may not list marketplace orders.")
-        return await self._enrich_orders(orders, actor_id=actor_id)
+        return await self._enrich_orders(
+            orders, actor_id=actor_id, can_rate=role is UserRole.CUSTOMER
+        )
 
     async def list_available_views_for_courier(
         self, *, courier_id: uuid.UUID, limit: int, before_id: uuid.UUID | None
@@ -282,30 +284,43 @@ class OrderService:
         orders = await self._orders.list_available(
             profile.city_of_residence_id, limit=limit, before_id=before_id
         )
-        return await self._enrich_orders(orders, actor_id=courier_id)
+        return await self._enrich_orders(orders, actor_id=courier_id, can_rate=False)
 
     async def get_order_view_for_actor(
         self, *, order_id: uuid.UUID, actor_id: uuid.UUID, role: UserRole
     ) -> OrderView:
         """Return a participant order with actor-scoped rating state."""
         order = await self.get_order_for_actor(order_id=order_id, actor_id=actor_id)
-        return (await self._enrich_orders([order], actor_id=actor_id))[0]
+        return (
+            await self._enrich_orders(
+                [order], actor_id=actor_id, can_rate=role is UserRole.CUSTOMER
+            )
+        )[0]
 
     async def view_existing_order_for_actor(
         self, *, order: Order, actor_id: uuid.UUID, role: UserRole
     ) -> OrderView:
         """Enrich a just-mutated participant order behind the same eligibility boundary."""
         await self._eligibility.require_eligible_actor(actor_id)
-        return (await self._enrich_orders([order], actor_id=actor_id))[0]
+        return (
+            await self._enrich_orders(
+                [order], actor_id=actor_id, can_rate=role is UserRole.CUSTOMER
+            )
+        )[0]
 
     async def _enrich_orders(
         self,
         orders: list[Order],
         *,
         actor_id: uuid.UUID,
+        can_rate: bool,
     ) -> list[OrderView]:
-        states = await self._ratings.current_actor_rating_states(
-            [order.id for order in orders], actor_id
+        states = (
+            await self._ratings.current_actor_rating_states(
+                [order.id for order in orders], actor_id
+            )
+            if can_rate
+            else dict.fromkeys((order.id for order in orders), False)
         )
         views: list[OrderView] = []
         for order in orders:
