@@ -59,3 +59,17 @@ update the review and this tracker together when findings or verification change
 | CP-MEASURE | Measure endpoint p50/p95, query plans, pool waits and resource costs | Needs validation | 2026-10-08 | Medium; use disposable PostgreSQL/Redis and representative data, not production mutations. |
 | CP-PUSH | Check chat push backlog, terminal failures and crash retries | Needs validation | 2026-10-08 | Medium; at-least-once delivery, minute schedule, bounded20 pages per run; no guaranteed instant push. |
 | CP-CACHE | Verify bounded PDF Lua eviction/TTL on Redis | Needs validation | 2026-10-08 | Medium; real-Redis integration added; local service unavailable. Additional order/ledger caches require measured benefit and safe invalidation. |
+
+
+## Payment-session release checkpoint — 2026-10-08
+
+| Task | Short description | Status | Created | Urgency / note |
+| --- | --- | --- | --- | --- |
+| PAY-01 | Release owned payment-session recovery, status, refresh and cancellation | In progress; local implementation only | 2026-10-08 | High; user approved; preserve WebSockets. Not published or verified deployed. |
+| PAY-02 | Verify callback batch lock order and strict provider status | Targeted local fixes; release pending | 2026-10-08 | High; provider booleans/decimals rejected; 54 focused tests passed. Batch lock-order regression and PostgreSQL concurrency execution remain. |
+| PAY-03 | Validate migration graph and hosted ledger runtime | Pending | 2026-10-08 | High; retain applied 0021/0022 and join 0019/0020 using 0023. Disposable PostgreSQL required; no Docker on user machine. |
+| PAY-04 | Publish payment contracts and UI handoff | Pending | 2026-10-08 | High; regenerate both OpenAPI files, update references, run full suite/hooks, scoped commit and push master. Keep production payments disabled. |
+
+Stopped implementation at the user's requested 10% remaining five-hour allowance.
+This checkpoint publishes status only. Payment/SMS/PDF work remains local and must
+not be staged wholesale. No live payment-provider or database verification was run.
