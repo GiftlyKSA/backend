@@ -69,6 +69,7 @@ update the review and this tracker together when findings or verification change
 | PAY-02 | Verify callback batch lock order and strict provider status | Fixed; PostgreSQL validation remains | 2026-10-08 | High; strict status, global ledger/wallet locks, durable late-payment quarantine and eligibility regressions pass; PostgreSQL regressions added but not locally executed. |
 | PAY-03 | Validate migration graph and hosted ledger runtime | Offline verified; runtime pending | 2026-10-08 | High; retain applied 0021/0022 and join 0019/0020 using 0023. Disposable PostgreSQL required; no Docker on user machine. |
 | PAY-04 | Publish payment contracts and UI handoff | Verified; published by this release | 2026-10-08 | High; both OpenAPI references and maintained docs updated; chat-only handoff on release; production payments remain disabled. |
+| PAY-DEPLOY | Apply valid provider selection and verify new public routes | Blocked on deployment configuration approval | 2026-10-08 | High; selected Dhamen is missing DHAMEN_APP_ID; proposed PAYMENT_PROVIDER=disabled. Old service remains healthy; new route404 until rollout passes. |
 
 The earlier usage-limit checkpoint published status only. This release supersedes
 that payment/PDF checkpoint; unrelated SMS/email/payout edits remain local.
@@ -86,4 +87,3 @@ The earlier usage-limit checkpoint above is historical; payment/PDF release stat
 now updated. Provider/live database validation and query-plan/load measurements remain
 pending. No Docker, live-provider payment or production database operation was performed.
 
-| PAY-DEPLOY | Apply valid provider selection and verify new public routes | Blocked on deployment configuration approval | 2026-10-08 | High; selected Dhamen is missing DHAMEN_APP_ID; proposed PAYMENT_PROVIDER=disabled. Old service remains healthy; new route404 until rollout passes. |
