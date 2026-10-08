@@ -376,3 +376,13 @@ disposable services were available. Full pre-commit and pre-push gates passed,
 including Ruff formatting/lint and strict mypy over 213 application files.
 No Docker or live database/provider writes were performed. Deployment is a separate
 check from this source release.
+
+### Deployment check — 2026-10-08
+
+Source release8ad88f3 is pushed. CranL built the image successfully, but the new
+service failed before migration/server startup: `DHAMEN_APP_ID is required for Dhamen`.
+The running public contract therefore remains the previous version; all five new
+payment-session paths returned routing404. Existing readiness reports database/Redis ok.
+This is an incomplete selected-provider configuration, not proof of migration success.
+Approval is pending to set `PAYMENT_PROVIDER=disabled`; do not substitute credentials,
+weaken validation or describe the new operations as deployed until public checks pass.

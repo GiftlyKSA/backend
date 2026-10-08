@@ -85,3 +85,5 @@ No live payment-provider or database verification was run.
 The earlier usage-limit checkpoint above is historical; payment/PDF release status is
 now updated. Provider/live database validation and query-plan/load measurements remain
 pending. No Docker, live-provider payment or production database operation was performed.
+
+| PAY-DEPLOY | Apply valid provider selection and verify new public routes | Blocked on deployment configuration approval | 2026-10-08 | High; selected Dhamen is missing DHAMEN_APP_ID; proposed PAYMENT_PROVIDER=disabled. Old service remains healthy; new route404 until rollout passes. |
