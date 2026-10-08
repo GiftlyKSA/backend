@@ -14,6 +14,7 @@ from app.repositories.user_repository import UserRepository
 from app.routers import chat
 from app.services.auth_service import AuthService
 from freezegun import freeze_time
+from redis.exceptions import MaxConnectionsError
 from starlette.requests import Request
 
 from tests.conftest import make_test_settings
@@ -37,7 +38,10 @@ def socket_context(monkeypatch):
     session.add = Mock()
     session.__aenter__.return_value = session
     state = SimpleNamespace(
-        settings=settings, redis=redis, session_factory=Mock(return_value=session)
+        settings=settings,
+        redis=redis,
+        subscription_redis=Mock(),
+        session_factory=Mock(return_value=session),
     )
     websocket = SimpleNamespace(
         query_params={"token": token},
@@ -120,7 +124,7 @@ async def test_idle_socket_revocation_cancels_reader_and_writer(monkeypatch):
         unsubscribe=AsyncMock(),
         aclose=AsyncMock(),
     )
-    websocket.app.state.redis.pubsub = Mock(return_value=pubsub)
+    websocket.app.state.subscription_redis.pubsub = Mock(return_value=pubsub)
     websocket.app.state.redis.eval.side_effect = lambda script, *args: (
         2 if script == _ACQUIRE else 1 if script == _RENEW else 0
     )
@@ -137,6 +141,7 @@ async def test_idle_socket_revocation_cancels_reader_and_writer(monkeypatch):
     websocket.send_text.assert_not_awaited()
     pubsub.unsubscribe.assert_awaited_once()
     pubsub.aclose.assert_awaited_once()
+    websocket.app.state.redis.pubsub.assert_not_called()
     assert any(call.args[0] == _RELEASE for call in websocket.app.state.redis.eval.await_args_list)
 
 
@@ -155,6 +160,24 @@ async def test_socket_cap_fails_closed_on_redis_error(monkeypatch):
     await chat.conversation_ws(websocket, uuid4())
     websocket.close.assert_awaited_once_with(code=1013)
     websocket.app.state.redis.pubsub.assert_not_called()
+
+
+async def test_subscription_pool_full_closes_socket_and_releases_lease(monkeypatch):
+    websocket, _, _ = socket_context(monkeypatch)
+    pubsub = SimpleNamespace(
+        subscribe=AsyncMock(side_effect=MaxConnectionsError("Subscription pool full")),
+        unsubscribe=AsyncMock(side_effect=MaxConnectionsError("Subscription pool full")),
+        aclose=AsyncMock(),
+    )
+    websocket.app.state.subscription_redis.pubsub = Mock(return_value=pubsub)
+    websocket.app.state.redis.eval.side_effect = lambda script, *args: (
+        2 if script == _ACQUIRE else 0
+    )
+    await chat.conversation_ws(websocket, uuid4())
+    websocket.close.assert_awaited_once_with(code=1013)
+    websocket.app.state.redis.pubsub.assert_not_called()
+    pubsub.aclose.assert_awaited_once()
+    assert any(call.args[0] == _RELEASE for call in websocket.app.state.redis.eval.await_args_list)
 
 
 async def test_refresh_replay_revocation_is_committed_before_unauthorized():

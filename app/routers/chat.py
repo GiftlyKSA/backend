@@ -18,6 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit_context import mark_request_transaction, set_audit_actor
@@ -386,10 +387,11 @@ async def _run_admitted_ws(
     lease: WebSocketLease,
 ) -> None:
     """Serve an admitted socket and release its subscription and tasks on exit."""
-    pubsub = redis.pubsub()
+    pubsub = websocket.app.state.subscription_redis.pubsub()
     tasks: list[asyncio.Task[None]] = []
     try:
-        await pubsub.subscribe(conversation_channel(conversation_id))
+        async with asyncio.timeout(5):
+            await pubsub.subscribe(conversation_channel(conversation_id))
         await websocket.accept()
         tasks = [
             asyncio.create_task(_pump_pubsub_to_socket(pubsub, websocket, conversation_id)),
@@ -407,6 +409,8 @@ async def _run_admitted_ws(
         pass
     except (UnauthorizedError, ForbiddenError, NotFoundError):
         await websocket.close(code=4401)
+    except RedisConnectionError:
+        await websocket.close(code=1013)
     except Exception:
         await websocket.close(code=1011)
         raise
@@ -415,8 +419,11 @@ async def _run_admitted_ws(
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         with contextlib.suppress(Exception):
-            await pubsub.unsubscribe(conversation_channel(conversation_id))
-            await pubsub.aclose()  # type: ignore[no-untyped-call]
+            async with asyncio.timeout(3):
+                await pubsub.unsubscribe(conversation_channel(conversation_id))
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(3):
+                await pubsub.aclose()
 
 
 async def _pump_pubsub_to_socket(

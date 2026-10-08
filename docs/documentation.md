@@ -899,3 +899,27 @@ HTTP download and paid-email attachment use the same English Giftly purple rende
 GMT+3 affects display only. One-hour bounded Redis reuse fingerprints status, dates,
 priced items/totals and template after current ownership/content reads. Changes regenerate
 immediately. Static PDFs escape markup and fetch no remote assets.
+
+## Redis subscription isolation and chat attachment batches — 2026-10-08
+
+Each API worker owns separate Redis pools: 100 short-operation HTTP/security
+connections and 80 long-lived WebSocket subscription connections. Three workers
+have a maximum 540 API Redis connections, plus separately budgeted workers/schedulers.
+Connections are created on demand. Budget Redis maxclients and deployment replicas
+accordingly before increasing socket capacity. Pool exhaustion closes a new socket
+with 1013; clients should reconnect with bounded exponential backoff and jitter.
+Per-account 8 and deployment-wide 10,000 leases still enforce shared abuse limits;
+these ceilings do not promise 10,000 simultaneously available subscription slots.
+Publishers, revocation checks, OTP, throttles and locks retain the normal pool.
+Both owned pools close at shutdown. Connection/handshake deadlines remain 3 seconds;
+subscription setup is bounded 5 seconds and cleanup 3 seconds per operation.
+
+Chat media preparation reads 1..5 grants together. Sending uses three attachment
+persistence queries: sorted fresh row locks, conditional confirmation/claim with
+complete returned-key checking, and one sender/participant-scoped insert. Message
+and eligibility queries are unchanged. Any partial batch raises before commit and
+the enclosing request transaction rolls back. Sequential size/MIME/decoder checks
+and global decoding slots remain; larger media memory optimizations are outstanding.
+No schema migration or mobile contract change is required. Rollback uses the prior
+application image; no data conversion is needed. Real Redis/PostgreSQL load and
+query-plan measurements remain pending; local tests cannot establish production speed.

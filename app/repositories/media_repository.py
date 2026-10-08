@@ -76,6 +76,39 @@ class MediaRepository:
         )
         return updated_key is not None
 
+    async def get_many(
+        self, storage_keys: list[str], *, for_update: bool = False
+    ) -> list[MediaUpload]:
+        """Fetch a bounded batch, acquiring grant locks in stable key order."""
+        query = (
+            select(MediaUpload)
+            .where(MediaUpload.storage_key.in_(storage_keys))
+            .order_by(MediaUpload.storage_key)
+        )
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return list(await self._session.scalars(query))
+
+    async def confirm_and_claim_many(
+        self, storage_keys: list[str], actor_id: uuid.UUID, purpose: str
+    ) -> set[str]:
+        """Consume validated, locked grants; callers must reject partial claims."""
+        now = datetime.now(UTC)
+        return set(
+            await self._session.scalars(
+                update(MediaUpload)
+                .where(
+                    MediaUpload.storage_key.in_(storage_keys),
+                    MediaUpload.owner_user_id == actor_id,
+                    MediaUpload.purpose == purpose,
+                    MediaUpload.attached_at.is_(None),
+                    MediaUpload.deleting_at.is_(None),
+                )
+                .values(confirmed_at=now, attached_at=now)
+                .returning(MediaUpload.storage_key)
+            )
+        )
+
     async def claim(self, storage_key: str, actor_id: uuid.UUID, purpose: str) -> bool:
         """Atomically consume a confirmed grant once for its issued purpose."""
         updated_key = await self._session.scalar(

@@ -111,7 +111,9 @@ async def test_subscribes_before_initial_snapshot_and_cleans_up():
     websocket = AsyncMock()
     websocket.scope = {"subprotocols": ["giftly.orders", "bearer.secret"]}
     websocket.app = SimpleNamespace(
-        state=SimpleNamespace(redis=Mock(pubsub=Mock(return_value=pubsub)))
+        state=SimpleNamespace(
+            redis=Mock(), subscription_redis=Mock(pubsub=Mock(return_value=pubsub))
+        )
     )
     websocket.receive.return_value = {"type": "websocket.disconnect", "code": 1000}
     with pytest.raises(order_events.WebSocketDisconnect):
@@ -123,6 +125,7 @@ async def test_subscribes_before_initial_snapshot_and_cleans_up():
     websocket.send_text.assert_awaited_once_with(snapshot.model_dump_json())
     pubsub.unsubscribe.assert_awaited_once()
     pubsub.aclose.assert_awaited_once()
+    websocket.app.state.redis.pubsub.assert_not_called()
 
 
 async def test_publish_failure_does_not_turn_committed_write_into_failure(caplog):

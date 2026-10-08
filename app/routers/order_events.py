@@ -77,10 +77,11 @@ async def _serve(
     lease: WebSocketLease,
 ) -> None:
     """Subscribe before loading state so acceptance during connection is not missed."""
-    pubsub = websocket.app.state.redis.pubsub()
+    pubsub = websocket.app.state.subscription_redis.pubsub()
     tasks: list[asyncio.Task[None]] = []
     try:
-        await pubsub.subscribe(order_channel(order_id))
+        async with asyncio.timeout(5):
+            await pubsub.subscribe(order_channel(order_id))
         async with asyncio.timeout(5):
             snapshot = await service.snapshot(order_id, token)
         protocols = websocket.scope.get("subprotocols", [])
@@ -103,8 +104,11 @@ async def _serve(
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         with contextlib.suppress(Exception):
-            await pubsub.unsubscribe(order_channel(order_id))
-            await pubsub.aclose()
+            async with asyncio.timeout(3):
+                await pubsub.unsubscribe(order_channel(order_id))
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(3):
+                await pubsub.aclose()
 
 
 async def _updates(

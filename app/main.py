@@ -27,7 +27,7 @@ from app.core.middleware import (
     register_exception_handlers,
 )
 from app.core.ratelimit import RateLimiter
-from app.core.redis import build_redis
+from app.core.redis import build_redis, build_subscription_redis
 from app.integrations.factory import build_clients
 from app.routers import health
 
@@ -66,6 +66,7 @@ async def _close_shared_resources(app: FastAPI) -> None:
         if aclose is not None:
             await aclose()
 
+    await app.state.subscription_redis.aclose()
     await app.state.redis.aclose()
     await app.state.engine.dispose()
 
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
     app.state.redis = build_redis(settings)
+    app.state.subscription_redis = build_subscription_redis(settings)
     from app.services.invoice_pdf_cache import InvoicePdfCache
 
     app.state.invoice_pdf_cache = InvoicePdfCache(app.state.redis)

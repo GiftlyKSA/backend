@@ -110,7 +110,7 @@ async def test_prepare_rejects_foreign_or_consumed_grants(
         uuid4() if foreign_owner else actor, uuid4() if foreign_conversation else conversation
     )
     row.attached_at = "used" if used else None
-    deps.uploads.get.return_value = row
+    deps.uploads.get_many.return_value = [row]
     with pytest.raises((BadRequestError, ConflictError)):
         await service.prepare(conversation_id=conversation, actor_id=actor, keys=[row.storage_key])
     deps.storage.read_bounded_object.assert_not_awaited()
@@ -138,9 +138,8 @@ async def test_losing_atomic_claim_does_not_attach_or_publish():
     service, deps = stack()
     actor, conversation = uuid4(), uuid4()
     row = grant(actor, conversation)
-    deps.uploads.get.return_value = row
-    deps.uploads.mark_confirmed.return_value = True
-    deps.uploads.claim.return_value = False
+    deps.uploads.get_many.return_value = [row]
+    deps.uploads.confirm_and_claim_many.return_value = set()
     deps.chat.send_message.return_value = ChatMessage(
         str(uuid4()), str(conversation), str(actor), "IMAGE", "", False, "2026-10-03T00:00:00+00:00"
     )
@@ -151,7 +150,7 @@ async def test_losing_atomic_claim_does_not_attach_or_publish():
             attachments=[ValidatedAttachment(row.storage_key, row.content_type, row.byte_size)],
             text="",
         )
-    deps.repository.add_attachment.assert_not_awaited()
+    deps.repository.add_attachments.assert_not_awaited()
     deps.chat.publish_message.assert_not_awaited()
 
 
@@ -169,7 +168,7 @@ async def test_validation_closes_read_transaction_before_storage_work():
     service, deps = stack()
     actor, conversation = uuid4(), uuid4()
     row = grant(actor, conversation)
-    deps.uploads.get.return_value = row
+    deps.uploads.get_many.return_value = [row]
     deps.redis.set.return_value = True
 
     async def verify(item):
@@ -189,7 +188,7 @@ async def test_busy_global_decoder_slots_fail_before_reading_bytes():
     service, deps = stack()
     actor, conversation = uuid4(), uuid4()
     row = grant(actor, conversation)
-    deps.uploads.get.return_value = row
+    deps.uploads.get_many.return_value = [row]
     deps.redis.set.return_value = False
     with pytest.raises(MediaValidationUnavailableError):
         await service.prepare(conversation_id=conversation, actor_id=actor, keys=[row.storage_key])

@@ -21,7 +21,7 @@ from app.core.exceptions import (
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.integrations.storage.base import StorageClient
 from app.models.enums import MessageType
-from app.repositories.chat_repository import ChatRepository
+from app.repositories.chat_repository import AttachmentInput, ChatRepository
 from app.repositories.media_repository import MediaRepository
 from app.services.chat_media_validation import media_policy, verify_image, verify_recording
 from app.services.chat_service import ChatMessage, ChatService, attachment_dto
@@ -107,25 +107,30 @@ class ChatMediaService:
         )
         return url, key, 300
 
-    async def _grant(
+    async def _grants(
         self,
-        key: str,
+        keys: list[str],
         conversation_id: uuid.UUID,
         actor_id: uuid.UUID,
         *,
         for_update: bool = False,
-    ) -> ValidatedAttachment:
-        grant = await self._uploads.get(key, for_update=for_update)
-        if (
-            grant is None
-            or grant.owner_user_id != actor_id
-            or grant.purpose != "CHAT_ATTACHMENT"
-            or not key.startswith(f"chat/{conversation_id}/")
-        ):
-            raise BadRequestError("The upload is not available for this conversation.")
-        if grant.attached_at is not None or grant.deleting_at is not None:
-            raise ConflictError("This upload has already been used or expired.")
-        return ValidatedAttachment(key, grant.content_type, grant.byte_size)
+    ) -> list[ValidatedAttachment]:
+        rows = await self._uploads.get_many(keys, for_update=for_update)
+        by_key = {row.storage_key: row for row in rows}
+        grants = []
+        for key in keys:
+            grant = by_key.get(key)
+            if (
+                grant is None
+                or grant.owner_user_id != actor_id
+                or grant.purpose != "CHAT_ATTACHMENT"
+                or not key.startswith(f"chat/{conversation_id}/")
+            ):
+                raise BadRequestError("The upload is not available for this conversation.")
+            if grant.attached_at is not None or grant.deleting_at is not None:
+                raise ConflictError("This upload has already been used or expired.")
+            grants.append(ValidatedAttachment(key, grant.content_type, grant.byte_size))
+        return grants
 
     @staticmethod
     def _kind(mime: str) -> str:
@@ -148,7 +153,7 @@ class ChatMediaService:
             conversation_id=conversation_id,
             actor_id=actor_id,
         )
-        grants = [await self._grant(key, conversation_id, actor_id) for key in keys]
+        grants = await self._grants(keys, conversation_id, actor_id)
         kinds = {self._kind(grant.mime) for grant in grants}
         if len(kinds) != 1 or (kinds != {"IMAGE"} and len(grants) != 1):
             raise BadRequestError("Send up to five images, one video, or one voice note.")
@@ -211,35 +216,38 @@ class ChatMediaService:
         text: str,
     ) -> ChatMessage:
         """Recheck grants and atomically save a message with all attachments."""
+        keys = [attachment.key for attachment in attachments]
+        if not 1 <= len(keys) <= 5 or len(keys) != len(set(keys)):
+            raise BadRequestError("Provide one to five unique uploads.")
+        kinds = {self._kind(attachment.mime) for attachment in attachments}
+        if len(kinds) != 1 or "" in kinds or (kinds != {"IMAGE"} and len(keys) != 1):
+            raise BadRequestError("Send up to five images, one video, or one voice note.")
         dto = await self._chat.send_message(
             conversation_id=conversation_id,
             sender_id=actor_id,
             text=text,
             message_type=MessageType(self._kind(attachments[0].mime)),
         )
-        for attachment in sorted(attachments, key=lambda item: item.key):
-            current = await self._grant(attachment.key, conversation_id, actor_id, for_update=True)
+        current_grants = await self._grants(keys, conversation_id, actor_id, for_update=True)
+        for attachment, current in zip(attachments, current_grants, strict=True):
             if (current.mime, current.size) != (attachment.mime, attachment.size):
                 raise ConflictError("The upload changed during validation.")
-            if not await self._uploads.mark_confirmed(attachment.key, actor_id):
-                raise ConflictError("The upload is no longer available.")
-            if not await self._uploads.claim(attachment.key, actor_id, "CHAT_ATTACHMENT"):
-                raise ConflictError("The upload has already been used.")
-        saved = []
-        for position, attachment in enumerate(attachments):
-            record = await self._repository.add_attachment(
-                message_id=uuid.UUID(dto.id),
-                actor_id=actor_id,
-                storage_key=attachment.key,
-                content_type=attachment.mime,
-                byte_size=attachment.size,
-                display_order=position,
-                duration_seconds=attachment.duration,
-            )
-            if record is None:
-                raise NotFoundError("Conversation not found.")
-            saved.append(attachment_dto(record))
-        return replace(dto, attachments=saved)
+        claimed = await self._uploads.confirm_and_claim_many(keys, actor_id, "CHAT_ATTACHMENT")
+        if claimed != set(keys):
+            raise ConflictError("The upload has already been used or is no longer available.")
+        records = await self._repository.add_attachments(
+            message_id=uuid.UUID(dto.id),
+            actor_id=actor_id,
+            attachments=[
+                AttachmentInput(
+                    attachment.key, attachment.mime, attachment.size, position, attachment.duration
+                )
+                for position, attachment in enumerate(attachments)
+            ],
+        )
+        if len(records) != len(attachments):
+            raise NotFoundError("Conversation not found.")
+        return replace(dto, attachments=[attachment_dto(record) for record in records])
 
     async def playback(self, *, attachment_id: uuid.UUID, actor_id: uuid.UUID) -> str:
         """Provide short-lived private access only to a current eligible participant."""

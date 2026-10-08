@@ -311,11 +311,13 @@ async def test_app_shutdown_closes_storage_client() -> None:
         state=SimpleNamespace(
             clients=clients,
             redis=SimpleNamespace(aclose=AsyncMock()),
+            subscription_redis=SimpleNamespace(aclose=AsyncMock()),
             engine=SimpleNamespace(dispose=AsyncMock()),
         )
     )
     await _close_shared_resources(app)
     storage.aclose.assert_awaited_once()
+    app.state.subscription_redis.aclose.assert_awaited_once()
 
 
 async def test_real_storage_releases_range_response_body() -> None:

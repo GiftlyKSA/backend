@@ -408,3 +408,56 @@ payment-session paths returned routing404. Existing readiness reports database/R
 This is an incomplete selected-provider configuration, not proof of migration success.
 Approval is pending to set `PAYMENT_PROVIDER=disabled`; do not substitute credentials,
 weaken validation or describe the new operations as deployed until public checks pass.
+
+## API performance follow-up — 2026-10-08
+
+Scope: current HTTP/WebSocket services, repositories, ORM loading, cursor queries,
+financial aggregates, media validation, private PDF caching, pools and workers.
+Findings below concern remaining work; the earlier batched order ratings, chat-history
+attachments, pooled S3 client and courier keyset indexes are already implemented.
+No unbounded quadratic Python loop was confirmed in the inspected mobile read paths.
+Bounded per-attachment persistence is confirmed; correlated SQL is not automatically
+an application N+1. Scores express priority/impact, not measured latency or CVSS.
+
+AP-P01 and AP-P02 are fixed in this source release. Remaining priority: AP-P03/AP-P04,
+then AP-P05/AP-P06;
+AP-P07/AP-P08/AP-P09 require representative plans before changing persisted summaries
+or indexes; AP-P10 is a lower-priority CPU improvement.
+
+| ID / category | Severity | Status / source | Evidence and impact if unresolved | Minimal improvement / expected effect | Verification needed |
+| --- | --- | --- | --- | --- | --- |
+| AP-P01 / Scalability, pool contention | High 7/10 | Fixed in source; live load pending. `app/core/redis.py`, `app/routers/chat.py`, `app/routers/order_events.py` | Previously each socket retained a connection from the HTTP/security pool of100. | Isolated subscription pool capped at80 per worker; HTTP/security remains100. URL options cannot override either budget. Pool exhaustion closes the new socket1013; shared account/global leases and live ownership/revocation checks remain. Both owned pools close on shutdown; setup/cleanup and reconnect deadlines stay bounded. | Pool exhaustion/isolation, idle reads, shutdown, socket revocation and SQL compilation tests pass. Real Redis/HTTP load and reconnect fault injection pending. |
+| AP-P02 / SQL round trips | Medium 6/10 | Fixed in source; PostgreSQL runtime pending. `app/services/chat_media_service.py`, `app/repositories/media_repository.py`, `app/repositories/chat_repository.py` | Previously five images required20 attachment persistence operations plus five preparation grant reads. | One preparation grant query and three persistence queries for1..5 attachments: sorted fresh locked grants, conditional confirmation/claim RETURNING, and sender/participant-scoped insert. Exact owner/purpose/type/size, single-use, complete affected rows and caller display order remain. Sequential byte/decoder validation still bounds memory. | Constant query-count and SQL predicate tests pass; foreign/missing/changed/used/deleting/partial batches reject. Added PostgreSQL distinct-ID and rollback tests; skipped locally because no disposable database is available. |
+| AP-P03 / Memory and CPU | Medium 6/10 | Confirmed allocation path; open. `app/integrations/storage/real.py:177`, `app/services/chat_media_service.py:189`, `app/services/chat_media_validation.py:159` | Allowed120MB video is accumulated as bytearray, copied to bytes, then written to a temporary file before probing/decoding. Bytearray/bytes overlap creates about240MB of payload memory at the copy point, plus decoder/process overhead; concurrent validations multiply pressure. Complements existing PERF-10 cancellation finding. | Stream a bounded S3 body directly into a private temporary file, validate exact bytes and trusted MIME, then run the same full probe/decode controls. Move durable heavy validation to a bounded worker only with an approved asynchronous contract. | RSS/CPU and temp-disk quotas at maximum media/concurrency, oversize/truncated files, cancellation, cleanup and decoder security tests. |
+| AP-P04 / WebSocket background SQL | Medium 6/10 | Confirmed scaling cost; open. `app/routers/chat.py:540`, `app/routers/order_events.py:110` | Every socket independently rechecks authorization every five seconds. Order sockets execute one current-state SQL query per check:500 connections imply about100 checks/sec before events. Courier chat checks load user/profile/city/conversation state separately. These checks compete with HTTP for database capacity. | First use compact joined chat authorization like the existing order projection; then benchmark bounded batched monitor reads while preserving per-connection ownership, expiry/revocation and current five-second checks. Do not cache authorization or increase revocation delay. |1/100/500 sockets plus HTTP traffic; query count/pool wait; ban, logout, role/city/verification changes and lost Redis hints. |
+| AP-P05 / Unneeded ORM loading | Medium 5/10 | Confirmed query shape; open. `app/models/tables.py:167`, `app/models/tables.py:351`, `app/repositories/order_repository.py:323`, `app/services/courier_eligibility_service.py:60` | Default selectin city loading runs even when courier checks only need verification/city ID. Order cursor anchor loads the complete Order and its city before fetching the page and cities again. Read-only request snapshots already remove repeated user/profile lookups; these extra relationship loads remain. | Select cursor created_at/id under identical ownership/status/date predicates; add compact current eligibility projections. Explicitly load city names where serialization needs them. | Constant list query counts across page sizes, omitted/combined filters, stale/foreign cursors and current eligibility rejection. |
+| AP-P06 / Growing rating aggregates | Medium 5/10 | Confirmed repeated aggregate; optimization opportunity. `app/repositories/rating_repository.py:83`, `app/routers/users.py:107`, `app/routers/users.py:148` | Profile and participant reads recompute AVG/COUNT across all relevant courier ratings and join orders. One SQL statement, not N+1, but work increases with rating history and repeated profile loads. | After fresh profile authorization, consider a bounded60-second display-summary cache keyed by courier and rating revision; invalidate API/admin/system rating or relevant ownership corrections. An exact maintained aggregate is a larger alternative. | Representative plans/latency, cache eviction/invalidation, admin edits/deletes, no customer rating fields and no cached access decisions. |
+| AP-P07 / Financial reporting aggregates | Medium 5/10 | Confirmed necessary work; plan-dependent opportunity. `app/repositories/wallet_repository.py:224` | Every statement page recomputes whole-date-range totals even though only25 entries may be returned. O(range transactions) SQL preserves fresh authoritative totals and one response snapshot; large ledgers make repeated pages costly. | Measure existing wallet/date index first; consider a covering index or exact transactional daily summaries plus fresh deltas only if proven necessary. Preserve pending/reversed treatment and same-snapshot correctness. Never substitute cached balances/totals. | EXPLAIN ANALYZE BUFFERS on disposable data, concurrent settlement/reversal/admin corrections, totals/page consistency and write/storage costs. |
+| AP-P08 / Date-range query indexes | Medium 5/10 | UNCONFIRMED plan-dependent risk. `app/repositories/order_repository.py:230`, `app/repositories/planning_repository.py:74`, `app/models/tables.py:308` | Order indexes support owner/created-time pagination, but delivery-date/status filtering can discard many historical entries. Occasion index lacks the id tiebreaker used by ordering. Actual scans/sorts depend on dataset/selectivity; no poor live plan was measured. | Compare owner/date/status index alternatives and occasion(user_id,occasion_date,id). Add only an index with demonstrated benefit; account for writes, storage and migration locking. Preserve calendar semantics/order/cursors. | Small/large histories, narrow/wide ranges, equal-date rows, first/subsequent pages and representative PostgreSQL plans. |
+| AP-P09 / Recovery query sorting | Medium 4/10 | UNCONFIRMED plan-dependent risk. `app/repositories/payment_repository.py:160`, `app/repositories/payment_repository.py:202` | Latest recovery sorts REVIEW first, NEW next, then created_at/id. Existing basic user/created indexes do not directly cover the complete priority ordering; many historical attempts may need extra filtering/sorting despite LIMIT1. | Benchmark scoped unresolved-first and terminal-fallback queries or matching partial/expression indexes. Keep REVIEW above NEW and exact payer ownership; do not cache unresolved payment state. | Large attempt histories, multiple priorities/timestamp ties, production-disabled behavior, concurrency and EXPLAIN with index write cost. |
+| AP-P10 / Duplicate PDF rendering | Low 4/10 | Confirmed; open. `app/services/invoice_pdf_cache.py:97` | Three concurrent identical cache-miss requests produced three renderer calls in an isolated probe. The four-slot cap bounds active work but does not coalesce identical invoice/fingerprint misses; bursts waste CPU and increase queueing. | Add bounded in-flight deduplication by invoice/fingerprint inside each worker, with ownership checked before joining. Preserve content/version invalidation, shielded cancellation cleanup, render limits and Redis outage fallback. | Concurrent same/different fingerprints, changed status/items, cancellation, Redis outage and eviction; single render for identical local concurrent requests. |
+
+Initial read-only review:39 focused existing tests passed for realtime projections/denial, courier
+indexes, query metrics, wallet statement consistency, PDF caching and chat media.
+Additional isolated in-memory probes confirmed20 five-image persistence operations,
+three duplicate same-invoice renders, and Redis reservation101 exhaustion. No Docker,
+live provider, production database write or private user data access was performed.
+The retrieved slow-request log slice contained no matching measurements; it establishes
+neither low latency nor absence of earlier slow requests. Real PostgreSQL/Redis load,
+query plans, pool waits and representative p50/p95/RSS/CPU remain unverified.
+
+Targeted fix verification:885 unit tests passed,1 skipped; all commit/push gates
+passed Ruff lint/format, structured-file checks and strict mypy. The independent
+review rechecked the bounded reconnect timeout correction and found no remaining
+concrete defect in AP-P01/AP-P02. Added PostgreSQL insert/default-ID and partial-claim
+rollback checks require a disposable database and were skipped locally. The final
+full-source run passed896 tests with220 skips and one upstream deprecation warning.
+Mobile OpenAPI drift validation passed. No Docker or live database/provider writes
+were performed.
+
+Deployment recheck: CranL still reports deploying, readiness is200, and the published
+payment-session lookup still returns routing404. Latest runtime log retrieval was
+unavailable (latest call reports the new app not running); grouped current error logs
+returned no retained errors. Image build succeeded. The previous
+confirmed startup failure was missing DHAMEN_APP_ID for selected Dhamen. Do not infer
+that the blocker is resolved, or that newly pushed code is publicly deployed.

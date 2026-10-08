@@ -9,15 +9,27 @@ Ownership is enforced in the query — a conversation is returned only to its tw
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import insert, literal, select, tuple_, update
+from sqlalchemy import insert, literal, select, tuple_, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models import ChatNotification, Conversation, Message, MessageAttachment
 from app.models.enums import MessageType
+
+
+@dataclass(frozen=True)
+class AttachmentInput:
+    """Validated metadata to insert in caller-specified display order."""
+
+    storage_key: str
+    content_type: str
+    byte_size: int
+    display_order: int
+    duration_seconds: Decimal | None
 
 
 class ChatRepository:
@@ -168,6 +180,46 @@ class ChatRepository:
                 .order_by(MessageAttachment.message_id, MessageAttachment.display_order)
             )
         )
+
+    async def add_attachments(
+        self, *, message_id: uuid.UUID, actor_id: uuid.UUID, attachments: list[AttachmentInput]
+    ) -> list[MessageAttachment]:
+        """Insert a bounded batch only for its sender and current conversation member."""
+        if not attachments:
+            return []
+        columns = ("storage_key", "content_type", "byte_size", "display_order", "duration_seconds")
+        payload = union_all(
+            *(
+                select(
+                    *(
+                        literal(
+                            getattr(attachment, name),
+                            type_=MessageAttachment.__table__.c[name].type,
+                        ).label(name)
+                        for name in columns
+                    )
+                )
+                for attachment in attachments
+            )
+        ).subquery()
+        authorized_values = (
+            select(Message.id, *(payload.c[name] for name in columns))
+            .select_from(payload)
+            .join(Message, Message.id == message_id)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(
+                Message.sender_id == actor_id,
+                (Conversation.customer_id == actor_id) | (Conversation.courier_id == actor_id),
+            )
+        )
+        records = list(
+            await self._session.scalars(
+                insert(MessageAttachment)
+                .from_select(["message_id", *columns], authorized_values)
+                .returning(MessageAttachment)
+            )
+        )
+        return sorted(records, key=lambda row: row.display_order)
 
     async def attachment_for_actor(
         self, attachment_id: uuid.UUID, actor_id: uuid.UUID
