@@ -113,3 +113,27 @@ above remain separate; this performance release does not claim to resolve them.
 ### Usage-limit checkpoint — 2026-10-08
 
 At91% five-hour usage, the approved checkpoint publishes AP-P03/AP-P04/AP-P05/AP-P10 only. AP-P06/AP-P07 retain exact queries after measurement. AP-P08/AP-P09 candidate indexes are NOT published: generic prepared plans may lose partial-index and expression-order benefits; approved-only write costs need validation. Candidate source and raw plans are preserved in the attached worktree's ignored workflow folder. No new migration is required for this checkpoint. Full unit suite passed; broad service suites remain incomplete (PostgreSQL run interrupted on existing date/Redis failures, non-service integration checks also too slow for the checkpoint). Deployment and full PostgreSQL/Redis/native decoder checks remain unconfirmed.
+
+### Resumed index release — 2026-10-08
+
+This supersedes the pending-index checkpoint above. AP-P08/AP-P09's five additive
+indexes and migration0025_measured_read_indexes are now implemented. The reproducible
+tests/financial_query_plans.py harness correctly types enum binds and compares actual
+asyncpg-dialect prepared SQL under custom, generic and automatic plan selection.
+On synthetic100k-row histories, repeated automatic payment recovery was0.010–0.013ms;
+forced generic plans remained14.5–24.7ms. Do not force generic plans or assume this
+benchmark establishes deployment latency. Single-day calendar improvement remains
+about29ms to0.07–0.09ms; broader date/status paths remain opportunities to measure.
+
+Approved-only indexes increased synthetic1000-order insert median12.0→27.9ms and
+1000-payment insert4.95→7.13ms; closing active intents0.077→0.087ms. This read/write
+tradeoff is accepted for the measured recovery/calendar paths, not described as free
+performance. Monitor real writes/storage/plans and remove indexes if benefits do not
+hold. No cached authorization, balances or unresolved payment state was introduced.
+
+Migration upgrade/downgrade/re-upgrade passed on disposable PostgreSQL16.15. Focused
+financial/access/wallet/OpenAPI tests16passed, and full push gates passed. Independent
+review confirmed matching model/migration predicates and safe concurrent retry/rollback.
+Full PostgreSQL/Redis/native decoder verification and public deployment remain pending;
+previous broad-suite date/Redis failures were not hidden. No Docker or production writes.
+API contracts are unchanged; no mobile changes are required.

@@ -391,6 +391,21 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("idx_orders_city_status", "delivery_city_id", "status"),
         Index("idx_orders_created_at", text("created_at DESC")),
         Index(
+            "idx_orders_customer_calendar",
+            "customer_id",
+            "delivery_date",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
+        Index(
+            "idx_orders_courier_calendar",
+            "courier_id",
+            "delivery_date",
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("courier_id IS NOT NULL"),
+        ),
+        Index(
             "idx_orders_customer_created", "customer_id", text("created_at DESC"), text("id DESC")
         ),
         Index(
@@ -818,6 +833,37 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("gateway_reference IS NOT NULL"),
         ),
         Index("idx_payment_intents_user_created", "user_id", text("created_at DESC")),
+        Index(
+            "idx_payment_intents_topup_recovery",
+            "user_id",
+            text("(checkout_state = 'REVIEW') DESC"),
+            text("(status = 'NEW') DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("purpose='WALLET_TOPUP' AND checkout_provider!='SIMULATED'"),
+        ),
+        Index(
+            "idx_payment_intents_open_topup_recovery",
+            "user_id",
+            text("(checkout_state = 'REVIEW') DESC"),
+            text("(status = 'NEW') DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text(
+                "purpose='WALLET_TOPUP' AND checkout_provider!='SIMULATED' "
+                "AND (status='NEW' OR checkout_state='REVIEW')"
+            ),
+        ),
+        Index(
+            "idx_payment_intents_order_recovery",
+            "order_id",
+            "user_id",
+            text("(checkout_state = 'REVIEW') DESC"),
+            text("(status = 'NEW') DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("order_id IS NOT NULL"),
+        ),
         Index(
             "uq_payment_intents_open_topup",
             "user_id",
