@@ -38,4 +38,4 @@ These are separate proposal-first work, not defects resolved by the current revi
 
 ## Usage checkpoint — 2026-10-08
 
-At 90% five-hour usage, verified review fixes and this outstanding-work tracker are published to master. Full unit checks, hooks, scoped native PostgreSQL tests and independent review passed; final offline aggregate rerun and complete PostgreSQL/Redis CI remain to be reported. No Docker or production changes ran. SEC-19 remains excluded by the user.
+At 90% five-hour usage, verified review fixes and this outstanding-work tracker are published to master. Full unit checks, hooks, scoped native PostgreSQL tests and independent review passed; final offline aggregate passed 983 tests with 258 service/native skips; complete PostgreSQL/Redis CI remains outstanding. No Docker or production changes ran. SEC-19 remains excluded by the user.
