@@ -614,7 +614,6 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     net_after_discount_amount: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0.00")
     )
-    tax_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0.00"))
     total_amount: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0.00")
     )
@@ -646,7 +645,7 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "items_net_amount >= 0 AND courier_fee_amount >= 0 AND service_fee_amount >= 0 "
-            "AND discount_amount >= 0 AND tax_amount >= 0 AND total_amount >= 0",
+            "AND discount_amount >= 0 AND total_amount >= 0",
             name="chk_invoice_amounts_non_negative",
         ),
         CheckConstraint("status = 'DRAFT' OR total_amount > 0", name="chk_invoice_total_positive"),
@@ -656,7 +655,7 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="chk_invoice_net_math",
         ),
         CheckConstraint(
-            "total_amount = net_after_discount_amount + tax_amount",
+            "total_amount = net_after_discount_amount",
             name="chk_invoice_total_math",
         ),
         CheckConstraint(
@@ -699,24 +698,19 @@ class InvoiceItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     unit_price_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
-    tax_rate: Mapped[Decimal] = mapped_column(_RATE, nullable=False)
     line_net_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     line_discount_amount: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0.00")
     )
-    line_taxable_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
-    line_tax_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     line_total_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("invoice_id", "position", name="uq_invoice_item_position"),
         CheckConstraint("quantity BETWEEN 1 AND 999", name="chk_item_quantity"),
         CheckConstraint("unit_price_amount > 0", name="chk_item_unit_price"),
-        CheckConstraint("tax_rate >= 0 AND tax_rate <= 1", name="chk_item_tax_rate"),
         CheckConstraint(
             "line_net_amount = unit_price_amount * quantity "
-            "AND line_taxable_amount = line_net_amount - line_discount_amount "
-            "AND line_total_amount = line_taxable_amount + line_tax_amount",
+            "AND line_total_amount = line_net_amount - line_discount_amount",
             name="chk_item_line_math",
         ),
         Index("idx_invoice_items_invoice", "invoice_id", "position"),
@@ -1077,7 +1071,7 @@ class Wallet(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "(type IN ('CUSTOMER','COURIER') AND user_id IS NOT NULL) "
-            "OR (type IN ('SYSTEM_ESCROW','SYSTEM_REVENUE','SYSTEM_GATEWAY','SYSTEM_TAX_PAYABLE') "
+            "OR (type IN ('SYSTEM_ESCROW','SYSTEM_REVENUE','SYSTEM_GATEWAY') "
             "AND user_id IS NULL)",
             name="chk_user_wallet_pairing",
         ),
@@ -1105,12 +1099,6 @@ class Wallet(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "type",
             unique=True,
             postgresql_where=text("type='SYSTEM_GATEWAY'"),
-        ),
-        Index(
-            "uq_wallets_one_tax",
-            "type",
-            unique=True,
-            postgresql_where=text("type='SYSTEM_TAX_PAYABLE'"),
         ),
     )
 

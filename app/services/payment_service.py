@@ -818,7 +818,7 @@ class PaymentService:
         """Represent a payable invoice as simulated checkout items whose sum equals the remainder.
 
         When the full invoice is paid externally, frozen invoice lines are sent one-for-one
-        plus a visible invoice adjustment for delivery, fees, tax, and discounts. A split
+        plus a visible invoice adjustment for delivery, fees, and discounts. A split
         payment may be smaller than the item total, so it uses one authoritative balance
         line to ensure the simulated invoice matches the amount held in our ledger exactly.
         """
@@ -849,7 +849,7 @@ class PaymentService:
             items.append(
                 PaymentItem(
                     name="Invoice adjustment",
-                    description="Delivery, service fees, tax, and discounts",
+                    description="Delivery, service fees, and discounts",
                     amount=adjustment,
                 )
             )

@@ -122,14 +122,13 @@ class MessageType(StrEnum):
 
 
 class WalletType(StrEnum):
-    """Wallet kind. The four SYSTEM_* wallets are seeded by migration."""
+    """Wallet kind. The three SYSTEM_* wallets are seeded by migration."""
 
     CUSTOMER = "CUSTOMER"
     COURIER = "COURIER"
     SYSTEM_ESCROW = "SYSTEM_ESCROW"
     SYSTEM_REVENUE = "SYSTEM_REVENUE"
     SYSTEM_GATEWAY = "SYSTEM_GATEWAY"
-    SYSTEM_TAX_PAYABLE = "SYSTEM_TAX_PAYABLE"
 
 
 class TransactionType(StrEnum):
@@ -143,7 +142,6 @@ class TransactionType(StrEnum):
     REFUND = "REFUND"
     COMMISSION = "COMMISSION"
     SERVICE_FEE = "SERVICE_FEE"
-    TAX = "TAX"
     PROMO_SUBSIDY = "PROMO_SUBSIDY"
 
 

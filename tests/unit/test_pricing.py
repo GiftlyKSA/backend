@@ -18,7 +18,6 @@ CFG = PricingConfig(
     service_fee_rate=Decimal("0.05"),
     service_fee_min_amount=Decimal("5.00"),
     service_fee_max_amount=Decimal("500.00"),
-    default_vat_rate=Decimal("0.15"),
     max_invoice_amount=Decimal("50000.00"),
 )
 
@@ -31,8 +30,8 @@ WELCOME10 = PricingPromo(
 
 def _golden_items() -> list[PricingItem]:
     return [
-        PricingItem("Hand-painted ceramic vase", Decimal("400.00"), 1, Decimal("0.1500"), None, 1),
-        PricingItem("Gift wrapping, silk", Decimal("50.00"), 2, Decimal("0.1500"), None, 2),
+        PricingItem("Hand-painted ceramic vase", Decimal("400.00"), 1, None, 1),
+        PricingItem("Gift wrapping, silk", Decimal("50.00"), 2, None, 2),
     ]
 
 
@@ -43,9 +42,8 @@ def test_golden_example_matches_spec_section_11_exactly() -> None:
     assert result.courier_fee_amount == Decimal("100.00")
     assert result.service_fee_amount == Decimal("30.00")
     assert result.discount_amount == Decimal("60.00")
-    assert result.tax_amount == Decimal("67.50")
     assert result.net_after_discount_amount == Decimal("570.00")
-    assert result.total_amount == Decimal("637.50")
+    assert result.total_amount == Decimal("570.00")
 
 
 def test_golden_example_discount_allocation() -> None:
@@ -55,26 +53,22 @@ def test_golden_example_discount_allocation() -> None:
     assert result.courier_fee_discount_amount == Decimal("10.00")
 
 
-def test_golden_example_line_taxes() -> None:
+def test_golden_example_final_line_prices() -> None:
     result = calculate_invoice_totals(_golden_items(), Decimal("100.00"), WELCOME10, CFG)
-    assert result.lines[0].line_tax_amount == Decimal("54.00")
-    assert result.lines[1].line_tax_amount == Decimal("13.50")
-    assert result.courier_fee_tax_amount == Decimal("0.00")
-    assert result.service_fee_tax_amount == Decimal("0.00")
+    assert result.lines[0].line_total_amount == Decimal("360.00")
+    assert result.lines[1].line_total_amount == Decimal("90.00")
 
 
 def test_no_promo_yields_zero_discount() -> None:
     result = calculate_invoice_totals(_golden_items(), Decimal("100.00"), None, CFG)
     assert result.discount_amount == Decimal("0.00")
-    # net_after_discount 630.00 (500 + 100 + 30) + tax 75.00 (60 + 15 + 15 + 4.50).
     assert result.net_after_discount_amount == Decimal("630.00")
-    assert result.tax_amount == Decimal("75.00")
-    assert result.total_amount == Decimal("705.00")
+    assert result.total_amount == Decimal("630.00")
 
 
 def test_service_fee_never_charged_on_empty_base() -> None:
     result = calculate_invoice_totals(
-        [PricingItem("x", Decimal("10.00"), 1, Decimal("0.0000"), None, 1)],
+        [PricingItem("x", Decimal("10.00"), 1, None, 1)],
         Decimal("0.00"),
         None,
         CFG,
@@ -85,22 +79,20 @@ def test_service_fee_never_charged_on_empty_base() -> None:
 
 def test_fixed_discount_cannot_exceed_base() -> None:
     promo = PricingPromo(discount_type=PromoDiscountKind.FIXED, fixed_amount=Decimal("9999.00"))
-    items = [PricingItem("x", Decimal("10.00"), 1, Decimal("0.1500"), None, 1)]
+    items = [PricingItem("x", Decimal("10.00"), 1, None, 1)]
     result = calculate_invoice_totals(items, Decimal("0.00"), promo, CFG)
     assert result.discount_amount == Decimal("10.00")
 
 
 def test_total_exceeding_max_raises() -> None:
-    items = [PricingItem("x", Decimal("49999.00"), 1, Decimal("0.1500"), None, 1)]
+    items = [PricingItem("x", Decimal("49999.00"), 1, None, 1)]
     with pytest.raises(PricingIntegrityError):
         calculate_invoice_totals(items, Decimal("40000.00"), None, CFG)
 
 
 def test_allocation_always_sums_to_discount_with_awkward_split() -> None:
     # Three equal lines with a discount that does not divide evenly (10.00 / 3).
-    items = [
-        PricingItem(f"i{n}", Decimal("100.00"), 1, Decimal("0.1500"), None, n) for n in (1, 2, 3)
-    ]
+    items = [PricingItem(f"i{n}", Decimal("100.00"), 1, None, n) for n in (1, 2, 3)]
     promo = PricingPromo(discount_type=PromoDiscountKind.FIXED, fixed_amount=Decimal("10.00"))
     result = calculate_invoice_totals(items, Decimal("0.00"), promo, CFG)
     total_alloc = sum((line.line_discount_amount for line in result.lines), Decimal("0.00"))

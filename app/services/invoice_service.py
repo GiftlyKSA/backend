@@ -1,9 +1,9 @@
 """Invoice authoring and lifecycle service (SPEC SECTION 11, 14).
 
 The courier authors an itemised invoice; the platform computes the service fee, the
-discount allocation, and all tax through the single pricing engine (``core/pricing.py``).
-The client never sends the service fee, discount, tax, or total. Every stored amount is
-the engine's output, frozen once issued; reads never recompute, so a later VAT or
+discount allocation through the single pricing engine (``core/pricing.py``).
+The client never sends the service fee, discount, or total. Every stored amount is
+the engine's output, frozen once issued; reads never recompute, so a later
 service-fee change never restates a historical invoice.
 """
 
@@ -47,7 +47,6 @@ class InvoiceLineInput:
     title: str
     unit_price_amount: Decimal
     quantity: int
-    tax_rate: Decimal
     description: str | None = None
 
 
@@ -107,7 +106,6 @@ class InvoiceService:
             service_fee_rate=s.SERVICE_FEE_RATE,
             service_fee_min_amount=s.SERVICE_FEE_MIN_AMOUNT,
             service_fee_max_amount=s.SERVICE_FEE_MAX_AMOUNT,
-            default_vat_rate=s.DEFAULT_VAT_RATE,
             max_invoice_amount=s.MAX_INVOICE_AMOUNT,
         )
 
@@ -120,7 +118,7 @@ class InvoiceService:
     ) -> Invoice:
         """Author and issue an invoice for an order, moving it to WAITING_PAYMENT.
 
-        The assigned courier supplies items and a courier fee (both net of tax) and,
+        The assigned courier supplies final item prices and a courier fee and,
         optionally, the customer's promo code. The pricing engine computes every other
         leg; the promo (if any) is reserved against the customer.
 
@@ -149,7 +147,6 @@ class InvoiceService:
                 title=line.title,
                 unit_price_amount=line.unit_price_amount,
                 quantity=line.quantity,
-                tax_rate=line.tax_rate,
                 description=line.description,
                 position=idx + 1,
             )
@@ -296,7 +293,6 @@ class InvoiceService:
                 title=item.title,
                 unit_price_amount=item.unit_price_amount,
                 quantity=item.quantity,
-                tax_rate=item.tax_rate,
                 description=item.description,
                 position=item.position,
             )
@@ -333,8 +329,6 @@ class InvoiceService:
                 raise ValidationDomainError("A line unit price exceeds the maximum permitted.")
             if not 1 <= line.quantity <= 999:
                 raise ValidationDomainError("Each line quantity must be between 1 and 999.")
-            if not ZERO <= line.tax_rate <= Decimal(1):
-                raise ValidationDomainError("Each line tax rate must be between 0 and 1.")
 
     @staticmethod
     def _discountable_base(items: list[PricingItem], courier_fee_amount: Decimal) -> Decimal:

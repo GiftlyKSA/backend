@@ -376,7 +376,7 @@
         "properties": {
           "courier_fee_amount": {
             "default": "0.00",
-            "description": "Courier's craft/labour, net.",
+            "description": "Courier's craft/labour fee.",
             "maxLength": 20,
             "minLength": 1,
             "title": "Courier Fee Amount",
@@ -742,14 +742,6 @@
             "title": "Line Net Amount",
             "type": "string"
           },
-          "line_tax_amount": {
-            "title": "Line Tax Amount",
-            "type": "string"
-          },
-          "line_taxable_amount": {
-            "title": "Line Taxable Amount",
-            "type": "string"
-          },
           "line_total_amount": {
             "title": "Line Total Amount",
             "type": "string"
@@ -761,10 +753,6 @@
           "quantity": {
             "title": "Quantity",
             "type": "integer"
-          },
-          "tax_rate": {
-            "title": "Tax Rate",
-            "type": "string"
           },
           "title": {
             "title": "Title",
@@ -781,11 +769,8 @@
           "description",
           "unit_price_amount",
           "quantity",
-          "tax_rate",
           "line_net_amount",
           "line_discount_amount",
-          "line_taxable_amount",
-          "line_tax_amount",
           "line_total_amount"
         ],
         "title": "InvoiceItemResponse",
@@ -793,7 +778,7 @@
       },
       "InvoiceLineRequest": {
         "additionalProperties": false,
-        "description": "One courier-authored invoice line (net of tax).",
+        "description": "One courier-authored invoice line with its final unit price.",
         "properties": {
           "description": {
             "anyOf": [
@@ -813,14 +798,6 @@
             "title": "Quantity",
             "type": "integer"
           },
-          "tax_rate": {
-            "default": "0.15",
-            "description": "Tax fraction, e.g. \"0.15\" for 15%.",
-            "maxLength": 8,
-            "minLength": 1,
-            "title": "Tax Rate",
-            "type": "string"
-          },
           "title": {
             "maxLength": 120,
             "minLength": 1,
@@ -828,7 +805,7 @@
             "type": "string"
           },
           "unit_price_amount": {
-            "description": "Net unit price, e.g. \"400.00\".",
+            "description": "Final unit price, e.g. \"400.00\".",
             "maxLength": 20,
             "minLength": 1,
             "title": "Unit Price Amount",
@@ -951,10 +928,6 @@
             "title": "Status",
             "type": "string"
           },
-          "tax_amount": {
-            "title": "Tax Amount",
-            "type": "string"
-          },
           "total_amount": {
             "title": "Total Amount",
             "type": "string"
@@ -970,7 +943,6 @@
           "service_fee_amount",
           "discount_amount",
           "net_after_discount_amount",
-          "tax_amount",
           "total_amount",
           "promo_code",
           "issued_at",
@@ -2229,30 +2201,6 @@
           "expires_in"
         ],
         "title": "SendOtpResponse",
-        "type": "object"
-      },
-      "SimulatePaymentRequest": {
-        "additionalProperties": false,
-        "description": "Development-only: simulate a simulated payment callback for a payment-link ID.",
-        "properties": {
-          "payment_link_id": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Payment Link Id",
-            "type": "string"
-          },
-          "status": {
-            "default": "PAID",
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "payment_link_id"
-        ],
-        "title": "SimulatePaymentRequest",
         "type": "object"
       },
       "StatementTotals": {
@@ -3950,74 +3898,6 @@
         "summary": "Mark Read",
         "tags": [
           "chat"
-        ]
-      }
-    },
-    "/api/dev/ping": {
-      "get": {
-        "description": "Confirm dev routes are registered (development only).",
-        "operationId": "dev_ping_api_dev_ping_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Dev Ping Api Dev Ping Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Development liveness marker",
-        "tags": [
-          "dev"
-        ]
-      }
-    },
-    "/api/dev/simulation/simulate": {
-      "post": {
-        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler \u2014 it never bypasses webhook processing.",
-        "operationId": "simulate_payment_api_dev_simulation_simulate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SimulatePaymentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebhookAck"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Simulate Payment",
-        "tags": [
-          "dev"
         ]
       }
     },

@@ -169,7 +169,6 @@ def _line(**over: object) -> InvoiceLineInput:
         "title": "Vase",
         "unit_price_amount": Decimal("400.00"),
         "quantity": 1,
-        "tax_rate": Decimal("0.15"),
         "description": None,
     }
     base.update(over)
@@ -316,8 +315,8 @@ async def test_preview_promo_matches_golden(db_session: AsyncSession) -> None:
         order_id=order.id, code=promo.code, customer_id=order.customer_id
     )
     assert preview.discount_amount == Decimal("60.00")
-    assert preview.original_total_amount == Decimal("705.00")
-    assert preview.total_amount == Decimal("637.50")
+    assert preview.original_total_amount == Decimal("630.00")
+    assert preview.total_amount == Decimal("570.00")
 
 
 @pytest.mark.parametrize(
@@ -326,7 +325,6 @@ async def test_preview_promo_matches_golden(db_session: AsyncSession) -> None:
         _line(unit_price_amount=Decimal("0.00")),
         _line(unit_price_amount=Decimal("999999.00")),
         _line(quantity=1000),
-        _line(tax_rate=Decimal("2.00")),
     ],
 )
 async def test_create_rejects_out_of_bounds_line(

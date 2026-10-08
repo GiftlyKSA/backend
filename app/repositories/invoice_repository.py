@@ -117,7 +117,6 @@ class InvoiceRepository:
             service_fee_amount=result.service_fee_amount,
             discount_amount=result.discount_amount,
             net_after_discount_amount=result.net_after_discount_amount,
-            tax_amount=result.tax_amount,
             total_amount=result.total_amount,
             promo_id=promo_id,
             promo_code_snapshot=promo_code_snapshot,
@@ -149,11 +148,8 @@ class InvoiceRepository:
                     description=line.description,
                     unit_price_amount=line.unit_price_amount,
                     quantity=line.quantity,
-                    tax_rate=line.tax_rate,
                     line_net_amount=line.line_net_amount,
                     line_discount_amount=line.line_discount_amount,
-                    line_taxable_amount=line.line_taxable_amount,
-                    line_tax_amount=line.line_tax_amount,
                     line_total_amount=line.line_total_amount,
                 )
                 for line in lines

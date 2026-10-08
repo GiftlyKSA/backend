@@ -96,7 +96,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - Withdrawal and withdrawal-rejection bodies now reject unknown fields with HTTP 422,
   matching the other request models. Send only the properties declared in OpenAPI.
 - Base path is `/api`. Send `Authorization: Bearer <access_token>` on protected HTTP calls. Existing users receive 30-minute access and rotating 30-day refresh credentials; use `POST /api/auth/refresh` and replace both stored tokens. Logout invalidates credentials on every device. Do not derive role or ownership from the phone number, local fixture, or a client-supplied user ID.
-- `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money and tax rates are decimal strings**, such as `"125.50"` and `"0.15"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
+- `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money values are decimal strings**, such as `"125.50"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
 - A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; missing/foreign or out-of-filter order/wallet anchors return `404 NOT_FOUND`, so refresh the list when an anchor is no longer valid; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings. Do not use offset or invent a next page when `next_cursor` is null.
 - Domain failures generally use `{"error":{"code":"...","message":"...","request_id":"..."}}`; common codes include `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATE_TRANSITION`, `VALIDATION_ERROR`, `RATE_LIMITED`, `PAYMENTS_DISABLED`, and `RATE_LIMIT_UNAVAILABLE`. FastAPI request-schema errors may instead return `{"detail":[...]}` with HTTP 422. HTTP 429 carries `Retry-After`. Handle status and both shapes; never assume every failure has a domain envelope.
 - Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; The Dhamen testing adapter does not establish verified production integration. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
@@ -521,11 +521,11 @@ add it only when representative plans justify it.
 - **Who / authorization:** Authenticated active verified assigned courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `CreateInvoiceRequest` — `items: InvoiceLineRequest[]`; `courier_fee_amount?: string`; `promo_code?: string | null`
-- **Response:** HTTP 201; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `tax_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
+- **Response:** HTTP 201; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
 - **Before:** Accepted `ASSIGNED` order; collect 1–20 line items.
 - **Then / dependent API:** Customer `GET /api/orders/{order_id}/invoice` and promo/payment flow.
 
-**When/how (59 words):** Issue an itemized invoice for an assigned order. Send line titles, net unit prices, quantities, tax fractions, optional descriptions, courier fee, and optional promo code as decimal strings where applicable. The server computes service fees, discounts, tax, totals, revision-backed storage, and expiry. Use the returned invoice amounts; the mobile app must not send or calculate a trusted final total.
+**When/how:** Issue an itemized invoice for an assigned order. Send line titles, final unit prices, quantities, optional descriptions, courier fee, and optional promo code as decimal strings where applicable. The server computes service fees, discounts, totals, revision-backed storage, and expiry. No separate tax rate is accepted and no VAT is added. Use the returned invoice amounts; the mobile app must not send or calculate a trusted final total.
 
 ### GET /api/orders/{order_id}/invoice
 
@@ -534,7 +534,7 @@ add it only when representative plans justify it.
 - **Who / authorization:** Authenticated customer or assigned courier participant; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `tax_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
+- **Response:** HTTP 200; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
 - **Before:** Owned/assigned order with an active invoice.
 - **Then / dependent API:** `GET /api/invoices/{invoice_id}`, promo preview, pay, or courier cancel.
 
@@ -547,7 +547,7 @@ add it only when representative plans justify it.
 - **Who / authorization:** Authenticated customer or assigned courier participant; bearer access token.
 - **Path, query, headers:** `invoice_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `tax_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
+- **Response:** HTTP 200; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
 - **Before:** Invoice UUID from creation or active-order invoice.
 - **Then / dependent API:** Customer payment or courier cancellation when eligible.
 
@@ -559,12 +559,12 @@ add it only when representative plans justify it.
 - **Who / authorization:** ACTIVE owning CUSTOMER; bearer token. Foreign invoices return 404.
 - **Path / headers:** UUID `invoice_id`; required `Idempotency-Key` string, 1–128 characters.
 - **Request body:** `ApplyInvoicePromoRequest`: required `code` string (nonblank, max 32) or null to remove. Unknown properties rejected. Codes are trimmed and case-insensitive.
-- **Response:** HTTP 200, existing full `InvoiceResponse` including authoritative items, discount, tax, total, expiry and ID.
+- **Response:** HTTP 200, full `InvoiceResponse` including authoritative items, discount, total, expiry and ID; no VAT fields.
 - **Before / after:** Load current invoice; optionally preview; apply/remove; replace displayed invoice with response; pay the returned invoice ID.
 
 Apply a customer-selected promo only to a current, unpaid, unexpired ISSUED invoice
 whose order is WAITING_PAYMENT and has no unresolved payment attempt. A revision
-preserves the old financial history, original items, fees, tax policy and deadline.
+preserves the old financial history, original final item prices, fees and deadline.
 The invoice ID can change. A repeated operation key and normalized request replays
 its result without another reservation. Invalid replacements roll back. The promo
 is consumed only on settlement; application does not enable production payments.
@@ -597,7 +597,7 @@ their original result invoice; refresh active state if it has since been superse
 - **Who / authorization:** Authenticated issuing courier; bearer access token.
 - **Path, query, headers:** `invoice_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `tax_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
+- **Response:** HTTP 200; `InvoiceResponse` — `id: string`; `order_id: string`; `status: string`; `currency: string`; `items_net_amount: string`; `courier_fee_amount: string`; `service_fee_amount: string`; `discount_amount: string`; `net_after_discount_amount: string`; `total_amount: string`; `promo_code: string | null`; `issued_at: string | null`; `expires_at: string | null`; `items: InvoiceItemResponse[]`
 - **Before:** Issued, unpaid invoice on assigned order.
 - **Then / dependent API:** `POST /api/orders/{order_id}/invoices` for corrected version.
 
@@ -921,7 +921,6 @@ These types appear inside the request/response shapes above. Field names marked 
 - `description?`: `string | null`.
 - `unit_price_amount`: `string`.
 - `quantity`: `integer`.
-- `tax_rate?`: `string`.
 
 ### InvoiceItemResponse
 
@@ -930,11 +929,8 @@ These types appear inside the request/response shapes above. Field names marked 
 - `description`: `string | null`.
 - `unit_price_amount`: `string`.
 - `quantity`: `integer`.
-- `tax_rate`: `string`.
 - `line_net_amount`: `string`.
 - `line_discount_amount`: `string`.
-- `line_taxable_amount`: `string`.
-- `line_tax_amount`: `string`.
 - `line_total_amount`: `string`.
 
 ### TransactionResponse
@@ -1003,9 +999,9 @@ The prototype's labels and local-device data are not server contracts. The table
 
 Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **56 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
 
-## Invoice PDF and item-only VAT (2026-10-04)
+## Invoice PDF and final item prices (2026-10-08)
 
-GET /api/invoices/{invoice_id}/pdf returns private application/pdf bytes to the owning customer or assigned eligible courier. Use the Bearer header; there is no body. Foreign invoices return 404. VAT applies only to discounted items; courier and service fees have zero VAT. Historical invoice amounts are read as stored. See [PDF operations](documentation.md#invoice-pdfs-paid-receipts-and-vat-repair) for deployment limits and receipt behavior.
+GET /api/invoices/{invoice_id}/pdf returns private application/pdf bytes to the owning customer or assigned eligible courier. Use the Bearer header; there is no body. Foreign invoices return 404. Courier-entered prices are final, including supplier VAT; the platform adds no VAT. No tax fields or PDF rows remain. See [PDF operations](documentation.md#invoice-pdfs-and-paid-receipts) for deployment limits, migration safeguards and receipt behavior.
 
 ## Courier performance compatibility — 2026-10-08
 
@@ -1090,7 +1086,7 @@ that choice. Promo revisions cannot change unresolved checkouts.
 GET /api/invoices/{invoice_id}/pdf remains an authenticated, participant-authorized
 application/pdf attachment. UUID invoice_id; no body. Downloads and paid-email PDF
 attachments share Giftly purple branding, English labels, itemized pricing, discounts,
-VAT/fees/totals, invoice/order IDs and payment status. Issued/paid dates display GMT+3;
+fees/totals, invoice/order IDs and payment status. Issued/paid dates display GMT+3;
 persisted and API timestamps remain UTC.
 
 Private Redis reuse lasts3600 seconds with128 entries of256KiB maximum. Downloads

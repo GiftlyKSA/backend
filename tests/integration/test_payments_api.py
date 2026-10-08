@@ -70,8 +70,8 @@ async def _settle(
 
 
 _GOLDEN_ITEMS = [
-    {"title": "Vase", "unit_price_amount": "400.00", "quantity": 1, "tax_rate": "0.15"},
-    {"title": "Wrapping", "unit_price_amount": "50.00", "quantity": 2, "tax_rate": "0.15"},
+    {"title": "Vase", "unit_price_amount": "400.00", "quantity": 1},
+    {"title": "Wrapping", "unit_price_amount": "50.00", "quantity": 2},
 ]
 
 
@@ -147,7 +147,7 @@ async def _issued_invoice(
         json={"items": _GOLDEN_ITEMS, "courier_fee_amount": "100.00"},
     )
     assert inv.status_code == 201, inv.text
-    assert inv.json()["total_amount"] == "724.50"
+    assert inv.json()["total_amount"] == "630.00"
     return cust_h, cour_h, order_id, inv.json()["id"]
 
 
@@ -190,7 +190,7 @@ async def test_pay_invoice_from_wallet_settles_immediately() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
             cust_h, _cour_h, order_id, invoice_id = await _issued_invoice(client, app, factory)
 
-            # Fund the wallet with more than the total (724.50).
+            # Fund the wallet with more than the total (630.00).
             top = await client.post(
                 "/api/wallets/topup", headers=cust_h, json={"amount": "1000.00"}
             )
@@ -201,7 +201,7 @@ async def test_pay_invoice_from_wallet_settles_immediately() -> None:
             pay = await client.post(f"/api/invoices/{invoice_id}/pay", headers=cust_h)
             assert pay.status_code == 200, pay.text
             assert pay.json()["status"] == "PAID"
-            assert pay.json()["amount_from_wallet"] == "724.50"
+            assert pay.json()["amount_from_wallet"] == "630.00"
             assert pay.json()["amount_from_gateway"] == "0.00"
             assert pay.json()["payment_url"] is None
 
@@ -232,7 +232,7 @@ async def test_pay_invoice_via_gateway_settles_on_webhook() -> None:
             pay = await client.post(f"/api/invoices/{invoice_id}/pay", headers=cust_h)
             assert pay.status_code == 200, pay.text
             assert pay.json()["status"] == "PENDING"
-            assert pay.json()["amount_from_gateway"] == "724.50"
+            assert pay.json()["amount_from_gateway"] == "630.00"
             assert pay.json()["payment_url"] is not None
 
             # Still WAITING_PAYMENT until the gateway confirms.
@@ -240,7 +240,7 @@ async def test_pay_invoice_via_gateway_settles_on_webhook() -> None:
             assert order.json()["status"] == "WAITING_PAYMENT"
 
             sim = await _settle(
-                client, app, _payment_link_id_from_url(pay.json()["payment_url"]), "724.50"
+                client, app, _payment_link_id_from_url(pay.json()["payment_url"]), "630.00"
             )
             assert sim["json"]["outcome"] == "processed"
 

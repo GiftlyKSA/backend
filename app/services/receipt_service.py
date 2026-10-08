@@ -63,7 +63,6 @@ class ReceiptService:
                 "courier_fee_amount": money_str(invoice.courier_fee_amount),
                 "service_fee_amount": money_str(invoice.service_fee_amount),
                 "discount_amount": money_str(invoice.discount_amount),
-                "tax_amount": money_str(invoice.tax_amount),
                 "total_amount": money_str(invoice.total_amount),
                 "promo_code": invoice.promo_code_snapshot or "",
                 "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else "",

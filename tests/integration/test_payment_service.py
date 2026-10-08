@@ -126,8 +126,7 @@ async def _issued_invoice(db: AsyncSession) -> tuple[User, Order, Invoice]:
         service_fee_amount=Decimal("30.00"),
         discount_amount=Decimal("0.00"),
         net_after_discount_amount=Decimal("630.00"),
-        tax_amount=Decimal("94.50"),
-        total_amount=Decimal("724.50"),
+        total_amount=Decimal("630.00"),
         issued_at=datetime.now(UTC),
         expires_at=datetime.now(UTC) + timedelta(hours=48),
     )
@@ -287,7 +286,7 @@ async def test_pay_invoice_from_wallet_settles(
     svc = _service(db_session, redis_client)
     result = await svc.pay_invoice(invoice_id=invoice.id, customer_id=user.id)
     assert result.status == "PAID"
-    assert result.amount_from_wallet == Decimal("724.50")
+    assert result.amount_from_wallet == Decimal("630.00")
     assert invoice.status is InvoiceStatus.PAID
     assert order.status is OrderStatus.IN_PROGRESS
     await db_session.refresh(wallet)
@@ -303,12 +302,12 @@ async def test_pay_invoice_via_gateway_then_webhook_settles(
     svc = _service(db_session, redis_client)
     result = await svc.pay_invoice(invoice_id=invoice.id, customer_id=user.id)
     assert result.status == "PENDING"
-    assert result.amount_from_gateway == Decimal("724.50")
+    assert result.amount_from_gateway == Decimal("630.00")
 
     intent = await PaymentRepository(db_session).get_open_intent_for_invoice(invoice.id)
     assert intent is not None
     assert intent.gateway_reference is not None
-    body = _body(intent.gateway_reference, "724.50")
+    body = _body(intent.gateway_reference, "630.00")
     out = await svc.handle_webhook(raw_body=body, signature=_signed(body))
     assert out.outcome == "processed"
     assert invoice.status is InvoiceStatus.PAID
@@ -327,7 +326,7 @@ async def test_development_invoice_payment_settles_without_a_payment_link(
 
     assert result.status == "PAID"
     assert result.payment_url is None
-    assert result.amount_from_gateway == Decimal("724.50")
+    assert result.amount_from_gateway == Decimal("630.00")
     intent = await db_session.scalar(
         select(PaymentIntent).where(PaymentIntent.reference_invoice_id == invoice.id)
     )

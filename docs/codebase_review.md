@@ -1,5 +1,27 @@
 # Giftly codebase review
 
+## Scoped invoice VAT removal — 2026-10-08
+
+Courier item prices are final. Separate VAT input/output/configuration, computation,
+PDF/admin rows, receipt variables and settlement tax legs have been removed. Service
+fees, courier fees, promo allocation, commission, role/ownership checks and payment
+interlocks remain. Migration0024 follows0023; it removes the tax columns, empty system
+tax wallet and native enum labels without rewriting applied migration history.
+
+Verification: full local suite874passed217skipped1upstreamwarning; all isolated
+unit tests863passed1skipped; merged primary unit tests927passed1skipped. Ruff,
+strict mypy, API drift, PDF cache and both hook stages passed in the isolated release.
+The purple English PDF was rendered and visually checked, with GMT+3 dates and no VAT.
+Full offline upgrade and scoped downgrade SQL generation passed; one Alembic head.
+
+**Deployment limitation:** PostgreSQL application/rollback and race checks remain
+UNCONFIRMED locally. No Docker or remote database writes were performed. Migration
+refuses any tax-bearing invoice/ledger data or nonempty tax wallet; it does not erase
+financial history. Review a backup and separately authorize reconciliation/reset of
+disposable data if the guard fires. Coordinate API/mobile rollout: obsolete tax fields
+in strict invoice creation bodies return422. No new general security certification or
+resolution of unrelated open findings is implied by this scoped change.
+
 ## Scoped mobile-read review — 2026-10-07
 
 Scope: invoice listing, wallet statement/history date filters, order-media reads and
@@ -137,11 +159,11 @@ requires measurements/external proof; **Accepted risk** reflects an explicit use
 #### FIN-01 — Rounding residue can produce negative item discounts
 
 - **Status / score:** Open, High 7/10; reproduced without external services.
-- **Evidence:** `app/core/pricing.py:209` rounds each proportional share, then assigns the entire residual to one last component. With twenty SAR0.01 items, a 50% promo and zero courier fee, the total discount is SAR0.10 but the last line discount becomes **−0.09**, taxable value **0.10**, and VAT **0.02**.
-- **Impact:** valid small-price invoices contain nonsensical negative discounts and incorrect item VAT. Arithmetic-only invoice-item constraints permit the outcome.
+- **Evidence:** `app/core/pricing.py` rounds each proportional share, then assigns the entire residual to one last component. With twenty SAR0.01 items, a 50% promo and zero courier fee, the total discount is SAR0.10 but the last line discount becomes **−0.09** and its final price **0.10**.
+- **Impact:** valid small-price invoices contain nonsensical negative discounts and incorrect per-item prices. Arithmetic-only invoice-item constraints permit the outcome. Separate VAT has been removed; the allocation defect remains.
 - **Minimal fix:** deterministic bounded largest-remainder allocation with every share between zero and its component net, plus persisted nonnegative/bounded discount checks after reviewing old data.
-- **Expected impact:** correct cent allocation and tax; some edge-case totals change legitimately. Existing issued/paid invoices need separate reviewed remediation, not silent rewriting.
-- **Verify:** tiny prices, twenty items, mixed tax rates, fixed/percent/full discounts, zero fees and exact sum invariants; PostgreSQL persistence and invoice revision behavior.
+- **Expected impact:** correct cent allocation; some edge-case totals change legitimately. Existing issued/paid invoices need separate reviewed remediation, not silent rewriting.
+- **Verify:** tiny prices, twenty items, fixed/percent/full discounts, zero fees and exact sum invariants; PostgreSQL persistence and invoice revision behavior.
 
 #### FIN-02 — Available funds are read before wallet locking
 

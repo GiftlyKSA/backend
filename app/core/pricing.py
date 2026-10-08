@@ -3,7 +3,7 @@
 ``calculate_invoice_totals`` is a PURE function: values in, values out, no DB, no
 I/O, no clock. Every caller — invoice creation, the customer preview, the admin
 view, the receipt email — routes through it, so there is exactly one place in the
-codebase that knows how a price is built. Reads never recompute; a later VAT or
+codebase that knows how a price is built. Reads never recompute; a later
 service-fee change must not silently restate a historical invoice.
 
 All arithmetic is Decimal, quantized ROUND_HALF_UP at exactly the named steps.
@@ -39,9 +39,8 @@ class PricingItem:
 
     Attributes:
         title: Customer-facing line label.
-        unit_price_amount: Net-of-tax price for a single unit (> 0).
+        unit_price_amount: Final price for a single unit (> 0).
         quantity: Units of this line (1–999).
-        tax_rate: Tax fraction for this line (0.0000–1.0000, e.g. 0.1500).
         description: Optional line detail.
         position: 1-based render/tie-break order.
     """
@@ -49,7 +48,6 @@ class PricingItem:
     title: str
     unit_price_amount: Decimal
     quantity: int
-    tax_rate: Decimal
     description: str | None = None
     position: int = 0
 
@@ -72,7 +70,6 @@ class PricingConfig:
     service_fee_rate: Decimal
     service_fee_min_amount: Decimal
     service_fee_max_amount: Decimal
-    default_vat_rate: Decimal
     max_invoice_amount: Decimal
 
 
@@ -85,11 +82,8 @@ class PricingLine:
     description: str | None
     unit_price_amount: Decimal
     quantity: int
-    tax_rate: Decimal
     line_net_amount: Decimal
     line_discount_amount: Decimal
-    line_taxable_amount: Decimal
-    line_tax_amount: Decimal
     line_total_amount: Decimal
 
 
@@ -101,12 +95,9 @@ class PricingResult:
     items_net_amount: Decimal
     courier_fee_amount: Decimal
     courier_fee_discount_amount: Decimal
-    courier_fee_tax_amount: Decimal
     service_fee_amount: Decimal
-    service_fee_tax_amount: Decimal
     discount_amount: Decimal
     net_after_discount_amount: Decimal
-    tax_amount: Decimal
     total_amount: Decimal
     breakdown: dict[str, object] = field(default_factory=dict)
 
@@ -120,8 +111,7 @@ class Settlement:
         courier_payout_amount: What the courier receives — the PRE-discount base
             (``items_net + courier_fee``) minus commission, so a promo never underpays
             the courier.
-        tax_amount: The VAT collected on the invoice, owed to SYSTEM_TAX_PAYABLE.
-        platform_revenue_amount: ``total - tax - courier_payout``; equivalently
+        platform_revenue_amount: ``total - courier_payout``; equivalently
             ``service_fee + commission - promo_subsidy``. Signed — it can go negative when
             subsidies exceed fees, which is why SYSTEM_REVENUE is exempt from the
             non-negative balance CHECK.
@@ -129,7 +119,6 @@ class Settlement:
 
     commission_amount: Decimal
     courier_payout_amount: Decimal
-    tax_amount: Decimal
     platform_revenue_amount: Decimal
 
 
@@ -137,27 +126,24 @@ def compute_settlement(
     *,
     items_net_amount: Decimal,
     courier_fee_amount: Decimal,
-    tax_amount: Decimal,
     total_amount: Decimal,
     commission_rate: Decimal,
 ) -> Settlement:
-    """Split a paid invoice's total into courier payout, tax, and platform revenue.
+    """Split a paid invoice's total into courier payout and platform revenue.
 
     The courier is paid on the PRE-discount base (ADR 0005): the platform funds any promo,
     so marketing never silently reduces the courier's pay. ``platform_revenue_amount`` is
-    the residual (``total - tax - courier_payout``), so the legs always reconstruct the
+    the residual (``total - courier_payout``), so the legs always reconstruct the
     total; it absorbs the promo subsidy and can be negative.
     """
     base = quantize_money(items_net_amount + courier_fee_amount)
     commission = quantize_money(base * commission_rate)
     courier_payout = quantize_money(base - commission)
-    tax = quantize_money(tax_amount)
     total = quantize_money(total_amount)
-    revenue = quantize_money(total - tax - courier_payout)
+    revenue = quantize_money(total - courier_payout)
     return Settlement(
         commission_amount=commission,
         courier_payout_amount=courier_payout,
-        tax_amount=tax,
         platform_revenue_amount=revenue,
     )
 
@@ -250,13 +236,13 @@ def calculate_invoice_totals(
 ) -> PricingResult:
     """Compute every priced leg of an invoice from raw courier inputs.
 
-    Applies VAT only to discounted items. The output is the
+    Item prices are final; no additional tax is calculated. The output is the
     authority persisted to ``invoices`` and ``invoice_items``; the DB CHECKs then
     re-verify the arithmetic independently.
 
     Args:
-        items: The courier's line items (net of tax).
-        courier_fee_amount: The courier's craft/labour charge, net of tax (>= 0).
+        items: The courier's line items with final unit prices.
+        courier_fee_amount: The courier's craft/labour charge (>= 0).
         promo: The validated promo to apply, or None.
         cfg: Business-rule rates and bounds from settings.
 
@@ -270,7 +256,7 @@ def calculate_invoice_totals(
     line_nets = [quantize_money(i.unit_price_amount * i.quantity) for i in items]
     items_net = sum(line_nets, ZERO)
 
-    # 3. Courier fee (already net).
+    # 3. Courier fee.
     courier_fee_net = quantize_money(courier_fee_amount)
 
     # 4. Service fee, platform-computed and clamped.
@@ -285,14 +271,10 @@ def calculate_invoice_totals(
         line_nets, courier_fee_net, discount, discountable
     )
 
-    # 8. Tax per component on the discounted base.
+    # 8. Discounted final line amounts.
     lines: list[PricingLine] = []
-    tax_amount = ZERO
     for idx, item in enumerate(items):
-        taxable = line_nets[idx] - line_alloc[idx]
-        line_tax = quantize_money(taxable * item.tax_rate)
-        line_total = taxable + line_tax
-        tax_amount += line_tax
+        line_total = line_nets[idx] - line_alloc[idx]
         lines.append(
             PricingLine(
                 position=item.position or idx + 1,
@@ -300,31 +282,24 @@ def calculate_invoice_totals(
                 description=item.description,
                 unit_price_amount=quantize_money(item.unit_price_amount),
                 quantity=item.quantity,
-                tax_rate=item.tax_rate,
                 line_net_amount=line_nets[idx],
                 line_discount_amount=line_alloc[idx],
-                line_taxable_amount=taxable,
-                line_tax_amount=line_tax,
                 line_total_amount=line_total,
             )
         )
 
-    courier_taxable = courier_fee_net - courier_alloc
-    courier_tax = ZERO
-    service_tax = ZERO
+    courier_after_discount = courier_fee_net - courier_alloc
 
     # 9. Totals.
     net_after_discount = items_net + courier_fee_net + service_fee - discount
-    total_amount = net_after_discount + tax_amount
+    total_amount = net_after_discount
 
     # 10. Assertions — raise, never return a bad price.
     total_alloc = sum(line_alloc, ZERO) + courier_alloc
     if total_alloc != discount:
         raise PricingIntegrityError("Discount allocation does not sum to the discount.")
     reconstructed = (
-        sum((line.line_total_amount for line in lines), ZERO)
-        + (courier_taxable + courier_tax)
-        + (service_fee + service_tax)
+        sum((line.line_total_amount for line in lines), ZERO) + courier_after_discount + service_fee
     )
     if reconstructed != total_amount:
         raise PricingIntegrityError("Total does not equal the sum of its legs.")
@@ -335,11 +310,10 @@ def calculate_invoice_totals(
 
     breakdown: dict[str, object] = {
         "pricing_policy": {
-            "tax_scope": "ITEMS_ONLY",
+            "item_price_policy": "FINAL",
             "service_fee_rate": str(cfg.service_fee_rate),
             "service_fee_min_amount": str(cfg.service_fee_min_amount),
             "service_fee_max_amount": str(cfg.service_fee_max_amount),
-            "default_vat_rate": str(cfg.default_vat_rate),
             "max_invoice_amount": str(cfg.max_invoice_amount),
         },
         "items_net_amount": str(items_net),
@@ -347,21 +321,16 @@ def calculate_invoice_totals(
         "service_fee_amount": str(service_fee),
         "discount_amount": str(discount),
         "net_after_discount_amount": str(net_after_discount),
-        "tax_amount": str(tax_amount),
         "total_amount": str(total_amount),
         "lines": [
             {
                 "position": line.position,
                 "line_net_amount": str(line.line_net_amount),
                 "line_discount_amount": str(line.line_discount_amount),
-                "line_taxable_amount": str(line.line_taxable_amount),
-                "line_tax_amount": str(line.line_tax_amount),
                 "line_total_amount": str(line.line_total_amount),
             }
             for line in lines
         ],
-        "courier_fee_tax_amount": str(courier_tax),
-        "service_fee_tax_amount": str(service_tax),
     }
 
     return PricingResult(
@@ -369,12 +338,9 @@ def calculate_invoice_totals(
         items_net_amount=items_net,
         courier_fee_amount=courier_fee_net,
         courier_fee_discount_amount=courier_alloc,
-        courier_fee_tax_amount=courier_tax,
         service_fee_amount=service_fee,
-        service_fee_tax_amount=service_tax,
         discount_amount=discount,
         net_after_discount_amount=net_after_discount,
-        tax_amount=tax_amount,
         total_amount=total_amount,
         breakdown=breakdown,
     )

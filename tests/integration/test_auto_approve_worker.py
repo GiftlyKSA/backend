@@ -88,11 +88,10 @@ async def test_auto_approve_completes_and_pays() -> None:
                     service_fee_amount=Decimal("30.00"),
                     discount_amount=Decimal("0.00"),
                     net_after_discount_amount=Decimal("630.00"),
-                    tax_amount=Decimal("94.50"),
-                    total_amount=Decimal("724.50"),
+                    total_amount=Decimal("630.00"),
                     issued_at=datetime.now(UTC),
                     paid_at=datetime.now(UTC),
-                    amount_from_wallet=Decimal("724.50"),
+                    amount_from_wallet=Decimal("630.00"),
                 )
             )
             # Fund escrow so the release balances.
@@ -104,12 +103,12 @@ async def test_auto_approve_completes_and_pays() -> None:
                 legs=[
                     Leg(
                         wallet_id=gateway.id,
-                        amount=Decimal("-724.50"),
+                        amount=Decimal("-630.00"),
                         txn_type=TransactionType.PAYMENT,
                     ),
                     Leg(
                         wallet_id=escrow.id,
-                        amount=Decimal("724.50"),
+                        amount=Decimal("630.00"),
                         txn_type=TransactionType.PAYMENT,
                     ),
                 ],

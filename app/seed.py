@@ -17,7 +17,6 @@ _SYSTEM_WALLETS = (
     WalletType.SYSTEM_ESCROW,
     WalletType.SYSTEM_REVENUE,
     WalletType.SYSTEM_GATEWAY,
-    WalletType.SYSTEM_TAX_PAYABLE,
 )
 
 

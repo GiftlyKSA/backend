@@ -32,7 +32,6 @@ _INVOICE_FIELDS = (
     "courier_fee_amount",
     "service_fee_amount",
     "discount_amount",
-    "tax_amount",
     "total_amount",
 )
 _ITEM_FIELDS = (
@@ -41,8 +40,6 @@ _ITEM_FIELDS = (
     "quantity",
     "unit_price_amount",
     "line_discount_amount",
-    "line_taxable_amount",
-    "line_tax_amount",
     "line_total_amount",
 )
 _STORE = """

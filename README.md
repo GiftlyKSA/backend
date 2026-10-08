@@ -74,7 +74,7 @@ uv run --locked taskiq scheduler app.workers.scheduler:scheduler
 ```
 
 Private recording validation requires FFmpeg/ffprobe; the Docker image includes them.
-Database migrations, worker schedules, storage policies, backups, VAT repair and
+Database migrations, worker schedules, storage policies, backups and
 rollback limitations are explained in [operations](docs/documentation.md#7-deployment-migrations-and-maintenance).
 
 ## Checks

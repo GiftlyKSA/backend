@@ -85,7 +85,7 @@ clients localize API timestamps. Financial amounts use exact decimal arithmetic.
    it through an atomic claim. Committed changes reach the customer through the order stream.
 3. **Chat and media:** participants retrieve paginated history or exchange live messages.
    Media uses scoped upload grants, validation and temporary private access links.
-4. **Billing:** invoice items and fees determine totals; VAT applies to items only.
+4. **Billing:** final courier-entered item prices and fees determine totals; no additional VAT is charged.
    Ledger and settlement services manage balances. Production payment processing is
    disabled until Dhamen integration and callback verification are validated.
 5. **Background work:** scheduled jobs process maintenance and retryable notifications.

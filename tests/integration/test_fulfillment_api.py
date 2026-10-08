@@ -108,8 +108,8 @@ async def _make_stack() -> tuple[Settings, object, object]:
 
 
 _ITEMS = [
-    {"title": "Vase", "unit_price_amount": "400.00", "quantity": 1, "tax_rate": "0.15"},
-    {"title": "Wrapping", "unit_price_amount": "50.00", "quantity": 2, "tax_rate": "0.15"},
+    {"title": "Vase", "unit_price_amount": "400.00", "quantity": 1},
+    {"title": "Wrapping", "unit_price_amount": "50.00", "quantity": 2},
 ]
 
 
@@ -245,7 +245,7 @@ async def test_dispute_and_admin_resolves_refund() -> None:
 
             order = await client.get(f"/api/orders/{order_id}", headers=cust_h)
             assert order.json()["status"] == "REFUNDED"
-            # The customer paid 1000 - 724.50, then was refunded 724.50 -> back to 1000.
+            # The customer paid 1000 - 630.00, then was refunded 630.00 -> back to 1000.
             wallet = await client.get("/api/wallets/me", headers=cust_h)
             assert wallet.json()["balance"] == "1000.00"
 

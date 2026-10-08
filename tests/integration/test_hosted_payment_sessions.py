@@ -205,7 +205,7 @@ async def test_order_reuses_one_hosted_session_and_full_invoice_snapshot(
     assert second.session_reused is True
     client.create_checkout.assert_awaited_once()
     intent = await PaymentRepository(db_session).get_open_intent_for_order(order.id)
-    assert intent.checkout_snapshot["invoice"]["total_amount"] == "724.50"
+    assert intent.checkout_snapshot["invoice"]["total_amount"] == "630.00"
     assert (
         await db_session.scalar(
             select(func.count())

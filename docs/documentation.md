@@ -92,14 +92,14 @@ display. Birthdays, occasion dates and delivery dates are calendar dates, not in
 
 Money uses `Decimal` and two-place quantization through `app/core/money.py`. API amounts
 and rates are decimal strings. Invoice/order totals, commission and payout are derived
-through pricing and settlement, not trusted client totals. VAT applies only to discounted
-item prices, not courier or service fees. The current review identifies rounding and
+through pricing and settlement, not trusted client totals. Courier-entered item prices
+are final prices; the platform adds no separate VAT. The current review identifies rounding and
 reservation-concurrency defects that need follow-up; these invariants are not a claim
 that every edge case has been proven.
 
 User creation receives a wallet through the database-backed creation path, including
 administrative creation. System wallets represent escrow obligations, platform revenue,
-gateway clearing and VAT payable; they are internal accounting buckets, not user roles.
+gateway clearing; they are internal accounting buckets, not user roles.
 
 ## 3. Authentication, authorization and safe input
 
@@ -251,7 +251,7 @@ required; failure to provide it prevents startup.
 | Private storage | AWS_*, S3_BUCKET_NAME, CLOUDFRONT_*. |
 | Communication | SNDR_*, SMS_PROVIDER_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY. |
 | Boundaries | CORS_ALLOWED_ORIGINS, RATE_LIMIT_*, MAX_REQUEST_BODY_BYTES, WS_*, CHAT_*. |
-| Business rules | VAT, service fee, commission, invoice/item, topup, withdrawal and expiry controls. |
+| Business rules | Service fee, commission, invoice/item, topup, withdrawal and expiry controls. |
 | Server deployment | WEB_CONCURRENCY, GUNICORN_TIMEOUT, FORWARDED_ALLOW_IPS. |
 
 Pool defaults are 5 persistent + 10 overflow per process, with a 30-second acquisition
@@ -322,7 +322,7 @@ correction or backup restoration to destructive downgrade. Offline SQL generatio
 verified; migration application, locking and rollback on PostgreSQL remain UNCONFIRMED
 locally. SQL/constraint changes must be exercised on a disposable deployment database.
 
-### Invoice PDFs, paid receipts and VAT repair
+### Invoice PDFs and paid receipts
 
 Order participants can download `GET /api/invoices/{invoice_id}/pdf`; authenticated
 admins have an invoice-detail download. PDFs use stored values, English labels and no
@@ -330,13 +330,21 @@ remote assets. Receipt sends attach the PDF using sndr.sh with stable invoice id
 keys and durable claims. A verified sender/domain and real vendor acceptance are required.
 Neither provider idempotency retention nor inbox delivery is proven by a fake.
 
-For a reviewed unpaid-invoice correction, run `uv run --locked python -m
-app.repair_invoice_vat` for a dry-run page (default 200). Review IDs/totals and a backup
-before running the same page with `--apply`; continue using `--after <UUID>` when reported.
-Only eligible active/unexpired unpaid invoices are revised; original revisions are
-retained and paid records/ledger entries are not rewritten. Each invoice commits
-separately. Production repair was not executed in this task. Roll back through reviewed
-forward revisions from retained originals, not by overwriting paid history.
+Courier-entered unit prices are final, including any supplier VAT. No separate tax
+rate or amount is accepted, calculated, returned or printed. Service/courier fees,
+promo discounts, commission and decimal-string amounts retain their existing rules.
+The obsolete VAT repair command has been removed.
+
+Migration `0024_remove_invoice_vat` removes separate tax columns, the unused tax
+wallet and tax transaction enum values. Earlier migrations are unchanged. It acquires
+table locks with a five-second lock timeout and refuses any tax-bearing financial
+records rather than rewriting payments or ledger history. Apply to a clean disposable
+pre-production database first; back up any existing development data before migration.
+If the guard fails, explicitly reconcile or reset disposable data in a separately
+approved operation. No live database cleanup is performed by this release.
+Downgrade restores zero-valued tax fields, enum options and the empty system tax wallet
+without inventing charges. Old mobile clients must
+stop sending `tax_rate` before invoice creation against the new strict schema.
 
 ## 8. Verification and scalability work
 
@@ -820,7 +828,7 @@ audit-context writes. Courier order reads skip customer-only rating eligibility
 queries. Live order snapshots use one participant-scoped SQL projection and retain
 fresh token revocation, account status/version and courier verification checks.
 
-Invoice creation, promo replacement and VAT repair insert their bounded item batch
+Invoice creation and promo replacement insert their bounded item batch
 with one flush instead of one flush per item. Migration0021 extends actor/revision
 keyset indexes with deterministic ID ordering and adds a partial city/NEW-order
 radar index. Five existing indexes are replaced and one added: this costs index

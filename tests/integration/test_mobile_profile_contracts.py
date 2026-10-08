@@ -344,7 +344,6 @@ async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_a
                             "title": "Gift",
                             "unit_price_amount": "100.00",
                             "quantity": 1,
-                            "tax_rate": "0.15",
                         }
                     ],
                     "courier_fee_amount": "10.00",

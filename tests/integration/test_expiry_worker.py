@@ -95,7 +95,7 @@ async def test_expiry_reopens_order_and_releases_hold() -> None:
                 city=await city_by_name(session, "Jeddah"),
                 delivery_date=datetime.now(UTC).date() + timedelta(days=5),
                 status=OrderStatus.WAITING_PAYMENT,
-                total_amount=Decimal("724.50"),
+                total_amount=Decimal("630.00"),
             )
             session.add(order)
             await session.flush()
@@ -108,8 +108,7 @@ async def test_expiry_reopens_order_and_releases_hold() -> None:
                 service_fee_amount=Decimal("30.00"),
                 discount_amount=Decimal("0.00"),
                 net_after_discount_amount=Decimal("630.00"),
-                tax_amount=Decimal("94.50"),
-                total_amount=Decimal("724.50"),
+                total_amount=Decimal("630.00"),
                 amount_from_wallet=Decimal("300.00"),
                 amount_from_gateway=Decimal("424.50"),
                 issued_at=datetime.now(UTC) - timedelta(hours=50),

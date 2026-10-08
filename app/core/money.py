@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-# The smallest money unit (one halala) and the granularity of a tax/fee rate.
+# The smallest money unit (one halala) and the granularity of a fee rate.
 MONEY: Decimal = Decimal("0.01")
 RATE: Decimal = Decimal("0.0001")
 ZERO: Decimal = Decimal("0.00")
@@ -60,7 +60,7 @@ def quantize_money(value: Decimal) -> Decimal:
 
 
 def parse_rate(value: str | Decimal) -> Decimal:
-    """Parse a tax/fee rate stored as a fraction (0.1500 == 15%) to 4dp."""
+    """Parse a fee rate stored as a fraction (0.1500 == 15%) to 4dp."""
     if isinstance(value, float):
         raise MoneyError("Rate must never be a float; pass a decimal string.")
     try:

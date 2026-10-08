@@ -138,7 +138,6 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_RETENTION_DAYS: int = 30
 
     # Business rules
-    DEFAULT_VAT_RATE: Decimal = Decimal("0.15")
     SERVICE_FEE_RATE: Decimal = Decimal("0.05")
     SERVICE_FEE_MIN_AMOUNT: Decimal = Decimal("5.00")
     SERVICE_FEE_MAX_AMOUNT: Decimal = Decimal("500.00")
@@ -294,7 +293,7 @@ class Settings(BaseSettings):
             raise ValueError("OTP_HMAC_KEY must be at least 32 ASCII characters.")
 
     def _validate_rates(self) -> None:
-        for name in ("SERVICE_FEE_RATE", "DEFAULT_VAT_RATE", "PLATFORM_COMMISSION_RATE"):
+        for name in ("SERVICE_FEE_RATE", "PLATFORM_COMMISSION_RATE"):
             value: Decimal = getattr(self, name)
             if not (Decimal(0) <= value <= Decimal(1)):
                 raise ValueError(f"{name} must be within [0, 1].")

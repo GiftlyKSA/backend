@@ -1,8 +1,8 @@
-"""End-to-end invoice tests: authoring, the golden 637.50 example, promo preview, cancel.
+"""End-to-end invoice tests: authoring, final prices, promo preview, cancel.
 
 The courier authors the invoice; the platform prices it. The golden worked example
 (SPEC SECTION 11) is the regression anchor: WELCOME10 (10%, capped 100) on a 600.00
-discountable base yields a 637.50 total. Runs on one event loop via httpx's ASGI
+discountable base yields a 570.00 total. Runs on one event loop via httpx's ASGI
 transport; skips if DB/Redis are unavailable.
 """
 
@@ -110,13 +110,11 @@ _GOLDEN_ITEMS = [
         "title": "Hand-painted ceramic vase",
         "unit_price_amount": "400.00",
         "quantity": 1,
-        "tax_rate": "0.15",
     },
     {
         "title": "Gift wrapping, silk",
         "unit_price_amount": "50.00",
         "quantity": 2,
-        "tax_rate": "0.15",
     },
 ]
 
@@ -168,11 +166,12 @@ async def test_invoice_golden_example_and_reads() -> None:
             assert resp.status_code == 201, resp.text
             body = resp.json()
             # The golden anchor.
-            assert body["total_amount"] == "637.50"
+            assert body["total_amount"] == "570.00"
             assert body["items_net_amount"] == "500.00"
             assert body["service_fee_amount"] == "30.00"
             assert body["discount_amount"] == "60.00"
-            assert body["tax_amount"] == "67.50"
+            assert "tax_amount" not in body
+            assert all("tax_rate" not in item for item in body["items"])
             assert body["net_after_discount_amount"] == "570.00"
             assert body["promo_code"] == code
             assert len(body["items"]) == 2
@@ -181,12 +180,12 @@ async def test_invoice_golden_example_and_reads() -> None:
             # The order moved to WAITING_PAYMENT.
             order = await client.get(f"/api/orders/{order_id}", headers=cust_h)
             assert order.json()["status"] == "WAITING_PAYMENT"
-            assert order.json()["total_amount"] == "637.50"
+            assert order.json()["total_amount"] == "570.00"
 
             # The customer can read the invoice by id and via the order.
             by_id = await client.get(f"/api/invoices/{invoice_id}", headers=cust_h)
             assert by_id.status_code == 200
-            assert by_id.json()["total_amount"] == "637.50"
+            assert by_id.json()["total_amount"] == "570.00"
             by_order = await client.get(f"/api/orders/{order_id}/invoice", headers=cour_h)
             assert by_order.status_code == 200 and by_order.json()["id"] == invoice_id
 
@@ -217,14 +216,14 @@ async def test_promo_preview_matches_golden() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
             cust_h, cour_h, order_id = await _assigned_order(client, app, factory)
 
-            # Issue the invoice WITHOUT a promo: total is the undiscounted 705.00.
+            # Issue the invoice WITHOUT a promo: total is the undiscounted 630.00.
             issued = await client.post(
                 f"/api/orders/{order_id}/invoices",
                 headers=cour_h,
                 json={"items": _GOLDEN_ITEMS, "courier_fee_amount": "100.00"},
             )
             assert issued.status_code == 201, issued.text
-            assert issued.json()["total_amount"] == "705.00"
+            assert issued.json()["total_amount"] == "630.00"
             assert issued.json()["discount_amount"] == "0.00"
             assert issued.json()["promo_code"] is None
 
@@ -236,8 +235,8 @@ async def test_promo_preview_matches_golden() -> None:
             )
             assert preview.status_code == 200, preview.text
             assert preview.json()["discount_amount"] == "60.00"
-            assert preview.json()["original_total_amount"] == "705.00"
-            assert preview.json()["total_amount"] == "637.50"
+            assert preview.json()["original_total_amount"] == "630.00"
+            assert preview.json()["total_amount"] == "570.00"
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

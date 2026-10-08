@@ -1,5 +1,13 @@
 # Giftly task tracker
 
+## Invoice final-price change — created/updated 2026-10-08
+
+| Task | Short description | Status | Created | Urgency / note |
+| --- | --- | --- | --- | --- |
+| INV-PRICE-01 | Remove separate VAT from pricing, contracts, PDF/admin/receipts and settlement | Implemented and locally verified | 2026-10-08 | High; retain service/courier fees and server totals |
+| INV-PRICE-02 | Apply and roll back migration0024 on disposable PostgreSQL | Pending environment verification | 2026-10-08 | High; refuses tax-bearing history; backup before cleanup |
+| INV-PRICE-03 | Update mobile invoice authoring and display to final prices | Pending mobile integration | 2026-10-08 | High; remove obsolete tax inputs before rollout; handoff in chat |
+
 ## Mobile capability delivery — created 2026-10-07
 
 | Task | Short description | Status | Created | Urgency / note |
@@ -27,7 +35,7 @@ environment; `External validation` depends on provider/deployment capabilities.
 
 | ID | Task name | Short description | Status | Urgency | Created | Note / completion evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| FIN-01 | Bound discount rounding | Prevent negative/oversized per-line discounts and incorrect VAT. | Open | High7 | 2026-10-04 | Tiny/mixed-rate item regressions; review existing invoice correction separately. |
+| FIN-01 | Bound discount rounding | Prevent negative/oversized per-line discounts and incorrect final prices. | Open | High7 | 2026-10-04 | Tiny-price item regressions; review existing invoice correction separately. |
 | FIN-02 | Preserve reserved wallet funds | Validate debit/holds from freshly locked wallet state with consistent lock order. | Open | High7 | 2026-10-04 | PostgreSQL two-session payment/reservation regression and ledger invariants. |
 | SEC-19 | Reject published production secrets | Refuse known public testing/placeholder keys in production without changing local modes. | Open | High7 | 2026-10-04 | Negative boot tests; safe key/ciphertext rotation plan. |
 | SEC-18 | Revoke access on refresh replay | Make detected refresh compromise invalidate previously minted access credentials. | Open | Medium6 | 2026-10-04 | Access/refresh/socket denial survives401 and concurrent rotation. |

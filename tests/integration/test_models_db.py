@@ -40,7 +40,6 @@ async def test_system_wallets_are_seeded(db_session: AsyncSession) -> None:
         WalletType.SYSTEM_ESCROW,
         WalletType.SYSTEM_REVENUE,
         WalletType.SYSTEM_GATEWAY,
-        WalletType.SYSTEM_TAX_PAYABLE,
     } <= seeded
 
 
@@ -70,8 +69,7 @@ async def test_order_invoice_roundtrip(db_session: AsyncSession) -> None:
         service_fee_amount=Decimal("30.00"),
         discount_amount=Decimal("0.00"),
         net_after_discount_amount=Decimal("630.00"),
-        tax_amount=Decimal("94.50"),
-        total_amount=Decimal("724.50"),
+        total_amount=Decimal("630.00"),
     )
     db_session.add(invoice)
     await db_session.flush()
@@ -82,19 +80,16 @@ async def test_order_invoice_roundtrip(db_session: AsyncSession) -> None:
         title="Hand-painted ceramic vase",
         unit_price_amount=Decimal("400.00"),
         quantity=1,
-        tax_rate=Decimal("0.1500"),
         line_net_amount=Decimal("400.00"),
         line_discount_amount=Decimal("0.00"),
-        line_taxable_amount=Decimal("400.00"),
-        line_tax_amount=Decimal("60.00"),
-        line_total_amount=Decimal("460.00"),
+        line_total_amount=Decimal("400.00"),
     )
     db_session.add(item)
     await db_session.flush()
 
     fetched = await db_session.scalar(select(Invoice).where(Invoice.id == invoice.id))
     assert fetched is not None
-    assert fetched.total_amount == Decimal("724.50")
+    assert fetched.total_amount == Decimal("630.00")
 
 
 async def test_invoice_net_math_check_rejects_bad_totals(db_session: AsyncSession) -> None:
@@ -112,7 +107,6 @@ async def test_invoice_net_math_check_rejects_bad_totals(db_session: AsyncSessio
         status=InvoiceStatus.ISSUED,
         items_net_amount=Decimal("500.00"),
         net_after_discount_amount=Decimal("999.00"),  # violates chk_invoice_net_math
-        tax_amount=Decimal("0.00"),
         total_amount=Decimal("999.00"),
     )
     db_session.add(bad)

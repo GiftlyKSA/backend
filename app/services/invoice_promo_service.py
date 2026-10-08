@@ -19,7 +19,7 @@ from app.services.promo_service import PromoService, to_pricing_promo
 
 
 def stored_pricing_config(invoice: Invoice) -> PricingConfig:
-    """Fail closed when the original fee/tax policy was not retained."""
+    """Fail closed when the original fee policy was not retained."""
     policy = (invoice.pricing_breakdown or {}).get("pricing_policy")
     if not isinstance(policy, dict):
         raise ConflictError("The original invoice pricing policy is unavailable.")
@@ -30,15 +30,13 @@ def stored_pricing_config(invoice: Invoice) -> PricingConfig:
                 "service_fee_rate",
                 "service_fee_min_amount",
                 "service_fee_max_amount",
-                "default_vat_rate",
                 "max_invoice_amount",
             )
         }
         if not all(value.is_finite() and value >= ZERO for value in values.values()):
             raise ValueError("Invalid stored policy")
         if (
-            values["default_vat_rate"] > 1
-            or values["service_fee_rate"] > 1
+            values["service_fee_rate"] > 1
             or values["service_fee_min_amount"] > values["service_fee_max_amount"]
             or values["max_invoice_amount"] <= ZERO
         ):
@@ -140,7 +138,6 @@ class InvoicePromoService:
                 description=item.description,
                 unit_price_amount=item.unit_price_amount,
                 quantity=item.quantity,
-                tax_rate=item.tax_rate,
                 position=item.position,
             )
             for item in items

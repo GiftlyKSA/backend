@@ -64,7 +64,6 @@ async def test_authoring_flush_count_is_constant_and_all_items_are_draft(test_se
             title=f"Gift {position}",
             unit_price_amount=Decimal("10.25"),
             quantity=2,
-            tax_rate=Decimal("0.15"),
             description="Wrapped",
         )
         for position in range(item_count)
@@ -90,7 +89,7 @@ async def test_authoring_flush_count_is_constant_and_all_items_are_draft(test_se
         assert item.position == position
         for field in fields(InvoiceLineInput):
             assert getattr(item, field.name) == getattr(inputs[position - 1], field.name)
-        assert item.line_total_amount == item.line_taxable_amount + item.line_tax_amount
+        assert item.line_total_amount == item.line_net_amount - item.line_discount_amount
 
 
 async def test_single_item_compatibility_copies_every_computed_field(test_settings):
@@ -110,7 +109,6 @@ async def test_single_item_compatibility_copies_every_computed_field(test_settin
                 title="Gift",
                 unit_price_amount=Decimal("12.50"),
                 quantity=3,
-                tax_rate=Decimal("0.15"),
                 description="Wrapped",
                 position=1,
             )

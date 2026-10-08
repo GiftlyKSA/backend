@@ -65,8 +65,7 @@ async def _paid_invoice(db: AsyncSession, *, email: str | None) -> Invoice:
         service_fee_amount=Decimal("30.00"),
         discount_amount=Decimal("0.00"),
         net_after_discount_amount=Decimal("630.00"),
-        tax_amount=Decimal("94.50"),
-        total_amount=Decimal("724.50"),
+        total_amount=Decimal("630.00"),
         issued_at=datetime.now(UTC),
         paid_at=datetime.now(UTC),
     )
@@ -83,7 +82,7 @@ async def test_receipt_sent_once_on_paid(db_session: AsyncSession) -> None:
     assert len(email.sent) == 1
     sent = email.sent[0]
     assert sent.to_email == "buyer@example.com"
-    assert sent.variables["total_amount"] == "724.50"
+    assert sent.variables["total_amount"] == "630.00"
     assert sent.variables["order_id"] == str(invoice.order_id)
     # No Restricted data leaks into the template variables.
     assert "phone" not in sent.variables

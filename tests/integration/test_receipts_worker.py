@@ -75,8 +75,7 @@ async def test_sweeper_sends_and_stamps_receipt() -> None:
                 service_fee_amount=Decimal("30.00"),
                 discount_amount=Decimal("0.00"),
                 net_after_discount_amount=Decimal("630.00"),
-                tax_amount=Decimal("94.50"),
-                total_amount=Decimal("724.50"),
+                total_amount=Decimal("630.00"),
                 issued_at=datetime.now(UTC),
                 paid_at=datetime.now(UTC),
             )

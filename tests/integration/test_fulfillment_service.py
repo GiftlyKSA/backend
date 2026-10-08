@@ -71,7 +71,7 @@ async def _user_wallet(db: AsyncSession, role: UserRole, wtype: WalletType) -> t
 async def _paid_order(
     db: AsyncSession, *, status: OrderStatus = OrderStatus.IN_PROGRESS
 ) -> tuple[User, User, Order, Invoice]:
-    """A funded, paid order: escrow holds the 724.50 total, ready to release."""
+    """A funded, paid order: escrow holds the 630.00 total, ready to release."""
     customer, _cw = await _user_wallet(db, UserRole.CUSTOMER, WalletType.CUSTOMER)
     courier, _kw = await _user_wallet(db, UserRole.COURIER, WalletType.COURIER)
     order = Order(
@@ -92,11 +92,10 @@ async def _paid_order(
         service_fee_amount=Decimal("30.00"),
         discount_amount=Decimal("0.00"),
         net_after_discount_amount=Decimal("630.00"),
-        tax_amount=Decimal("94.50"),
-        total_amount=Decimal("724.50"),
+        total_amount=Decimal("630.00"),
         issued_at=datetime.now(UTC),
         paid_at=datetime.now(UTC),
-        amount_from_wallet=Decimal("724.50"),
+        amount_from_wallet=Decimal("630.00"),
     )
     db.add(invoice)
     await db.flush()
@@ -109,8 +108,8 @@ async def _paid_order(
     await money.post_group(
         correlation_id=uuid.uuid4(),
         legs=[
-            Leg(wallet_id=gateway.id, amount=Decimal("-724.50"), txn_type=TransactionType.PAYMENT),
-            Leg(wallet_id=escrow.id, amount=Decimal("724.50"), txn_type=TransactionType.PAYMENT),
+            Leg(wallet_id=gateway.id, amount=Decimal("-630.00"), txn_type=TransactionType.PAYMENT),
+            Leg(wallet_id=escrow.id, amount=Decimal("630.00"), txn_type=TransactionType.PAYMENT),
         ],
     )
     return customer, courier, order, invoice
@@ -198,7 +197,7 @@ async def test_dispute_raise_then_resolve_customer_refunds(db_session: AsyncSess
     assert order.status is OrderStatus.REFUNDED
     repo = WalletRepository(db_session)
     customer_wallet = await repo.get_by_user(customer.id)
-    assert customer_wallet is not None and customer_wallet.balance == Decimal("724.50")
+    assert customer_wallet is not None and customer_wallet.balance == Decimal("630.00")
     assert (await MoneyService(repo).reconcile()).ok
 
 

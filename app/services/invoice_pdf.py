@@ -106,9 +106,7 @@ def render_invoice_pdf(invoice: Invoice, items: list[InvoiceItem]) -> bytes:
         f"<b>Paid</b> &nbsp; {paid_at}",
         body,
     )
-    rows: list[list[object]] = [
-        ["DESCRIPTION", "QTY", "UNIT PRICE", "DISCOUNT", "NET", "VAT", "AMOUNT"]
-    ]
+    rows: list[list[object]] = [["DESCRIPTION", "QTY", "UNIT PRICE", "DISCOUNT", "AMOUNT"]]
     for item in items:
         title = item.title if item.title.isascii() else f"Item {item.position}"
         rows.append(
@@ -117,12 +115,10 @@ def render_invoice_pdf(invoice: Invoice, items: list[InvoiceItem]) -> bytes:
                 str(item.quantity),
                 money_str(item.unit_price_amount),
                 money_str(item.line_discount_amount),
-                money_str(item.line_taxable_amount),
-                money_str(item.line_tax_amount),
                 money_str(item.line_total_amount),
             ]
         )
-    table = Table(rows, colWidths=[width - 356, 28, 62, 62, 62, 60, 82], repeatRows=1)
+    table = Table(rows, colWidths=[width - 260, 28, 75, 75, 82], repeatRows=1)
     table.setStyle(
         TableStyle(
             [
@@ -151,7 +147,6 @@ def render_invoice_pdf(invoice: Invoice, items: list[InvoiceItem]) -> bytes:
                 ("Discount", invoice.discount_amount),
                 ("Courier / delivery fee", invoice.courier_fee_amount),
                 ("Service fee", invoice.service_fee_amount),
-                ("VAT on items", invoice.tax_amount),
                 ("TOTAL", invoice.total_amount),
             )
         ],

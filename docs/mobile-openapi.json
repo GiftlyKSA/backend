@@ -3141,7 +3141,7 @@
             "maxLength": 20,
             "minLength": 1,
             "title": "Courier Fee Amount",
-            "description": "Courier's craft/labour, net.",
+            "description": "Courier's craft/labour fee.",
             "default": "0.00"
           },
           "promo_code": {
@@ -3455,10 +3455,6 @@
             "type": "integer",
             "title": "Quantity"
           },
-          "tax_rate": {
-            "type": "string",
-            "title": "Tax Rate"
-          },
           "line_net_amount": {
             "type": "string",
             "title": "Line Net Amount"
@@ -3466,14 +3462,6 @@
           "line_discount_amount": {
             "type": "string",
             "title": "Line Discount Amount"
-          },
-          "line_taxable_amount": {
-            "type": "string",
-            "title": "Line Taxable Amount"
-          },
-          "line_tax_amount": {
-            "type": "string",
-            "title": "Line Tax Amount"
           },
           "line_total_amount": {
             "type": "string",
@@ -3487,11 +3475,8 @@
           "description",
           "unit_price_amount",
           "quantity",
-          "tax_rate",
           "line_net_amount",
           "line_discount_amount",
-          "line_taxable_amount",
-          "line_tax_amount",
           "line_total_amount"
         ],
         "title": "InvoiceItemResponse",
@@ -3522,21 +3507,13 @@
             "maxLength": 20,
             "minLength": 1,
             "title": "Unit Price Amount",
-            "description": "Net unit price, e.g. \"400.00\"."
+            "description": "Final unit price, e.g. \"400.00\"."
           },
           "quantity": {
             "type": "integer",
             "maximum": 999.0,
             "minimum": 1.0,
             "title": "Quantity"
-          },
-          "tax_rate": {
-            "type": "string",
-            "maxLength": 8,
-            "minLength": 1,
-            "title": "Tax Rate",
-            "description": "Tax fraction, e.g. \"0.15\" for 15%.",
-            "default": "0.15"
           }
         },
         "additionalProperties": false,
@@ -3547,7 +3524,7 @@
           "quantity"
         ],
         "title": "InvoiceLineRequest",
-        "description": "One courier-authored invoice line (net of tax)."
+        "description": "One courier-authored invoice line with its final unit price."
       },
       "InvoiceResponse": {
         "properties": {
@@ -3586,10 +3563,6 @@
           "net_after_discount_amount": {
             "type": "string",
             "title": "Net After Discount Amount"
-          },
-          "tax_amount": {
-            "type": "string",
-            "title": "Tax Amount"
           },
           "total_amount": {
             "type": "string",
@@ -3647,7 +3620,6 @@
           "service_fee_amount",
           "discount_amount",
           "net_after_discount_amount",
-          "tax_amount",
           "total_amount",
           "promo_code",
           "issued_at",

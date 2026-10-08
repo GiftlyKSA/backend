@@ -115,32 +115,30 @@ async def test_approval_payout_group_golden(db_session: AsyncSession) -> None:
     repo = WalletRepository(db_session)
     service = MoneyService(repo)
     escrow = await repo.get_system(WalletType.SYSTEM_ESCROW)
-    tax = await repo.get_system(WalletType.SYSTEM_TAX_PAYABLE)
     revenue = await repo.get_system(WalletType.SYSTEM_REVENUE)
     gateway = await repo.get_system(WalletType.SYSTEM_GATEWAY)
     courier = await _make_user_wallet(db_session, WalletType.COURIER)
 
-    # Fund escrow (gateway -> escrow) so it holds the 655.50 to release.
+    # Fund escrow (gateway -> escrow) so it holds the 570.00 to release.
     await service.post_group(
         correlation_id=uuid.uuid4(),
         legs=[
-            Leg(wallet_id=gateway.id, amount=Decimal("-655.50"), txn_type=TransactionType.PAYMENT),
-            Leg(wallet_id=escrow.id, amount=Decimal("655.50"), txn_type=TransactionType.PAYMENT),
+            Leg(wallet_id=gateway.id, amount=Decimal("-570.00"), txn_type=TransactionType.PAYMENT),
+            Leg(wallet_id=escrow.id, amount=Decimal("570.00"), txn_type=TransactionType.PAYMENT),
         ],
     )
     await db_session.refresh(escrow)
     escrow_start = escrow.balance
 
-    # Approval payout (workflow G): escrow -655.50 -> tax 85.50 + courier 540 + revenue 30.
+    # Approval payout: escrow -570.00 -> courier 540 + revenue 30.
     await service.post_group(
         correlation_id=uuid.uuid4(),
         legs=[
             Leg(
                 wallet_id=escrow.id,
-                amount=Decimal("-655.50"),
+                amount=Decimal("-570.00"),
                 txn_type=TransactionType.ESCROW_RELEASE,
             ),
-            Leg(wallet_id=tax.id, amount=Decimal("85.50"), txn_type=TransactionType.TAX),
             Leg(
                 wallet_id=courier.id,
                 amount=Decimal("540.00"),
@@ -151,7 +149,7 @@ async def test_approval_payout_group_golden(db_session: AsyncSession) -> None:
     )
     await db_session.refresh(escrow)
     await db_session.refresh(courier)
-    assert escrow.balance == escrow_start - Decimal("655.50")
+    assert escrow.balance == escrow_start - Decimal("570.00")
     assert courier.balance == Decimal("540.00")
 
     report = await service.reconcile()

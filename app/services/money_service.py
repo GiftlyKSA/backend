@@ -4,7 +4,7 @@ Every movement is a double-entry group: >= 2 legs sharing one ``correlation_id``
 signed amounts sum to exactly 0.00, posted atomically. Wallets are locked FOR UPDATE in
 ascending id order to prevent deadlocks, and the zero-sum invariant is asserted at
 runtime before the write — money is never created or destroyed, only moved. External
-flows balance against SYSTEM_GATEWAY; VAT accrues to SYSTEM_TAX_PAYABLE.
+flows balance against SYSTEM_GATEWAY; settlement credits courier and platform wallets.
 
 The wallet invariant ``balance == SUM(settled amounts)`` and the per-correlation
 zero-sum invariant are re-checked by :meth:`reconcile`, which pages on any drift.
@@ -375,21 +375,18 @@ class MoneyService:
         invoice_id: uuid.UUID,
         courier_wallet_id: uuid.UUID,
         courier_payout_amount: Decimal,
-        tax_amount: Decimal,
         platform_revenue_amount: Decimal,
     ) -> bool:
         """Release escrow on order completion (workflow G), idempotently.
 
-        Escrow pays out the courier, the tax authority, and platform revenue in one
-        balanced group (``-total + payout + tax + revenue == 0``). Keyed on the order so a
+        Escrow pays out the courier and platform revenue in one
+        balanced group (``-total + payout + revenue == 0``). Keyed on the order so a
         customer approval racing the auto-approve job releases exactly once.
         """
         courier_payout = quantize_money(courier_payout_amount)
-        tax = quantize_money(tax_amount)
         revenue = quantize_money(platform_revenue_amount)
-        total = quantize_money(courier_payout + tax + revenue)
+        total = quantize_money(courier_payout + revenue)
         escrow = await self._wallets.get_system(WalletType.SYSTEM_ESCROW)
-        tax_wallet = await self._wallets.get_system(WalletType.SYSTEM_TAX_PAYABLE)
         revenue_wallet = await self._wallets.get_system(WalletType.SYSTEM_REVENUE)
         correlation = uuid.uuid4()
 
@@ -410,16 +407,6 @@ class MoneyService:
                 reference_invoice_id=invoice_id,
             ),
         ]
-        if tax != ZERO:
-            legs.append(
-                Leg(
-                    wallet_id=tax_wallet.id,
-                    amount=tax,
-                    txn_type=TransactionType.TAX,
-                    reference_order_id=order_id,
-                    reference_invoice_id=invoice_id,
-                )
-            )
         if revenue != ZERO:
             legs.append(
                 Leg(
@@ -476,7 +463,7 @@ class MoneyService:
     ) -> bool:
         """Split escrow between courier and customer (dispute resolved split).
 
-        The platform books no revenue or tax on a split — the two parties divide the held
+        The platform books no revenue on a split — the two parties divide the held
         total (``courier_amount + refund_amount == escrow total``). Either side may be
         zero, in which case its leg is omitted.
         """

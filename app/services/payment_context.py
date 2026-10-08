@@ -17,7 +17,6 @@ def invoice_snapshot(invoice: Invoice, items: list[InvoiceItem]) -> InvoiceRespo
         service_fee_amount=money_str(invoice.service_fee_amount),
         discount_amount=money_str(invoice.discount_amount),
         net_after_discount_amount=money_str(invoice.net_after_discount_amount),
-        tax_amount=money_str(invoice.tax_amount),
         total_amount=money_str(invoice.total_amount),
         promo_code=invoice.promo_code_snapshot,
         issued_at=invoice.issued_at.isoformat() if invoice.issued_at else None,
@@ -29,11 +28,8 @@ def invoice_snapshot(invoice: Invoice, items: list[InvoiceItem]) -> InvoiceRespo
                 description=item.description,
                 unit_price_amount=money_str(item.unit_price_amount),
                 quantity=item.quantity,
-                tax_rate=f"{item.tax_rate:.4f}",
                 line_net_amount=money_str(item.line_net_amount),
                 line_discount_amount=money_str(item.line_discount_amount),
-                line_taxable_amount=money_str(item.line_taxable_amount),
-                line_tax_amount=money_str(item.line_tax_amount),
                 line_total_amount=money_str(item.line_total_amount),
             )
             for item in items

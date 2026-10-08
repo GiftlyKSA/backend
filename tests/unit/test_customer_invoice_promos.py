@@ -31,15 +31,12 @@ from tests.conftest import make_test_settings
 
 def context():
     customer_id = uuid4()
-    config = PricingConfig(
-        Decimal("0.05"), Decimal("5"), Decimal("500"), Decimal("0.15"), Decimal("50000")
-    )
+    config = PricingConfig(Decimal("0.05"), Decimal("5"), Decimal("500"), Decimal("50000"))
     item = SimpleNamespace(
         title="Gift",
         description=None,
         unit_price_amount=Decimal("500"),
         quantity=1,
-        tax_rate=Decimal("0.15"),
         position=1,
     )
     result = calculate_invoice_totals([PricingItem(**vars(item))], Decimal("100"), None, config)
@@ -99,9 +96,9 @@ async def test_apply_case_insensitive_preserves_policy_expiry_and_history(code):
     original_total = invoice.total_amount
     await service.apply(invoice_id=invoice.id, customer_id=customer, code=code, key="operation")
     assert invoice.status is InvoiceStatus.CANCELLED
-    assert invoice.total_amount == original_total == Decimal("705.00")
+    assert invoice.total_amount == original_total == Decimal("630.00")
     result = service._invoices.create_draft.call_args.kwargs["result"]
-    assert result.total_amount == Decimal("637.50")
+    assert result.total_amount == Decimal("570.00")
     assert result.discount_amount == Decimal("60.00")
     assert result.service_fee_amount == Decimal("30.00")
     assert order.status is OrderStatus.WAITING_PAYMENT and order.total_amount == result.total_amount
@@ -127,7 +124,7 @@ async def test_remove_returns_original_price_without_reserving():
     service, invoice, order, customer = context()
     invoice.promo_code_snapshot, invoice.promo_id = "GIFT10", uuid4()
     await service.apply(invoice_id=invoice.id, customer_id=customer, code=None, key="remove")
-    assert order.total_amount == Decimal("705.00")
+    assert order.total_amount == Decimal("630.00")
     service._promos.reserve.assert_not_awaited()
     assert service._invoices.create_draft.call_args.kwargs["promo_id"] is None
 
@@ -317,8 +314,7 @@ async def test_application_route_enforces_customer_and_required_key(monkeypatch,
         "service_fee_amount": "30.00",
         "discount_amount": "60.00",
         "net_after_discount_amount": "570.00",
-        "tax_amount": "85.50",
-        "total_amount": "655.50",
+        "total_amount": "570.00",
         "promo_code": "GIFT10",
         "issued_at": "2026-10-03T10:00:00Z",
         "expires_at": "2026-10-04T10:00:00Z",

@@ -2,7 +2,7 @@
 
 The escrow lifecycle lives here. A courier submits delivery photo proof;
 the customer (or the auto-approve job) approves, which RELEASES escrow through the money
-service — the courier is paid on the pre-discount base, tax accrues, and the platform
+service — the courier is paid on the pre-discount base, and the platform
 keeps the residue. Either party may DISPUTE, freezing escrow until an admin resolves it.
 Money only ever moves through the double-entry ledger; the actor id comes from the JWT.
 """
@@ -149,7 +149,6 @@ class FulfillmentService:
         settlement = compute_settlement(
             items_net_amount=invoice.items_net_amount,
             courier_fee_amount=invoice.courier_fee_amount,
-            tax_amount=invoice.tax_amount,
             total_amount=invoice.total_amount,
             commission_rate=self._settings.PLATFORM_COMMISSION_RATE,
         )
@@ -158,7 +157,6 @@ class FulfillmentService:
             invoice_id=invoice.id,
             courier_wallet_id=courier_wallet.id,
             courier_payout_amount=settlement.courier_payout_amount,
-            tax_amount=settlement.tax_amount,
             platform_revenue_amount=settlement.platform_revenue_amount,
         )
         order.status = OrderStatus.COMPLETED
@@ -262,7 +260,6 @@ class FulfillmentService:
             settlement = compute_settlement(
                 items_net_amount=invoice.items_net_amount,
                 courier_fee_amount=invoice.courier_fee_amount,
-                tax_amount=invoice.tax_amount,
                 total_amount=total,
                 commission_rate=self._settings.PLATFORM_COMMISSION_RATE,
             )
@@ -271,7 +268,6 @@ class FulfillmentService:
                 invoice_id=invoice.id,
                 courier_wallet_id=courier_wallet.id,
                 courier_payout_amount=settlement.courier_payout_amount,
-                tax_amount=settlement.tax_amount,
                 platform_revenue_amount=settlement.platform_revenue_amount,
             )
             order.commission_amount = settlement.commission_amount
