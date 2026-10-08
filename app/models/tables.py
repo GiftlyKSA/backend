@@ -786,6 +786,17 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     gateway_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gateway_payment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     gateway_customer_identifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id"), nullable=True
+    )
+    checkout_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'ACTIVE'")
+    )
+    checkout_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    checkout_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    use_wallet: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     reference_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True
     )
@@ -813,6 +824,24 @@ class PaymentIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("gateway_reference IS NOT NULL"),
         ),
         Index("idx_payment_intents_user_created", "user_id", text("created_at DESC")),
+        Index(
+            "uq_payment_intents_open_topup",
+            "user_id",
+            unique=True,
+            postgresql_where=text(
+                "purpose='WALLET_TOPUP' AND status='NEW' AND checkout_provider!='SIMULATED'"
+            ),
+        ),
+        Index(
+            "uq_payment_intents_open_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status='NEW' AND order_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "checkout_state IN ('CREATING','ACTIVE','CLOSING','CLOSED','REVIEW')",
+            name="chk_intent_checkout_state",
+        ),
         Index(
             "idx_payment_intents_status_expires",
             "status",
@@ -1127,6 +1156,11 @@ class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             text("id DESC"),
         ),
         Index("idx_transactions_correlation", "correlation_id"),
+        Index(
+            "idx_transactions_intent",
+            "reference_intent_id",
+            postgresql_where=text("reference_intent_id IS NOT NULL"),
+        ),
         Index(
             "idx_transactions_order",
             "reference_order_id",

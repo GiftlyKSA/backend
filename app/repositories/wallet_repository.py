@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Numeric, Uuid, cast, func, null, select, true, tuple_, union_all
+from sqlalchemy import Numeric, Uuid, cast, func, null, or_, select, true, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction
 from sqlalchemy.orm import aliased
 
@@ -120,6 +120,49 @@ class WalletRepository:
     async def flush(self) -> None:
         """Flush pending writes so a subsequent FOR UPDATE reload cannot discard them."""
         await self._session.flush()
+
+    async def lock_payment_batch(
+        self, *, intent_ids: list[uuid.UUID], user_ids: list[uuid.UUID]
+    ) -> None:
+        """Acquire all batch ledger rows then wallets in global deterministic order."""
+        if not intent_ids:
+            return
+        if len(set(intent_ids)) > 100 or len(set(user_ids)) > 100:
+            raise ValueError("Payment batch exceeds its reference limit.")
+        rows = await self._session.scalars(
+            select(Transaction.wallet_id)
+            .where(Transaction.reference_intent_id.in_(intent_ids))
+            .order_by(Transaction.id)
+            .limit(401)
+            .with_for_update()
+        )
+        wallet_ids = list(rows)
+        if len(wallet_ids) > 400:
+            raise ValueError("Payment batch exceeds its ledger limit.")
+        await self._session.execute(
+            select(Wallet.id)
+            .where(
+                or_(
+                    Wallet.id.in_(wallet_ids),
+                    Wallet.user_id.in_(user_ids),
+                    Wallet.type.in_([WalletType.SYSTEM_GATEWAY, WalletType.SYSTEM_ESCROW]),
+                )
+            )
+            .order_by(Wallet.id)
+            .with_for_update()
+        )
+
+    async def lock_intent_transactions(self, intent_id: uuid.UUID) -> list[Transaction]:
+        """Lock the bounded payment group after the caller locks its intent."""
+        rows = await self._session.scalars(
+            select(Transaction)
+            .where(Transaction.reference_intent_id == intent_id)
+            .order_by(Transaction.id)
+            .limit(4)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return list(rows)
 
     async def idempotency_key_exists(self, key: str) -> bool:
         """Return whether a ledger row with this idempotency key already exists."""

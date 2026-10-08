@@ -58,6 +58,18 @@ class Settings(BaseSettings):
 
     INTEGRATION_HTTP_TIMEOUT_SECONDS: float = Field(default=10, gt=0, le=15, allow_inf_nan=False)
 
+    PAYMENT_PROVIDER: Literal["auto", "disabled", "simulated", "dhamen"] = "auto"
+    PAYMENT_CHECKOUTS_ENABLED: bool = True
+    DHAMEN_ENVIRONMENT: Literal["testing", "production"] = "testing"
+    DHAMEN_TEST_BASE_URL: str | None = None
+    DHAMEN_PRODUCTION_BASE_URL: str | None = None
+    DHAMEN_APP_ID: SecretStr | None = None
+    DHAMEN_APP_KEY: SecretStr | None = None
+    DHAMEN_CLIENT_ID: SecretStr | None = None
+    DHAMEN_CHECKOUT_HOSTS: str = ""
+    DHAMEN_RETURN_URL: str | None = None
+    DHAMEN_WEBHOOK_URL: str | None = None
+
     # Auth / JWT
     JWT_SECRET: SecretStr | None = None
     JWT_PRIVATE_KEY: SecretStr | None = None
@@ -183,9 +195,71 @@ class Settings(BaseSettings):
         self._validate_otp_key()
         self._validate_rates()
         self._validate_admin()
+        self._validate_payments()
         if self.is_production:
             self._validate_production_interlock()
         return self
+
+    @property
+    def payment_provider(self) -> str:
+        """Resolve the backward-compatible default without selecting a production fake."""
+        if self.PAYMENT_PROVIDER == "auto":
+            return "disabled" if self.is_production else "simulated"
+        return self.PAYMENT_PROVIDER
+
+    @property
+    def dhamen_base_url(self) -> str:
+        """Default testing to the demo origin; require an explicit production origin."""
+        if self.DHAMEN_ENVIRONMENT == "production":
+            return self.DHAMEN_PRODUCTION_BASE_URL or ""
+        return self.DHAMEN_TEST_BASE_URL or "https://dhamendemo.elm.sa"
+
+    @property
+    def dhamen_checkout_hosts(self) -> tuple[str, ...]:
+        """Return exact allowed checkout hostnames, never suffix or wildcard matches."""
+        return tuple(
+            host.strip().lower() for host in self.DHAMEN_CHECKOUT_HOSTS.split(",") if host.strip()
+        )
+
+    def _validate_payments(self) -> None:
+        if self.payment_provider == "simulated" and self.is_production:
+            raise ValueError("Production must not select simulated payments.")
+        if self.payment_provider != "dhamen":
+            return
+        if self.is_production:
+            raise ValueError("Production Dhamen payments remain disabled pending verification.")
+        if self.is_production != (self.DHAMEN_ENVIRONMENT == "production"):
+            raise ValueError(
+                "Dhamen testing/production mode must match the application environment."
+            )
+        for name in ("DHAMEN_APP_ID", "DHAMEN_APP_KEY", "DHAMEN_CLIENT_ID"):
+            value: SecretStr | None = getattr(self, name)
+            if value is None or not value.get_secret_value().strip():
+                raise ValueError(f"{name} is required for Dhamen.")
+        for name, url_value in (
+            ("Dhamen base URL", self.dhamen_base_url),
+            ("DHAMEN_RETURN_URL", self.DHAMEN_RETURN_URL),
+            ("DHAMEN_WEBHOOK_URL", self.DHAMEN_WEBHOOK_URL),
+        ):
+            parsed = urlsplit(url_value or "")
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.fragment
+                or parsed.query
+            ):
+                raise ValueError(f"{name} must be an HTTPS URL without credentials or query.")
+        if not self.dhamen_checkout_hosts or any(
+            urlsplit("https://" + host).netloc != host
+            or "/" in host
+            or ":" in host
+            or "*" in host
+            or "@" in host
+            for host in self.dhamen_checkout_hosts
+        ):
+            raise ValueError("DHAMEN_CHECKOUT_HOSTS must contain exact hostnames.")
 
     def _validate_encryption_keys(self) -> None:
         try:

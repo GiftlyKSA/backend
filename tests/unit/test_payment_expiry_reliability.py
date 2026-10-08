@@ -24,6 +24,7 @@ def _intent(**changes: object) -> SimpleNamespace:
         reference_invoice_id=uuid4(),
         purpose=PaymentPurpose.ORDER_INVOICE,
         status=PaymentIntentStatus.NEW,
+        checkout_provider="SIMULATED",
         amount=Decimal("424.50"),
         wallet_reserved_amount=Decimal("300.00"),
         expires_at=datetime.now(UTC) - timedelta(hours=1),

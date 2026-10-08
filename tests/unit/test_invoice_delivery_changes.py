@@ -1,6 +1,9 @@
 """Private invoice downloads, repair invariants, and Saudi-day expiry."""
 
+import base64
 import json
+import re
+import zlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -175,3 +178,49 @@ async def test_expiry_query_locks_only_unaccepted_overdue_rows():
     assert "FOR UPDATE OF orders SKIP LOCKED" in sql
     assert "orders.courier_id IS NULL" in sql and "orders.delivery_date <" in sql
     assert "LIMIT" in sql
+
+
+def test_pdf_has_branded_item_table_and_payment_details():
+    source = invoice()
+    document = render_invoice_pdf(source, items())
+    streams = b"\n".join(
+        zlib.decompress(base64.a85decode(stream.strip(), adobe=True))
+        for stream in re.findall(rb"stream\r?\n(.*?)endstream", document, re.DOTALL)
+    )
+    for label in (
+        b"Giftly",
+        b"Commercial registration",
+        b"Athar Al-Taqnia",
+        b"DESCRIPTION",
+        b"QTY",
+        b"UNIT PRICE",
+        b"TOTAL",
+        b"Issued",
+    ):
+        assert label in streams
+    assert str(source.id).encode() in streams
+    assert str(source.order_id).encode() in streams
+
+
+def test_pdf_paginates_long_item_lists_without_active_content():
+    source_items = [
+        SimpleNamespace(**(vars(items()[0]) | {"position": position})) for position in range(1, 101)
+    ]
+    document = render_invoice_pdf(invoice(), source_items)
+    assert len(re.findall(rb"/Type /Page\b", document)) > 1
+    assert b"/JavaScript" not in document and b"/OpenAction" not in document
+
+
+def test_pdf_dates_use_gmt_plus_three_without_changing_stored_values():
+    source = invoice()
+    source.issued_at = datetime(2026, 10, 6, 22, tzinfo=UTC)
+    source.paid_at = datetime(2026, 10, 6, 23, 15, tzinfo=UTC)
+    document = render_invoice_pdf(source, items())
+    streams = b"\n".join(
+        zlib.decompress(base64.a85decode(stream.strip(), adobe=True))
+        for stream in re.findall(rb"stream\r?\n(.*?)endstream", document, re.DOTALL)
+    )
+    assert b"07 Oct 2026, 01:00 GMT+3" in streams
+    assert b"07 Oct 2026, 02:15 GMT+3" in streams
+    assert source.issued_at.hour == 22 and source.issued_at.tzinfo is UTC
+    assert source.paid_at.hour == 23 and source.paid_at.tzinfo is UTC

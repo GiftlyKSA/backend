@@ -30,6 +30,7 @@ for _module in (
     "auto_approve",
     "chat_notifications",
     "expiry",
+    "gateway_reconciliation",
     "media_cleanup",
     "order_notifications",
     "receipts",

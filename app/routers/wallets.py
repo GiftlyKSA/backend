@@ -125,6 +125,8 @@ async def start_topup(
         payment_intent_id=str(result.intent_id),
         amount=money_str(result.amount),
         payment_url=result.payment_url,
+        status=result.status,
+        session_reused=result.session_reused,
     )
 
 

@@ -99,3 +99,7 @@ Current HTTP defaults: authenticated 60 requests/minute; anonymous 30/hour;
 admin 100/minute. Redis limiter failures return 503 rather than bypassing controls.
 Dates/timestamps, pagination, decimal money, safe literal-text rendering and production
 limitations are detailed in the API reference.
+
+Invoice downloads and paid-email attachments share the English Giftly purple PDF
+template with GMT+3 dates. One-hour private PDF reuse refreshes immediately when
+status, priced items, totals or template change. See docs/api.md for payment sessions.

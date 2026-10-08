@@ -12,6 +12,8 @@ from app.integrations.payments.base import (
 class DisabledPaymentClient(PaymentClient):
     """Never create a checkout or authenticate a callback in production."""
 
+    provider = "DISABLED"
+
     async def create_payment_link(
         self,
         *,

@@ -35,7 +35,7 @@ from app.schemas.invoices import (
     InvoiceItemResponse,
     InvoiceResponse,
 )
-from app.schemas.payments import PayInvoiceResponse
+from app.schemas.payments import PayInvoiceRequest, PayInvoiceResponse
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.invoice_pdf import render_invoice_pdf
 from app.services.invoice_promo_service import InvoicePromoService
@@ -92,6 +92,12 @@ def _service(request: Request, db: AsyncSession) -> InvoiceService:
             users=UserRepository(db), couriers=CourierRepository(db)
         ),
         settings=get_settings(request),
+        close_payment=build_payment_service(
+            session=db,
+            gateway=request.app.state.clients.gateway,
+            redis=get_redis(request),
+            settings=get_settings(request),
+        ).close_invoice_payment,
     )
 
 
@@ -228,6 +234,7 @@ async def pay_invoice(
     db: DbDep,
     invoice_id: uuid.UUID,
     actor: Annotated[Actor, Depends(_Customer)],
+    body: PayInvoiceRequest | None = None,
 ) -> PayInvoiceResponse:
     """Pay an issued invoice from wallet, gateway, or a split of both (customer only)."""
     service = build_payment_service(
@@ -236,13 +243,20 @@ async def pay_invoice(
         redis=get_redis(request),
         settings=get_settings(request),
     )
-    result = await service.pay_invoice(invoice_id=invoice_id, customer_id=actor.id)
+    result = await service.pay_invoice(
+        invoice_id=invoice_id,
+        customer_id=actor.id,
+        use_wallet=body.use_wallet if body is not None else True,
+    )
     return PayInvoiceResponse(
         invoice_id=str(result.invoice_id),
         status=result.status,
         amount_from_wallet=money_str(result.amount_from_wallet),
         amount_from_gateway=money_str(result.amount_from_gateway),
         payment_url=result.payment_url,
+        payment_intent_id=str(result.intent_id) if result.intent_id else None,
+        session_reused=result.session_reused,
+        use_wallet=result.use_wallet,
     )
 
 

@@ -161,6 +161,181 @@ class MoneyService:
                 return True
         return False
 
+    async def stage_group(
+        self,
+        *,
+        legs: list[Leg],
+        correlation_id: uuid.UUID,
+        held_wallet_id: uuid.UUID | None = None,
+        held_amount: Decimal = ZERO,
+    ) -> bool:
+        """Record a balanced PENDING group without changing any balance."""
+        _validate_legs(legs)
+        if await self._any_key_exists(legs):
+            return False
+        locked = await self._wallets.lock_wallets([leg.wallet_id for leg in legs])
+        if held_amount > ZERO:
+            if held_wallet_id is None or held_wallet_id not in locked:
+                raise LedgerImbalanceError("The reserved wallet is missing from the payment.")
+            wallet = locked[held_wallet_id]
+            if wallet.balance - wallet.held_balance < held_amount:
+                raise InsufficientFundsError()
+            wallet.held_balance = quantize_money(wallet.held_balance + held_amount)
+            wallet.version += 1
+        for leg in legs:
+            self._wallets.append_transaction(
+                wallet_id=leg.wallet_id,
+                amount=quantize_money(leg.amount),
+                txn_type=leg.txn_type,
+                status=TransactionStatus.PENDING,
+                correlation_id=correlation_id,
+                balance_after=locked[leg.wallet_id].balance,
+                idempotency_key=leg.idempotency_key,
+                reference_order_id=leg.reference_order_id,
+                reference_invoice_id=leg.reference_invoice_id,
+                reference_intent_id=leg.reference_intent_id,
+                description=leg.description,
+            )
+        await self._wallets.flush()
+        return True
+
+    async def settle_pending_intent(
+        self,
+        *,
+        intent_id: uuid.UUID,
+        held_wallet_id: uuid.UUID | None = None,
+        held_amount: Decimal = ZERO,
+    ) -> bool | None:
+        """Settle a locked intent's group once; None identifies a legacy attempt."""
+        rows = await self._wallets.lock_intent_transactions(intent_id)
+        if not rows:
+            return None
+        if all(row.status is TransactionStatus.SETTLED for row in rows):
+            return False
+        if (
+            not 2 <= len(rows) <= 3
+            or len({row.correlation_id for row in rows}) != 1
+            or any(row.status is not TransactionStatus.PENDING for row in rows)
+            or sum((row.amount for row in rows), ZERO) != ZERO
+        ):
+            raise LedgerImbalanceError("Payment ledger group is not pending and balanced.")
+        locked = await self._wallets.lock_wallets([row.wallet_id for row in rows])
+        for row in rows:
+            wallet = locked[row.wallet_id]
+            own_hold = held_amount if row.wallet_id == held_wallet_id else ZERO
+            if own_hold > wallet.held_balance:
+                raise InsufficientFundsError()
+            if (
+                wallet.user_id is not None
+                and row.amount < ZERO
+                and wallet.balance + row.amount < wallet.held_balance - own_hold
+            ):
+                raise InsufficientFundsError()
+        if held_amount > ZERO:
+            if held_wallet_id is None or held_wallet_id not in locked:
+                raise LedgerImbalanceError("The reserved wallet is missing from the payment.")
+            wallet = locked[held_wallet_id]
+            wallet.held_balance = quantize_money(wallet.held_balance - held_amount)
+        for row in rows:
+            wallet = locked[row.wallet_id]
+            wallet.balance = quantize_money(wallet.balance + row.amount)
+            wallet.version += 1
+            row.balance_after = wallet.balance
+            row.status = TransactionStatus.SETTLED
+        await self._wallets.flush()
+        return True
+
+    async def reverse_pending_intent(self, intent_id: uuid.UUID) -> None:
+        """Retain cancelled pending entries as REVERSED without moving money."""
+        rows = await self._wallets.lock_intent_transactions(intent_id)
+        for row in rows:
+            if row.status is TransactionStatus.PENDING:
+                row.status = TransactionStatus.REVERSED
+        await self._wallets.flush()
+
+    async def stage_topup(
+        self, *, user_wallet_id: uuid.UUID, amount: Decimal, intent_id: uuid.UUID
+    ) -> None:
+        """Record a top-up credit waiting for verified gateway settlement."""
+        gateway = await self._wallets.get_system(WalletType.SYSTEM_GATEWAY)
+        await self.stage_group(
+            correlation_id=uuid.uuid4(),
+            legs=[
+                Leg(
+                    user_wallet_id,
+                    amount,
+                    TransactionType.TOPUP,
+                    idempotency_key=f"intent:{intent_id}:topup",
+                    reference_intent_id=intent_id,
+                    description="Top up",
+                ),
+                Leg(
+                    gateway.id,
+                    -amount,
+                    TransactionType.TOPUP,
+                    reference_intent_id=intent_id,
+                    description="Top up",
+                ),
+            ],
+        )
+
+    async def stage_invoice_payment(
+        self,
+        *,
+        customer_wallet_id: uuid.UUID,
+        wallet_amount: Decimal,
+        gateway_amount: Decimal,
+        invoice_id: uuid.UUID,
+        order_id: uuid.UUID,
+        intent_id: uuid.UUID,
+    ) -> None:
+        """Record all invoice funding legs while retaining the wallet reservation."""
+        escrow = await self._wallets.get_system(WalletType.SYSTEM_ESCROW)
+        gateway = await self._wallets.get_system(WalletType.SYSTEM_GATEWAY)
+        legs = []
+        if wallet_amount > ZERO:
+            legs.append(
+                Leg(
+                    customer_wallet_id,
+                    -wallet_amount,
+                    TransactionType.PAYMENT,
+                    description="Invoice payment",
+                    reference_invoice_id=invoice_id,
+                    reference_order_id=order_id,
+                    reference_intent_id=intent_id,
+                )
+            )
+        if gateway_amount > ZERO:
+            legs.append(
+                Leg(
+                    gateway.id,
+                    -gateway_amount,
+                    TransactionType.PAYMENT,
+                    description="Invoice payment",
+                    reference_invoice_id=invoice_id,
+                    reference_order_id=order_id,
+                    reference_intent_id=intent_id,
+                )
+            )
+        legs.append(
+            Leg(
+                escrow.id,
+                wallet_amount + gateway_amount,
+                TransactionType.ESCROW_HOLD,
+                idempotency_key=f"intent:{intent_id}:invoice",
+                description="Invoice payment",
+                reference_invoice_id=invoice_id,
+                reference_order_id=order_id,
+                reference_intent_id=intent_id,
+            )
+        )
+        await self.stage_group(
+            legs=legs,
+            correlation_id=uuid.uuid4(),
+            held_wallet_id=customer_wallet_id,
+            held_amount=wallet_amount,
+        )
+
     async def credit_topup(
         self,
         *,
@@ -169,6 +344,9 @@ class MoneyService:
         intent_id: uuid.UUID,
     ) -> bool:
         """Credit a paid wallet top-up, balanced against SYSTEM_GATEWAY (workflow B.7)."""
+        pending = await self.settle_pending_intent(intent_id=intent_id)
+        if pending is not None:
+            return pending
         gateway = await self._wallets.get_system(WalletType.SYSTEM_GATEWAY)
         correlation = uuid.uuid4()
         return await self.post_group(
@@ -441,6 +619,14 @@ class MoneyService:
         """
         wallet_amount = quantize_money(wallet_amount)
         gateway_amount = quantize_money(gateway_amount)
+        if intent_id is not None:
+            pending = await self.settle_pending_intent(
+                intent_id=intent_id,
+                held_wallet_id=customer_wallet_id if was_held else None,
+                held_amount=wallet_amount if was_held else ZERO,
+            )
+            if pending is not None:
+                return pending
         total = quantize_money(wallet_amount + gateway_amount)
         escrow = await self._wallets.get_system(WalletType.SYSTEM_ESCROW)
         gateway = await self._wallets.get_system(WalletType.SYSTEM_GATEWAY)

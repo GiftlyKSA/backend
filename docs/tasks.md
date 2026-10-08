@@ -65,11 +65,23 @@ update the review and this tracker together when findings or verification change
 
 | Task | Short description | Status | Created | Urgency / note |
 | --- | --- | --- | --- | --- |
-| PAY-01 | Release owned payment-session recovery, status, refresh and cancellation | In progress; local implementation only | 2026-10-08 | High; user approved; preserve WebSockets. Not published or verified deployed. |
-| PAY-02 | Verify callback batch lock order and strict provider status | Targeted local fixes; release pending | 2026-10-08 | High; provider booleans/decimals rejected; 54 focused tests passed. Batch lock-order regression and PostgreSQL concurrency execution remain. |
-| PAY-03 | Validate migration graph and hosted ledger runtime | Pending | 2026-10-08 | High; retain applied 0021/0022 and join 0019/0020 using 0023. Disposable PostgreSQL required; no Docker on user machine. |
-| PAY-04 | Publish payment contracts and UI handoff | Pending | 2026-10-08 | High; regenerate both OpenAPI files, update references, run full suite/hooks, scoped commit and push master. Keep production payments disabled. |
+| PAY-01 | Release owned payment-session recovery, status, refresh and cancellation | Verified; published by this release | 2026-10-08 | High; WebSockets preserved; deployment remains UNCONFIRMED until exact live contract verification. |
+| PAY-02 | Verify callback batch lock order and strict provider status | Fixed; PostgreSQL validation remains | 2026-10-08 | High; strict status, global ledger/wallet locks, durable late-payment quarantine and eligibility regressions pass; PostgreSQL regressions added but not locally executed. |
+| PAY-03 | Validate migration graph and hosted ledger runtime | Offline verified; runtime pending | 2026-10-08 | High; retain applied 0021/0022 and join 0019/0020 using 0023. Disposable PostgreSQL required; no Docker on user machine. |
+| PAY-04 | Publish payment contracts and UI handoff | Verified; published by this release | 2026-10-08 | High; both OpenAPI references and maintained docs updated; chat-only handoff on release; production payments remain disabled. |
 
-Stopped implementation at the user's requested 10% remaining five-hour allowance.
-This checkpoint publishes status only. Payment/SMS/PDF work remains local and must
-not be staged wholesale. No live payment-provider or database verification was run.
+The earlier usage-limit checkpoint published status only. This release supersedes
+that payment/PDF checkpoint; unrelated SMS/email/payout edits remain local.
+No live payment-provider or database verification was run.
+
+
+## Invoice PDF delivery — created 2026-10-08
+
+| Task | Short description | Status | Created | Urgency / note |
+| --- | --- | --- | --- | --- |
+| PDF-01 | Share approved Giftly purple English PDF across download and paid email | Implemented and visually checked | 2026-10-08 | Medium; GMT+3 issue/payment dates; UTC persistence/API unchanged. |
+| PDF-02 | Reuse identical PDF one hour, refresh changed content/status | Verified | 2026-10-08 | Medium; exact3600-second expiry, item/status refresh, template fingerprint, private ownership and outage fallback tests. |
+
+The earlier usage-limit checkpoint above is historical; payment/PDF release status is
+now updated. Provider/live database validation and query-plan/load measurements remain
+pending. No Docker, live-provider payment or production database operation was performed.

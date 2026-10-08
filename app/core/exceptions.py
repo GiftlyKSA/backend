@@ -44,6 +44,22 @@ class PaymentsDisabledError(DomainError):
     status_code = 503
 
 
+class PaymentProviderUnavailableError(DomainError):
+    """The remote outcome is unknown; retain the existing payment attempt."""
+
+    code = "PAYMENT_PROVIDER_UNAVAILABLE"
+    message = "Payment verification is temporarily unavailable. Please try again later."
+    status_code = 503
+
+
+class PaymentSessionPendingError(DomainError):
+    """A durable checkout attempt needs reconciliation before another can start."""
+
+    code = "PAYMENT_SESSION_PENDING"
+    message = "Your payment session is being verified. Please refresh its status."
+    status_code = 409
+
+
 class NotFoundError(DomainError):
     """The resource does not exist, or the actor has no relationship to it."""
 

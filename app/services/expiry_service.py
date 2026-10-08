@@ -79,5 +79,8 @@ class ExpiryService:
             or intent.expires_at >= datetime.now(UTC)
         ):
             return False
+        if intent.checkout_provider != "SIMULATED":
+            return False
+        await self._reservations.release_locked_intent(intent)
         await self._payments.mark_expired(intent)
         return True

@@ -386,13 +386,12 @@ come from the requested screen inventory; the mobile repository was not changed.
 | Order timeline / photos | Order details, live order WebSocket; media upload/confirm; chat attachment reads | Historical status timeline and authorized order-media reads |
 | Top-up recovery | `POST /api/wallets/topup`; own wallet/history | Pushed creation has no idempotency header or recovery operation |
 
-Uncommitted workspace operations already include `GET /api/wallets/me/topup-session`,
-`GET /api/orders/{order_id}/payment-session`, `GET /api/payment-sessions/{intent_id}`,
-and `POST /api/payment-sessions/{intent_id}/refresh` and `/cancel`. Reuse and review
-these rather than creating replacements. Workspace top-up responses also contain
-`status` and `session_reused`, and transaction responses contain links/descriptions.
-None of these additions is pushed. Existing test files do not establish deployment
-or successful real-provider integration. Production payment safeguards stay enabled.
+The 2026-10-08 release implements owned order/top-up recovery, session reads,
+provider refresh and confirmed cancellation; see the API reference. Creation responses
+add status/reuse/intent metadata and an optional strict wallet toggle. Deployment and
+live-provider behavior require separate verification; production payments stay disabled.
+The earlier proposal inventory is historical; later released-operation sections and
+generated OpenAPI supersede its remaining-work labels.
 
 ### Common proposed contract
 
@@ -861,3 +860,34 @@ and user identifiers are not logged. Pool checkout waits, failed SQL and respons
 streaming are outside the SQL measurement. These diagnostics do not create database
 HTTP audit entries. Compare endpoint p50/p95, SQL/pool time and worker lag after
 deployment; same-region hosting alone does not eliminate repeated round trips.
+
+
+## Hosted payment operations — 2026-10-08
+
+Migrations0019/0020 add checkout claims/snapshots, pending ledger coordination and
+indexes;0023 merges them with already published0021/0022. Applied history is unchanged.
+The one-time deployment migrator upgrades the single0023 head before API workers start.
+
+Upgrade backfills order references and refuses duplicate open order attempts. Partial
+unique indexes enforce one NEW attempt per order and one non-simulated NEW top-up per
+payer. An intent transaction index supports bounded settlement. These add write/storage
+cost for concurrency integrity. Downgrade refuses unresolved attempts and pending ledger
+groups. Disable new checkouts, reconcile financial attempts, back up and verify rollback
+on disposable PostgreSQL before a coordinated code/schema downgrade.
+
+Durable creation/cancellation checkpoints release locks before provider HTTP. Ambiguous
+timeouts keep claims, holds and uniqueness. Verified settlement checks reference, payer,
+currency and exact amount; pending balanced rows settle once. Callback batches prelock
+all invoices/orders/intents, then ledger rows and the complete wallet union in globally
+deterministic order. Money changes/receipts are atomic. A verified late payment after
+closure persists a REVIEW quarantine before any batch settlement; it blocks replacement
+and requires financial review. Callback bodies and browser redirects cannot prove payment.
+
+Taskiq testing-provider reconciliation runs every five minutes, with20 attempts maximum,
+a shared scheduler lock and five-minute deadline. Run worker and scheduler for recovery.
+Production still rejects Dhamen until vendor authentication/merchant contracts are verified.
+
+HTTP download and paid-email attachment use the same English Giftly purple renderer.
+GMT+3 affects display only. One-hour bounded Redis reuse fingerprints status, dates,
+priced items/totals and template after current ownership/content reads. Changes regenerate
+immediately. Static PDFs escape markup and fetch no remote assets.

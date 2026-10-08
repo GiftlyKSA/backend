@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Protocol
 
 from app.core.config import Settings
 from app.core.exceptions import (
@@ -69,6 +70,14 @@ class PromoPreview:
     total_amount: Decimal
 
 
+class InvoicePaymentCloser(Protocol):
+    """Close a courier-authorized invoice payment before cancelling its invoice."""
+
+    async def __call__(self, *, invoice_id: uuid.UUID) -> None:
+        """Confirm payment closure or raise without cancelling the invoice."""
+        ...
+
+
 class InvoiceService:
     """Authors invoices, previews promos, and manages the invoice lifecycle."""
 
@@ -81,6 +90,7 @@ class InvoiceService:
         eligibility: CourierEligibilityService,
         reservations: PaymentReservationService,
         settings: Settings,
+        close_payment: InvoicePaymentCloser | None = None,
     ) -> None:
         """Wire the collaborators the invoice flows need."""
         self._invoices = invoices
@@ -89,6 +99,7 @@ class InvoiceService:
         self._eligibility = eligibility
         self._reservations = reservations
         self._settings = settings
+        self._close_payment = close_payment
 
     def _pricing_config(self) -> PricingConfig:
         s = self._settings
@@ -211,6 +222,13 @@ class InvoiceService:
         if invoice.status is not InvoiceStatus.ISSUED:
             raise InvalidStateTransitionError("Only an issued, unpaid invoice can be cancelled.")
 
+        if self._close_payment is not None:
+            await self._close_payment(invoice_id=invoice.id)
+            invoice = await self._invoices.lock_for_courier(invoice_id, courier_id)
+            if invoice is None:
+                raise NotFoundError("Invoice not found.")
+            if invoice.status is not InvoiceStatus.ISSUED:
+                raise ConflictError("The invoice changed while its payment was being closed.")
         await self._reservations.expire_for_invoice(invoice.id)
 
         order = await self._orders.lock(invoice.order_id)

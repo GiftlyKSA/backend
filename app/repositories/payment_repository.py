@@ -11,14 +11,19 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_context import mark_request_transaction, set_audit_actor
+from app.core.db import emit_committed_audit_events
 from app.models import (
     DhamenNotificationReceipt,
+    Invoice,
+    Order,
     PaymentIntent,
     PayoutTransfer,
+    User,
     WalletTopup,
 )
 from app.models.enums import PaymentIntentStatus, PaymentPurpose
@@ -40,6 +45,7 @@ class PaymentRepository:
         reference_invoice_id: uuid.UUID | None,
         expires_at: datetime,
         wallet_reserved_amount: Decimal = Decimal("0.00"),
+        use_wallet: bool = True,
     ) -> PaymentIntent:
         """Insert a NEW payment intent for a top-up or an invoice remainder."""
         intent = PaymentIntent(
@@ -50,10 +56,171 @@ class PaymentRepository:
             reference_invoice_id=reference_invoice_id,
             expires_at=expires_at,
             wallet_reserved_amount=wallet_reserved_amount,
+            use_wallet=use_wallet,
+            order_id=(
+                await self._session.scalar(
+                    select(Invoice.order_id).where(Invoice.id == reference_invoice_id)
+                )
+                if reference_invoice_id is not None
+                else None
+            ),
         )
         self._session.add(intent)
         await self._session.flush()
         return intent
+
+    async def checkpoint(self) -> None:
+        """Commit durable coordination before releasing locks for provider HTTP calls."""
+        await self._session.commit()
+        emit_committed_audit_events(self._session)
+
+    async def resume_actor(self) -> None:
+        """Restore transaction-local auditing after a financial coordination commit."""
+        category = self._session.info.get("audit_actor_category", "SYSTEM")
+        actor_id = self._session.info.get("audit_actor_id")
+        if category != "SYSTEM":
+            await mark_request_transaction(self._session)
+        await set_audit_actor(self._session, category=category, actor_user_id=actor_id)
+
+    async def flush(self) -> None:
+        """Flush session state without committing the caller's settlement transaction."""
+        await self._session.flush()
+
+    async def lock_session_intent(self, intent_id: uuid.UUID) -> PaymentIntent | None:
+        """Lock invoice then order then intent, matching checkout and financial operations."""
+        candidate = await self.get_intent(intent_id)
+        if candidate is None:
+            return None
+        if candidate.reference_invoice_id is not None:
+            await self._session.scalar(
+                select(Invoice)
+                .where(Invoice.id == candidate.reference_invoice_id)
+                .with_for_update()
+            )
+        if candidate.order_id is not None:
+            await self._session.scalar(
+                select(Order).where(Order.id == candidate.order_id).with_for_update()
+            )
+        return await self.lock_intent(intent_id)
+
+    async def lock_session_batch(
+        self, intent_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, PaymentIntent]:
+        """Lock each resource class in order before any batch wallet settlement."""
+        ids = sorted(set(intent_ids))
+        if not ids:
+            return {}
+        if len(ids) > 100:
+            raise ValueError("Payment batch exceeds its reference limit.")
+        rows = (
+            await self._session.execute(
+                select(PaymentIntent.reference_invoice_id, PaymentIntent.order_id)
+                .where(PaymentIntent.id.in_(ids))
+                .limit(100)
+            )
+        ).all()
+        invoice_ids = sorted({row[0] for row in rows if row[0] is not None})
+        order_ids = sorted({row[1] for row in rows if row[1] is not None})
+        if invoice_ids:
+            await self._session.execute(
+                select(Invoice.id)
+                .where(Invoice.id.in_(invoice_ids))
+                .order_by(Invoice.id)
+                .with_for_update()
+            )
+        if order_ids:
+            await self._session.execute(
+                select(Order.id).where(Order.id.in_(order_ids)).order_by(Order.id).with_for_update()
+            )
+        locked = await self._session.scalars(
+            select(PaymentIntent)
+            .where(PaymentIntent.id.in_(ids))
+            .order_by(PaymentIntent.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return {intent.id: intent for intent in locked}
+
+    async def get_open_intent_for_order(self, order_id: uuid.UUID) -> PaymentIntent | None:
+        """Find the single open attempt across all invoice revisions of an order."""
+        result: PaymentIntent | None = await self._session.scalar(
+            select(PaymentIntent)
+            .where(
+                PaymentIntent.order_id == order_id,
+                or_(
+                    PaymentIntent.status == PaymentIntentStatus.NEW,
+                    PaymentIntent.checkout_state == "REVIEW",
+                ),
+            )
+            .order_by((PaymentIntent.checkout_state == "REVIEW").desc())
+            .limit(1)
+        )
+        return result
+
+    async def get_topup_for_actor(
+        self, user_id: uuid.UUID, *, open_only: bool = False
+    ) -> PaymentIntent | None:
+        """Recover a payer's hosted top-up, preferring unresolved attempts."""
+        query = select(PaymentIntent).where(
+            PaymentIntent.user_id == user_id,
+            PaymentIntent.purpose == PaymentPurpose.WALLET_TOPUP,
+            PaymentIntent.checkout_provider != "SIMULATED",
+        )
+        if open_only:
+            query = query.where(
+                or_(
+                    PaymentIntent.status == PaymentIntentStatus.NEW,
+                    PaymentIntent.checkout_state == "REVIEW",
+                )
+            )
+        result: PaymentIntent | None = await self._session.scalar(
+            query.order_by(
+                (PaymentIntent.checkout_state == "REVIEW").desc(),
+                (PaymentIntent.status == PaymentIntentStatus.NEW).desc(),
+                PaymentIntent.created_at.desc(),
+                PaymentIntent.id.desc(),
+            ).limit(1)
+        )
+        return result
+
+    async def lock_topup_owner(self, user_id: uuid.UUID) -> None:
+        """Serialize creation without taking wallet locks before the ledger lock order."""
+        await self._session.scalar(select(User.id).where(User.id == user_id).with_for_update())
+
+    async def get_intent_for_actor(
+        self, intent_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PaymentIntent | None:
+        """Return only the authenticated payer's own session."""
+        result: PaymentIntent | None = await self._session.scalar(
+            select(PaymentIntent).where(
+                PaymentIntent.id == intent_id,
+                PaymentIntent.user_id == user_id,
+            )
+        )
+        return result
+
+    async def get_latest_intent_for_order(
+        self,
+        *,
+        order_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> PaymentIntent | None:
+        """Recover an owned checkout after a lost response, preferring the active attempt."""
+        result: PaymentIntent | None = await self._session.scalar(
+            select(PaymentIntent)
+            .where(
+                PaymentIntent.order_id == order_id,
+                PaymentIntent.user_id == user_id,
+            )
+            .order_by(
+                (PaymentIntent.checkout_state == "REVIEW").desc(),
+                (PaymentIntent.status == PaymentIntentStatus.NEW).desc(),
+                PaymentIntent.created_at.desc(),
+                PaymentIntent.id.desc(),
+            )
+            .limit(1)
+        )
+        return result
 
     async def attach_simulated_checkout(
         self, intent: PaymentIntent, *, payment_link_id: str, url: str
@@ -164,6 +331,25 @@ class PaymentRepository:
                     PaymentIntent.gateway_reference.is_not(None),
                 )
                 .order_by(PaymentIntent.created_at, PaymentIntent.id)
+                .limit(limit)
+            )
+        )
+
+    async def list_pending_hosted(self, *, provider: str, limit: int) -> list[PaymentIntent]:
+        """Rotate pending attempts by last check to prevent backlog starvation."""
+        return list(
+            await self._session.scalars(
+                select(PaymentIntent)
+                .where(
+                    PaymentIntent.checkout_provider == provider,
+                    PaymentIntent.status == PaymentIntentStatus.NEW,
+                    PaymentIntent.checkout_state != "REVIEW",
+                )
+                .order_by(
+                    PaymentIntent.checkout_checked_at.asc().nullsfirst(),
+                    PaymentIntent.created_at,
+                    PaymentIntent.id,
+                )
                 .limit(limit)
             )
         )

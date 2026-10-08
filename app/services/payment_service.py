@@ -9,6 +9,7 @@ payment-link ID, the intent's own status check, and the ledger's idempotency key
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from app.core.exceptions import (
     NotFoundError,
     PaymentAmountMismatchError,
     PaymentsDisabledError,
+    PaymentSessionPendingError,
     ValidationDomainError,
 )
 from app.core.locks import redis_lock
@@ -33,8 +35,12 @@ from app.core.money import ZERO, parse_money, quantize_money
 from app.integrations.payments.base import (
     PaymentCheckout,
     PaymentClient,
+    PaymentContext,
     PaymentCustomer,
     PaymentItem,
+    PaymentNotification,
+    PaymentState,
+    PaymentStatus,
 )
 from app.models import Invoice, InvoiceItem, Order, PaymentIntent, User
 from app.models.enums import (
@@ -50,8 +56,11 @@ from app.repositories.payment_repository import PaymentRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
+from app.schemas.payments import DhamenWebhookAck
+from app.services.hosted_payment_service import HostedPaymentService
 from app.services.money_service import MoneyService
 from app.services.order_state import assert_transition
+from app.services.payment_context import invoice_snapshot
 from app.services.payment_reservation_service import PaymentReservationService
 from app.services.promo_service import PromoService
 
@@ -65,6 +74,8 @@ class TopupResult:
     intent_id: uuid.UUID
     amount: Decimal
     payment_url: str | None
+    status: str = "PENDING"
+    session_reused: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,6 +87,9 @@ class PayResult:
     amount_from_wallet: Decimal
     amount_from_gateway: Decimal
     payment_url: str | None
+    intent_id: uuid.UUID | None = None
+    session_reused: bool = False
+    use_wallet: bool = True
 
 
 @dataclass(frozen=True)
@@ -125,9 +139,20 @@ class PaymentService:
         self._reservations = PaymentReservationService(
             payments=payments, wallets=wallets, money=money
         )
+        self._hosted = HostedPaymentService(
+            payments=payments,
+            gateway=gateway,
+            reservations=self._reservations,
+            settle=self._settle_hosted_intent,
+        )
 
     def _require_payments_available(self) -> None:
-        if self._settings.is_production:
+        self._require_recovery_available()
+        if not self._settings.PAYMENT_CHECKOUTS_ENABLED:
+            raise PaymentsDisabledError()
+
+    def _require_recovery_available(self) -> None:
+        if self._settings.is_production or self._settings.payment_provider == "disabled":
             raise PaymentsDisabledError()
 
     @staticmethod
@@ -155,38 +180,73 @@ class PaymentService:
         if wallet is None:
             raise NotFoundError("Wallet not found.")
 
+        if self._uses_hosted:
+            reusable = await self._existing_topup(user_id=user_id, amount=amount)
+            if reusable is not None:
+                return reusable
+
         intent = await self._payments.create_intent(
             user_id=user_id,
             purpose=PaymentPurpose.WALLET_TOPUP,
             amount=amount,
             reference_invoice_id=None,
             expires_at=self._expiry(),
+            use_wallet=False,
         )
         await self._payments.create_topup(
             user_id=user_id, wallet_id=wallet.id, payment_intent_id=intent.id, amount=amount
         )
-        if self._settings.ENVIRONMENT is Environment.DEVELOPMENT:
+        await self._money.stage_topup(user_wallet_id=wallet.id, amount=amount, intent_id=intent.id)
+        if self._settings.ENVIRONMENT is Environment.DEVELOPMENT and not self._uses_hosted:
             await self._settle_topup(intent)
             await self._payments.mark_paid(intent, paid_at=self._now())
-            return TopupResult(intent_id=intent.id, amount=amount, payment_url=None)
+            return TopupResult(intent_id=intent.id, amount=amount, payment_url=None, status="PAID")
 
         checkout = await self._create_checkout(
             intent=intent,
             user_id=user_id,
             items=(
                 PaymentItem(
-                    name="Giftly wallet top-up",
-                    description="Wallet credit",
+                    name="Top up",
+                    description=f"Top up for user {user_id}",
                     amount=amount,
                 ),
             ),
         )
-        await self._payments.attach_simulated_checkout(
-            intent, payment_link_id=checkout.payment_link_id, url=checkout.payment_url
-        )
+        if checkout is None:
+            return TopupResult(intent_id=intent.id, amount=amount, payment_url=None, status="PAID")
+        if not self._uses_hosted:
+            await self._payments.attach_simulated_checkout(
+                intent, payment_link_id=checkout.payment_link_id, url=checkout.payment_url
+            )
         return TopupResult(intent_id=intent.id, amount=amount, payment_url=checkout.payment_url)
 
-    async def pay_invoice(self, *, invoice_id: uuid.UUID, customer_id: uuid.UUID) -> PayResult:
+    async def _existing_topup(self, *, user_id: uuid.UUID, amount: Decimal) -> TopupResult | None:
+        """Reuse a stable top-up and retain creation serialization after remote closure."""
+        await self._payments.lock_topup_owner(user_id)
+        existing = await self._payments.get_topup_for_actor(user_id, open_only=True)
+        if existing is None:
+            return None
+        if existing.amount != amount:
+            raise ConflictError("Cancel the existing top-up before changing its amount.")
+        reusable = await self._hosted.reuse_or_close(existing)
+        if reusable is not None:
+            paid = reusable.status is PaymentIntentStatus.PAID
+            return TopupResult(
+                reusable.id,
+                reusable.amount,
+                None if paid else reusable.gateway_payment_url,
+                "PAID" if paid else "PENDING",
+                True,
+            )
+        await self._payments.lock_topup_owner(user_id)
+        if await self._payments.get_topup_for_actor(user_id, open_only=True) is not None:
+            raise PaymentSessionPendingError("Refresh the existing top-up session.")
+        return None
+
+    async def pay_invoice(
+        self, *, invoice_id: uuid.UUID, customer_id: uuid.UUID, use_wallet: bool = True
+    ) -> PayResult:
         """Pay an issued invoice from wallet, gateway, or a split of both.
 
         If the wallet fully covers the total, the payment settles synchronously into
@@ -217,22 +277,16 @@ class PaymentService:
         if order.status is not OrderStatus.WAITING_PAYMENT:
             raise InvalidStateTransitionError("This order is not awaiting payment.")
 
-        existing = await self._payments.get_open_intent_for_invoice(invoice.id)
+        existing = await self._existing_invoice_payment(invoice, order)
         if existing is not None:
-            return PayResult(
-                invoice_id=invoice.id,
-                status="PENDING",
-                amount_from_wallet=existing.wallet_reserved_amount,
-                amount_from_gateway=existing.amount,
-                payment_url=existing.gateway_payment_url,
-            )
+            return self._reused_invoice_result(invoice, existing, use_wallet=use_wallet)
 
         wallet = await self._wallets.get_by_user(customer_id)
         if wallet is None:  # pragma: no cover - the customer always has a wallet
             raise NotFoundError("Wallet not found.")
 
         total = quantize_money(invoice.total_amount)
-        available = await self._money.available_balance(customer_id)
+        available = await self._money.available_balance(customer_id) if use_wallet else ZERO
         wallet_amount = min(available, total)
         gateway_amount = quantize_money(total - wallet_amount)
 
@@ -256,6 +310,7 @@ class PaymentService:
                 amount_from_wallet=total,
                 amount_from_gateway=ZERO,
                 payment_url=None,
+                use_wallet=use_wallet,
             )
 
         return await self._start_invoice_gateway_payment(
@@ -264,7 +319,66 @@ class PaymentService:
             customer_id=customer_id,
             wallet_amount=wallet_amount,
             gateway_amount=gateway_amount,
+            use_wallet=use_wallet,
         )
+
+    def _reused_invoice_result(
+        self, invoice: Invoice, intent: PaymentIntent, *, use_wallet: bool
+    ) -> PayResult:
+        """Return the frozen split; never change funding behind an active hosted URL."""
+        frozen_wallet = (
+            bool(intent.checkout_snapshot.get("use_wallet", True))
+            if self._uses_hosted and intent.checkout_snapshot
+            else bool(getattr(intent, "use_wallet", True))
+        )
+        paid = intent.status is PaymentIntentStatus.PAID
+        if not paid and frozen_wallet != use_wallet:
+            raise ConflictError("Cancel the existing session before changing wallet use.")
+        return PayResult(
+            invoice_id=invoice.id,
+            status="PAID" if paid else "PENDING",
+            amount_from_wallet=intent.wallet_reserved_amount,
+            amount_from_gateway=intent.amount,
+            payment_url=None if paid else intent.gateway_payment_url,
+            intent_id=intent.id,
+            session_reused=True,
+            use_wallet=frozen_wallet,
+        )
+
+    async def _existing_invoice_payment(
+        self, invoice: Invoice, order: Order
+    ) -> PaymentIntent | None:
+        """Reuse one order session or close it before replacing the payment attempt."""
+        if not self._uses_hosted:
+            return await self._payments.get_open_intent_for_invoice(invoice.id)
+        existing = await self._payments.get_open_intent_for_order(order.id)
+        if existing is None:
+            return None
+        if existing.reference_invoice_id != invoice.id:
+            closed = await self._hosted.close(existing)
+            if closed.status is PaymentIntentStatus.PAID:
+                raise PaymentSessionPendingError("A previous invoice payment requires review.")
+            existing = None
+        else:
+            existing = await self._hosted.reuse_or_close(existing)
+        if existing is None:
+            current_invoice = await self._invoices.lock(invoice.id)
+            current_order = await self._orders.lock(order.id)
+            if (
+                current_invoice is None
+                or current_invoice.status is not InvoiceStatus.ISSUED
+                or current_order is None
+                or current_order.status is not OrderStatus.WAITING_PAYMENT
+                or current_invoice.expires_at is None
+                or current_invoice.expires_at <= self._now()
+            ):
+                raise ConflictError("Refresh the current unpaid invoice.")
+            winner = await self._payments.get_open_intent_for_order(order.id)
+            if winner is not None:
+                if winner.reference_invoice_id != invoice.id:
+                    raise PaymentSessionPendingError("Another invoice payment is in progress.")
+                return await self._hosted.reuse_or_close(winner)
+        return existing
 
     async def _start_invoice_gateway_payment(
         self,
@@ -274,12 +388,12 @@ class PaymentService:
         customer_id: uuid.UUID,
         wallet_amount: Decimal,
         gateway_amount: Decimal,
+        use_wallet: bool = True,
     ) -> PayResult:
         """Create and settle-or-send the invoice remainder payment."""
         method = PaymentMethod.SPLIT if wallet_amount > ZERO else PaymentMethod.GATEWAY_ONLY
-        if wallet_amount > ZERO:
-            # Reserve the wallet portion so it cannot back a second pending payment.
-            await self._money.hold_funds(wallet_id=wallet_id, amount=wallet_amount)
+        if self._uses_hosted and gateway_amount < Decimal("1.00"):
+            raise ValidationDomainError("The Dhamen remainder must be at least 1.00 SAR.")
         invoice.amount_from_wallet = wallet_amount
         invoice.amount_from_gateway = gateway_amount
         invoice.payment_method = method
@@ -289,10 +403,21 @@ class PaymentService:
             purpose=PaymentPurpose.ORDER_INVOICE,
             amount=gateway_amount,
             reference_invoice_id=invoice.id,
-            expires_at=self._expiry(),
+            expires_at=min(self._expiry(), invoice.expires_at)
+            if invoice.expires_at
+            else self._expiry(),
             wallet_reserved_amount=wallet_amount,
+            use_wallet=use_wallet,
         )
-        if self._settings.ENVIRONMENT is Environment.DEVELOPMENT:
+        await self._money.stage_invoice_payment(
+            customer_wallet_id=wallet_id,
+            wallet_amount=wallet_amount,
+            gateway_amount=gateway_amount,
+            invoice_id=invoice.id,
+            order_id=invoice.order_id,
+            intent_id=intent.id,
+        )
+        if self._settings.ENVIRONMENT is Environment.DEVELOPMENT and not self._uses_hosted:
             await self._settle_invoice(intent)
             await self._payments.mark_paid(intent, paid_at=self._now())
             return PayResult(
@@ -301,6 +426,7 @@ class PaymentService:
                 amount_from_wallet=wallet_amount,
                 amount_from_gateway=gateway_amount,
                 payment_url=None,
+                use_wallet=use_wallet,
             )
 
         checkout = await self._create_checkout(
@@ -311,10 +437,22 @@ class PaymentService:
                 payment_amount=gateway_amount,
                 invoice_items=await self._invoices.list_items(invoice.id),
             ),
+            use_wallet=use_wallet,
         )
-        await self._payments.attach_simulated_checkout(
-            intent, payment_link_id=checkout.payment_link_id, url=checkout.payment_url
-        )
+        if checkout is None:
+            return PayResult(
+                invoice_id=invoice.id,
+                status="PAID",
+                amount_from_wallet=wallet_amount,
+                amount_from_gateway=gateway_amount,
+                payment_url=None,
+                intent_id=intent.id,
+                use_wallet=use_wallet,
+            )
+        if not self._uses_hosted:
+            await self._payments.attach_simulated_checkout(
+                intent, payment_link_id=checkout.payment_link_id, url=checkout.payment_url
+            )
         await self._invoices.flush()
         return PayResult(
             invoice_id=invoice.id,
@@ -322,7 +460,100 @@ class PaymentService:
             amount_from_wallet=wallet_amount,
             amount_from_gateway=gateway_amount,
             payment_url=checkout.payment_url,
+            intent_id=intent.id,
+            use_wallet=use_wallet,
         )
+
+    @property
+    def _uses_hosted(self) -> bool:
+        return self._gateway.uses_hosted_sessions is True
+
+    async def _settle_hosted_intent(self, intent: PaymentIntent) -> None:
+        """Settle only the originally bound invoice and reject stale lifecycle successes."""
+        if intent.status is not PaymentIntentStatus.NEW:
+            return
+        if intent.purpose is PaymentPurpose.WALLET_TOPUP:
+            await self._settle_topup(intent)
+        else:
+            if intent.reference_invoice_id is None:
+                raise PaymentSessionPendingError("The payment has no invoice reference.")
+            invoice = await self._invoices.lock(intent.reference_invoice_id)
+            if invoice is None or invoice.status is not InvoiceStatus.ISSUED:
+                intent.checkout_state = "REVIEW"
+                await self._payments.flush()
+                raise PaymentSessionPendingError(
+                    "This payment requires reconciliation with its invoice."
+                )
+            await self._settle_invoice(intent)
+        intent.checkout_state = "CLOSED"
+        await self._payments.mark_paid(intent, paid_at=self._now())
+
+    async def get_payment_session(
+        self, *, intent_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PaymentIntent:
+        """Read an owned session without making a provider request."""
+        intent = await self._payments.get_intent_for_actor(intent_id, user_id)
+        if intent is None:
+            raise NotFoundError("Payment session not found.")
+        return intent
+
+    async def get_order_payment_session(
+        self, *, order_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PaymentIntent:
+        """Recover a session without creating a new attempt after a lost checkout response."""
+        intent = await self._payments.get_latest_intent_for_order(
+            order_id=order_id, user_id=user_id
+        )
+        if intent is None:
+            raise NotFoundError("Payment session not found.")
+        return intent
+
+    async def refresh_payment_session(
+        self, *, intent_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PaymentIntent:
+        """Reconcile an owned real checkout with its authoritative provider state."""
+        self._require_recovery_available()
+        intent = await self.get_payment_session(intent_id=intent_id, user_id=user_id)
+        if self._uses_hosted:
+            return await self._hosted.reconcile(intent)
+        return intent
+
+    async def cancel_payment_session(
+        self, *, intent_id: uuid.UUID, user_id: uuid.UUID
+    ) -> PaymentIntent:
+        """Close an owned checkout and release its reservation after confirmed closure."""
+        self._require_recovery_available()
+        intent = await self.get_payment_session(intent_id=intent_id, user_id=user_id)
+        if not self._uses_hosted:
+            raise ConflictError("Simulation sessions use the simulation callback.")
+        return await self._hosted.close(intent)
+
+    async def get_topup_payment_session(self, *, user_id: uuid.UUID) -> PaymentIntent:
+        """Recover the latest owned hosted top-up after a lost create response."""
+        intent = await self._payments.get_topup_for_actor(user_id)
+        if intent is None:
+            raise NotFoundError("Top-up session not found.")
+        return intent
+
+    async def close_invoice_payment(self, *, invoice_id: uuid.UUID) -> None:
+        """Close a previously authorized courier invoice's payment before cancellation."""
+        invoice = await self._invoices.lock(invoice_id)
+        if invoice is None:
+            raise NotFoundError("Invoice not found.")
+        await self._orders.lock(invoice.order_id)
+        intent = await self._payments.get_open_intent_for_order(invoice.order_id)
+        if intent is None:
+            return
+        if intent.checkout_state == "REVIEW":
+            raise PaymentSessionPendingError("This invoice payment requires review.")
+        if intent.checkout_provider == "SIMULATED":
+            await self._reservations.expire_for_invoice(invoice_id)
+            return
+        self._require_recovery_available()
+        closed = await self._hosted.close(intent)
+        if closed.status is PaymentIntentStatus.PAID:
+            await self._payments.checkpoint()
+            raise ConflictError("Payment completed before cancellation; refresh the invoice.")
 
     async def handle_webhook(self, *, raw_body: bytes, signature: str) -> WebhookResult:
         """Verify and process a gateway webhook.
@@ -343,6 +574,89 @@ class PaymentService:
             self._redis, f"lock:webhook:{event.payment_link_id}", ttl_seconds=_WEBHOOK_LOCK_TTL
         ):
             return await self._settle_locked(event)
+
+    async def handle_dhamen_notifications(self, *, raw_body: bytes) -> DhamenWebhookAck:
+        """Treat testing callbacks as hints; only authenticated provider status can settle."""
+        self._require_recovery_available()
+        if self._gateway.provider != "DHAMEN":
+            raise PaymentsDisabledError()
+        notifications = self._gateway.parse_notifications(raw_body)
+        verified = await self._verify_dhamen_payments(notifications)
+        await self._payments.resume_actor()
+        locked = await self._payments.lock_session_batch([intent.id for intent, _ in verified])
+        await self._quarantine_late_dhamen_payments(verified, locked)
+        await self._wallets.lock_payment_batch(
+            intent_ids=[intent.id for intent, _ in verified],
+            user_ids=[intent.user_id for intent in locked.values()],
+        )
+        for intent, status in verified:
+            await self._hosted.apply_locked_status(locked[intent.id], status)
+        raw_hash = hashlib.sha256(raw_body).hexdigest()
+        for notification in notifications:
+            await self._payments.resume_actor()
+            await self._payments.insert_notification_receipt_if_new(
+                notification_id=notification.notification_id,
+                batch_id=notification.batch_id,
+                notification_type=notification.notification_type,
+                payment_reference=notification.references[0]
+                if len(notification.references) == 1
+                else None,
+                transaction_id=None,
+                raw_hash=raw_hash,
+                processing_outcome="RECONCILED" if notification.should_reconcile else "IGNORED",
+            )
+        return DhamenWebhookAck(response_id=str(uuid.uuid4()))
+
+    async def _quarantine_late_dhamen_payments(
+        self,
+        verified: list[tuple[PaymentIntent, PaymentStatus | None]],
+        locked: dict[uuid.UUID, PaymentIntent],
+    ) -> None:
+        """Persist anomalous late payment markers before any batch money movement."""
+        review_required = False
+        for intent, status in verified:
+            current = locked.get(intent.id)
+            if current is None:
+                raise NotFoundError("Payment session not found.")
+            if (
+                current.status not in {PaymentIntentStatus.NEW, PaymentIntentStatus.PAID}
+                and status is not None
+                and status.state is PaymentState.PAID
+            ):
+                current.checkout_state = "REVIEW"
+                review_required = True
+        if review_required:
+            await self._payments.checkpoint()
+            raise PaymentSessionPendingError("A late payment requires financial review.")
+
+    async def _verify_dhamen_payments(
+        self, notifications: tuple[PaymentNotification, ...]
+    ) -> list[tuple[PaymentIntent, PaymentStatus | None]]:
+        """Verify each distinct reference before the batch settlement transaction starts."""
+        references = sorted(
+            {
+                reference
+                for notification in notifications
+                if notification.should_reconcile
+                for reference in notification.references
+            }
+        )
+        verified = []
+        for reference in references:
+            try:
+                intent_id = uuid.UUID(reference)
+            except ValueError as exc:
+                raise ValidationDomainError("Unknown Dhamen payment reference.") from exc
+            intent = await self._payments.get_intent(intent_id)
+            if (
+                intent is None
+                or intent.checkout_provider != "DHAMEN"
+                or intent.gateway_reference != reference
+            ):
+                raise NotFoundError("Unknown Dhamen payment reference.")
+            status = await self._hosted.verify_status(intent)
+            verified.append((intent, status))
+        return verified
 
     async def _settle_locked(self, event: WebhookEvent) -> WebhookResult:
         candidate = await self._payments.get_intent_by_payment_link(event.payment_link_id)
@@ -435,12 +749,50 @@ class PaymentService:
         await self._invoices.flush()
 
     async def _create_checkout(
-        self, *, intent: PaymentIntent, user_id: uuid.UUID, items: tuple[PaymentItem, ...]
-    ) -> PaymentCheckout:
+        self,
+        *,
+        intent: PaymentIntent,
+        user_id: uuid.UUID,
+        items: tuple[PaymentItem, ...],
+        use_wallet: bool = True,
+    ) -> PaymentCheckout | None:
         """Create a single-use hosted checkout for a known local customer."""
         user = await self._users.get(user_id)
         if user is None:  # pragma: no cover - intent FK guarantees the user exists
             raise NotFoundError("User not found.")
+        if self._uses_hosted:
+            invoice = (
+                await self._invoices.lock(intent.reference_invoice_id)
+                if intent.reference_invoice_id is not None
+                else None
+            )
+            context = PaymentContext(
+                reference=str(intent.id),
+                customer=self._checkout_customer(user),
+                amount=intent.amount,
+                currency=intent.currency,
+                expires_at=intent.expires_at,
+                amount_from_wallet=intent.wallet_reserved_amount,
+                use_wallet=use_wallet if invoice is not None else False,
+                title="Invoice payment" if invoice is not None else "Top up",
+                description=f"Invoice {invoice.id}"
+                if invoice is not None
+                else f"Top up for {user.full_name or 'Giftly customer'} ({user.id})",
+                invoice=invoice_snapshot(invoice, await self._invoices.list_items(invoice.id))
+                if invoice is not None
+                else None,
+            )
+            current = await self._hosted.create(intent, context)
+            if current.status is PaymentIntentStatus.PAID:
+                return None
+            if (
+                current.status is not PaymentIntentStatus.NEW
+                or current.gateway_payment_url is None
+                or current.checkout_state != "ACTIVE"
+                or current.expires_at <= self._now()
+            ):
+                raise PaymentSessionPendingError()
+            return PaymentCheckout(str(current.id), current.gateway_payment_url)
         return await self._gateway.create_payment_link(
             reference=str(intent.id),
             customer=self._checkout_customer(user),

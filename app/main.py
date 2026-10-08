@@ -133,6 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         order_events,
         order_media,
         orders,
+        payment_sessions,
         promos,
         ratings,
         users,
@@ -150,6 +151,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(order_media.router)
     app.include_router(order_events.router)
     app.include_router(invoices.router)
+    app.include_router(payment_sessions.router)
+    app.include_router(payment_sessions.order_router)
+    app.include_router(payment_sessions.wallet_router)
+    app.include_router(webhooks.dhamen_router)
     app.include_router(promos.router)
 
     if not settings.is_production:

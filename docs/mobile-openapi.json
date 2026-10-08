@@ -1389,6 +1389,23 @@
               }
             }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PayInvoiceRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
         }
       }
     },
@@ -2781,6 +2798,204 @@
           "wallets"
         ]
       }
+    },
+    "/api/orders/{order_id}/payment-session": {
+      "get": {
+        "description": "Recover the payer's order checkout after a timeout or application restart.",
+        "operationId": "get_order_payment_session_api_orders__order_id__payment_session_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Order Payment Session",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/payment-sessions/{intent_id}": {
+      "get": {
+        "description": "Read the payer's session; use refresh to query authoritative provider status.",
+        "operationId": "get_payment_session_api_payment_sessions__intent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Payment Session",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/payment-sessions/{intent_id}/cancel": {
+      "post": {
+        "description": "Close an unpaid session; a payment already completed settles instead.",
+        "operationId": "cancel_payment_session_api_payment_sessions__intent_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Payment Session",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/payment-sessions/{intent_id}/refresh": {
+      "post": {
+        "description": "Verify payment with the provider, then return the committed settlement state.",
+        "operationId": "refresh_payment_session_api_payment_sessions__intent_id__refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Payment Session",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
+    "/api/wallets/me/topup-session": {
+      "get": {
+        "description": "Recover the payer's hosted top-up after a timeout or restart.",
+        "operationId": "get_topup_payment_session_api_wallets_me_topup_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Topup Payment Session",
+        "tags": [
+          "payments"
+        ]
+      }
     }
   },
   "components": {
@@ -3003,7 +3218,7 @@
             "type": "array",
             "maxItems": 3,
             "title": "Request Media Keys",
-            "description": "Confirmed request-photo keys (0\u20133)."
+            "description": "Confirmed request-photo keys (0–3)."
           }
         },
         "additionalProperties": false,
@@ -3816,6 +4031,27 @@
               }
             ],
             "title": "Payment Url"
+          },
+          "payment_intent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Intent Id"
+          },
+          "session_reused": {
+            "default": false,
+            "title": "Session Reused",
+            "type": "boolean"
+          },
+          "use_wallet": {
+            "default": true,
+            "title": "Use Wallet",
+            "type": "boolean"
           }
         },
         "type": "object",
@@ -4270,6 +4506,16 @@
               }
             ],
             "title": "Payment Url"
+          },
+          "session_reused": {
+            "default": false,
+            "title": "Session Reused",
+            "type": "boolean"
+          },
+          "status": {
+            "default": "PENDING",
+            "title": "Status",
+            "type": "string"
           }
         },
         "type": "object",
@@ -5643,6 +5889,141 @@
           "totals"
         ],
         "title": "WalletStatement",
+        "type": "object"
+      },
+      "PayInvoiceRequest": {
+        "additionalProperties": false,
+        "description": "Choose wallet funding; the backend determines all payment amounts.",
+        "properties": {
+          "use_wallet": {
+            "default": true,
+            "title": "Use Wallet",
+            "type": "boolean"
+          }
+        },
+        "title": "PayInvoiceRequest",
+        "type": "object"
+      },
+      "PaymentSessionResponse": {
+        "description": "Owned checkout status and the immutable invoice used to create it.",
+        "properties": {
+          "amount_from_gateway": {
+            "title": "Amount From Gateway",
+            "type": "string"
+          },
+          "amount_from_wallet": {
+            "title": "Amount From Wallet",
+            "type": "string"
+          },
+          "checkout_state": {
+            "title": "Checkout State",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "invoice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Id"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "payment_intent_id": {
+            "title": "Payment Intent Id",
+            "type": "string"
+          },
+          "payment_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Url"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "purpose": {
+            "default": "ORDER_INVOICE",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "default": "Invoice payment",
+            "title": "Title",
+            "type": "string"
+          },
+          "use_wallet": {
+            "default": true,
+            "title": "Use Wallet",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "payment_intent_id",
+          "provider",
+          "status",
+          "checkout_state",
+          "order_id",
+          "invoice_id",
+          "currency",
+          "amount_from_wallet",
+          "amount_from_gateway",
+          "expires_at",
+          "payment_url",
+          "invoice"
+        ],
+        "title": "PaymentSessionResponse",
         "type": "object"
       }
     }

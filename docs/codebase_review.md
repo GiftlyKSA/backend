@@ -338,3 +338,41 @@ development OpenAPI exactly matches the pushed specification. Skips include abse
 disposable PostgreSQL/Redis services; migration graph/compiled DDL tests do not
 substitute for migration execution or query plans. Final independent scoped review
 found no remaining concrete defects after CP-01/CP-02 regressions were corrected.
+
+
+## Scoped payment/PDF release review — 2026-10-08
+
+This supplements the existing full-codebase review; it does not mark unrelated open
+findings resolved. The release excludes unrelated workspace SMS, email-copy and payout
+changes. Independent review inspected runtime, ownership, ledger/checkpoints, migrations,
+PDF/cache and focused regressions; remedies were independently rechecked.
+
+| Finding | Category | Severity / score | Status | Trigger / impact | Minimal fix / system effect | Verification |
+| --- | --- | --- | --- | --- | --- | --- |
+| PS-FIN-01 | Financial integrity / reliability | High7/10 | Fixed | Late PAID callback after closure could roll back its REVIEW marker, allowing replacement despite unresolved received money. | Preflight fresh locked intents and persist review-only quarantine before batch settlement; no partial financial settlement. | Callback regression; disposable PostgreSQL receiver-rollback regression added, runtime unverified. |
+| PS-SEC-01 | Security / provider input | High7/10 | Fixed | Literal numeric status accepted bool/decimal values as PAID/PENDING, weakening provider response validation. | Require actual integer0/1 before interpreting status; fail closed on malformed provider data. | Bool/decimal negative tests reproduced and passed. |
+| PS-REL-01 | Reliability / concurrency | Medium6/10 | Fixed | Multi-intent callbacks retained first invoice/wallet locks while requesting later subsets; concurrent payments could deadlock. | Batch locks every invoice/order/intent, then bounded ledger rows and full referenced/payer/system wallet union in globally sorted order; atomic settlement retained. | Lock-order and overflow regressions pass; disposable two-connection test added, runtime unverified. |
+| PS-SEC-02 | Access control | Medium5/10 | Fixed | Session role checks could admit an active courier after verification revocation despite wallet eligibility restrictions. | Reuse current account/courier eligibility service before owned recovery or mutation. | All five route role/ownership checks; revoked-courier403 regression. |
+| PDF-01 | Readability / delivery | Low3/10 | Fixed | Download used the old plain layout rather than approved branded attachment design. | Shared English Giftly purple renderer, itemized pricing, GMT+3 issue/payment times; static escaped PDF. | Branding/date/static/pagination tests and rendered visual check. |
+
+### Verification boundaries
+
+Production payment execution remains disabled. Dhamen testing mocks do not prove a
+live integration; merchant/callback protocols remain external validation. The published
+mobile contract adds only the five owned session operations and compatible creation
+metadata. HTTP payment responses are private,no-store; no financial response cache is
+introduced. PDF reuse is server-side only, after current ownership/content reads, with
+one-hour TTL and content/template fingerprint,128 entries/256KiB maximum and bounded
+render concurrency. Updates regenerate rather than serve the prior status.
+
+Alembic has one0023 merge head; complete PostgreSQL upgrade SQL generated offline.
+Applied0021/0022 are unchanged. Duplicate open-order upgrades and unresolved financial
+downgrades refuse rather than discard state. Database upgrade/downgrade/concurrency
+execution, representative query plans and provider behavior require disposable CI/staging.
+
+Final verification: 878 tests passed, 218 skipped, and four upstream TestClient
+deprecation warnings. PostgreSQL/Redis-dependent tests were skipped because no
+disposable services were available. Full pre-commit and pre-push gates passed,
+including Ruff formatting/lint and strict mypy over 213 application files.
+No Docker or live database/provider writes were performed. Deployment is a separate
+check from this source release.

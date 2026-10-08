@@ -12,11 +12,12 @@ from dataclasses import dataclass
 
 from pydantic import SecretStr
 
-from app.core.config import Environment, Settings
+from app.core.config import Settings
 from app.integrations.email.base import EmailClient
 from app.integrations.email.fake import FakeEmailClient
 from app.integrations.email.sndr_client import SndrEmailClient
 from app.integrations.payments.base import PaymentClient
+from app.integrations.payments.dhamen import DhamenPaymentClient
 from app.integrations.payments.disabled import DisabledPaymentClient
 from app.integrations.payments.fake import FakePaymentClient
 from app.integrations.push.base import PushClient
@@ -54,11 +55,11 @@ def build_clients(settings: Settings) -> Clients:
     """
     if settings.is_production:
         return _build_production_clients(settings)
-    return _build_fake_clients(settings.ENVIRONMENT)
+    return _build_fake_clients(settings)
 
 
 def _build_production_clients(settings: Settings) -> Clients:
-    gateway = DisabledPaymentClient()
+    gateway = build_payment_client(settings)
     email = SndrEmailClient(
         base_url=settings.SNDR_BASE_URL or "",
         api_key=_required_secret(settings.SNDR_API_KEY, "SNDR_API_KEY"),
@@ -103,9 +104,27 @@ def _required_secret(value: SecretStr | None, name: str) -> str:
     return value.get_secret_value()
 
 
-def _build_fake_clients(environment: Environment) -> Clients:
+def build_payment_client(settings: Settings) -> PaymentClient:
+    """Select the provider independently of other integrations; defaults remain safe."""
+    if settings.payment_provider == "disabled":
+        return DisabledPaymentClient()
+    if settings.payment_provider == "dhamen":
+        return DhamenPaymentClient(
+            base_url=settings.dhamen_base_url,
+            app_id=_required_secret(settings.DHAMEN_APP_ID, "DHAMEN_APP_ID"),
+            app_key=_required_secret(settings.DHAMEN_APP_KEY, "DHAMEN_APP_KEY"),
+            client_id=_required_secret(settings.DHAMEN_CLIENT_ID, "DHAMEN_CLIENT_ID"),
+            checkout_hosts=settings.dhamen_checkout_hosts,
+            return_url=settings.DHAMEN_RETURN_URL or "",
+            timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
+        )
+    return FakePaymentClient(settings.ENVIRONMENT)
+
+
+def _build_fake_clients(settings: Settings) -> Clients:
+    environment = settings.ENVIRONMENT
     return Clients(
-        gateway=FakePaymentClient(environment),
+        gateway=build_payment_client(settings),
         email=FakeEmailClient(environment),
         sms=FakeSmsClient(environment),
         push=FakePushClient(environment),

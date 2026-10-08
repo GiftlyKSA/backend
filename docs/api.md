@@ -43,7 +43,7 @@ Updated 2026-10-04. This is maintained API documentation, not an implementation 
 
 [Project documentation](documentation.md) · [Current review](codebase_review.md) · [Tasks](tasks.md)
 
-The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 56 supported
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 61 supported
 mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
@@ -99,7 +99,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money and tax rates are decimal strings**, such as `"125.50"` and `"0.15"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
 - A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; missing/foreign or out-of-filter order/wallet anchors return `404 NOT_FOUND`, so refresh the list when an anchor is no longer valid; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings. Do not use offset or invent a next page when `next_cursor` is null.
 - Domain failures generally use `{"error":{"code":"...","message":"...","request_id":"..."}}`; common codes include `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATE_TRANSITION`, `VALIDATION_ERROR`, `RATE_LIMITED`, `PAYMENTS_DISABLED`, and `RATE_LIMIT_UNAVAILABLE`. FastAPI request-schema errors may instead return `{"detail":[...]}` with HTTP 422. HTTP 429 carries `Retry-After`. Handle status and both shapes; never assume every failure has a domain envelope.
-- Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; Dhamen has no live adapter or verified callback. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
+- Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; The Dhamen testing adapter does not establish verified production integration. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
 - This document describes the current backend, not a proposed API. Each **When/how** paragraph is 50–100 words. **Before** is the prerequisite; **Then / dependent API** tells the UI agent which subsequent call consumes or follows this result.
 - **Future API work:** If a screen or action has no matching endpoint documented here, do not create, assume, or integrate a new route for it. Mark that feature as awaiting backend support; its route and contract will be added later in a separate backend change. Use only the implemented calls below for the current UI integration.
 
@@ -1018,3 +1018,84 @@ Redis live-message publication retains its existing timeout. Invoice PDF reuse o
 only after fresh ownership/content reads; responses remain private,no-store. No
 cached balance or stale payment/claim state is used to authorize writes. See
 [operational performance details](documentation.md#courier-read-and-delivery-performance--2026-10-08).
+
+
+## Payment sessions and branded invoice downloads — 2026-10-08
+
+Implemented in this release; deployment must be verified separately. Order/chat
+WebSockets are unchanged. Production payment creation, refresh, cancellation and
+callbacks remain disabled with503 PAYMENTS_DISABLED. PAYMENT_PROVIDER=auto preserves
+development simulation and production disabled selection. Explicit Dhamen testing
+requires valid credentials, HTTPS origins/return/callback URLs and exact allowed
+checkout hosts. Production Dhamen selection is rejected at startup.
+
+### Owned payment operations
+
+All operations require Bearer authentication and current customer/courier eligibility;
+couriers must remain active and verified. Ownership is the payer's user_id, not merely
+order participation. Couriers can recover their own top-ups, never customer checkouts.
+Admin role is403. Missing/foreign sessions are404 NOT_FOUND with the existing envelope.
+
+| Method | Path | Input | Purpose |
+| --- | --- | --- | --- |
+| GET | /api/orders/{order_id}/payment-session | UUID order_id; no body | Recover latest owned order attempt after a lost response/restart. |
+| GET | /api/wallets/me/topup-session | No body | Recover latest owned hosted top-up, preferring unresolved attempts; simulations excluded. |
+| GET | /api/payment-sessions/{intent_id} | UUID intent_id; no body | Read local owned payment state without contacting the provider. |
+| POST | /api/payment-sessions/{intent_id}/refresh | UUID intent_id; no body | Verify provider reference/customer/amount, settle and return state. |
+| POST | /api/payment-sessions/{intent_id}/cancel | UUID intent_id; no body | Confirm hosted closure before releasing funds and reversing pending rows. |
+
+These single-object operations need no pagination and return Cache-Control: private,
+no-store. GET never establishes external payment success. Refresh an unknown outcome
+with bounded backoff; do not create another checkout or trust the return-page redirect.
+On429 honor Retry-After seconds.
+
+PaymentSessionResponse fields:
+payment_intent_id:string UUID; provider:string; status:PENDING/PAID/FAILED/EXPIRED/CANCELLED;
+checkout_state:CREATING/ACTIVE/CLOSING/CLOSED/REVIEW; order_id/invoice_id:string UUID|null;
+currency:string; amount_from_wallet/amount_from_gateway:decimal strings; expires_at:
+ISO8601 string; payment_url:string|null; invoice:InvoiceResponse|null; purpose:
+ORDER_INVOICE/WALLET_TOPUP; title:string; description:string|null; use_wallet:boolean.
+The nested invoice is an immutable pricing snapshot: read current invoice detail for its
+latest status. Only an unexpired ACTIVE PENDING attempt returns a payment_url.
+REVIEW requires support/reconciliation, never another charge.
+
+Illustrative hosted top-up response (URL is a placeholder, never a configured origin):
+
+    {"payment_intent_id":"11111111-1111-4111-8111-111111111111","provider":"DHAMEN","status":"PENDING","checkout_state":"ACTIVE","order_id":null,"invoice_id":null,"currency":"SAR","amount_from_wallet":"0.00","amount_from_gateway":"100.00","expires_at":"2026-10-10T09:00:00+00:00","payment_url":"https://checkout.example.test/pay/example","invoice":null,"purpose":"WALLET_TOPUP","title":"Top up","description":"Top up","use_wallet":false}
+
+409 PAYMENT_SESSION_PENDING retains the attempt while the outcome is unknown.
+503 PAYMENT_PROVIDER_UNAVAILABLE is neither failure nor payment confirmation.
+409 CONFLICT includes changing amount or wallet use behind an open hosted checkout.
+
+### Compatible creation contracts
+
+POST /api/wallets/topup retains request amount:string and original response
+payment_intent_id, amount, payment_url, adding status:string and session_reused:boolean.
+MIN_TOPUP_AMOUNT/MAX_TOPUP_AMOUNT remain authoritative. Same-amount active hosted
+attempts are reused under a payer lock; different amounts conflict until closure.
+No Idempotency-Key header is implemented here. Development auto simulation returns
+PAID with payment_url=null. Do not automatically repeat timed-out development top-ups:
+hosted recovery excludes simulated attempts and development credit is not external money.
+
+POST /api/invoices/{invoice_id}/pay remains customer-only; omitted body preserves
+use_wallet=true, or send {"use_wallet":false}. This is a strict boolean; client amounts,
+owners and extra fields are rejected422. The server calculates the split. Original
+response fields remain, adding payment_intent_id:string UUID|null, session_reused:boolean
+and use_wallet:boolean. Fully wallet-funded payments have no intent or checkout URL.
+An open hosted attempt freezes wallet choice; cancel it successfully before changing
+that choice. Promo revisions cannot change unresolved checkouts.
+
+### Invoice PDF download
+
+GET /api/invoices/{invoice_id}/pdf remains an authenticated, participant-authorized
+application/pdf attachment. UUID invoice_id; no body. Downloads and paid-email PDF
+attachments share Giftly purple branding, English labels, itemized pricing, discounts,
+VAT/fees/totals, invoice/order IDs and payment status. Issued/paid dates display GMT+3;
+persisted and API timestamps remain UTC.
+
+Private Redis reuse lasts3600 seconds with128 entries of256KiB maximum. Downloads
+always check current ownership and read current invoice/items first. The fingerprint
+covers status, issue/payment dates, amounts, line content and template version: changes
+force immediate regeneration and hits do not extend TTL. Redis failure falls back to
+rendering; larger PDFs are served uncached. HTTP remains private,no-store so response
+caches cannot bypass authorization or freshness.

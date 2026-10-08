@@ -89,3 +89,30 @@ async def test_cancelled_pdf_requests_keep_thread_capacity_until_render_finishes
         await asyncio.gather(*active, return_exceptions=True)
         if fifth is not None:
             await asyncio.wait_for(fifth, 3)
+
+
+async def test_cached_pdf_expires_after_one_hour_without_extending_hits(monkeypatch):
+    from app.services.invoice_pdf_cache import InvoicePdfCache
+
+    clock = [0]
+    expiry = [0]
+
+    class ExpiringRedis(MemoryRedis):
+        async def get(self, key):
+            return await super().get(key) if clock[0] < expiry[0] else None
+
+        async def eval(self, script, count, index, key, value, ttl, *args):
+            assert ttl == 3600
+            expiry[0] = clock[0] + ttl
+            return await super().eval(script, count, index, key, value)
+
+    renderer = Mock(return_value=b"%PDF-1.4 test")
+    monkeypatch.setattr("app.services.invoice_pdf_cache.render_invoice_pdf", renderer)
+    cache, stored, lines = InvoicePdfCache(ExpiringRedis()), invoice(), items()
+    await cache.render(stored, lines)
+    clock[0] = 3599
+    await cache.render(stored, lines)
+    assert renderer.call_count == 1
+    clock[0] = 3600
+    await cache.render(stored, lines)
+    assert renderer.call_count == 2
