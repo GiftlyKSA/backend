@@ -17,8 +17,27 @@ from sqlalchemy import insert, literal, select, tuple_, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.models import ChatNotification, Conversation, Message, MessageAttachment
+from app.models import (
+    ChatNotification,
+    Conversation,
+    CourierProfile,
+    Message,
+    MessageAttachment,
+    User,
+)
 from app.models.enums import MessageType
+from app.repositories.user_repository import AccountState
+
+
+@dataclass(frozen=True)
+class LiveChatState:
+    """Current account and owned conversation fields from one database statement."""
+
+    user: AccountState
+    courier_verified: bool | None
+    conversation_id: uuid.UUID | None
+    customer_id: uuid.UUID | None
+    courier_id: uuid.UUID | None
 
 
 @dataclass(frozen=True)
@@ -38,6 +57,39 @@ class ChatRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""
         self._session = session
+
+    async def get_live_state(
+        self, conversation_id: uuid.UUID, actor_id: uuid.UUID
+    ) -> LiveChatState | None:
+        """Select current credentials, verification and membership without ORM loaders."""
+        row = (
+            await self._session.execute(
+                select(
+                    User.id,
+                    User.role,
+                    User.status,
+                    User.deleted_at,
+                    User.auth_version,
+                    CourierProfile.is_verified,
+                    Conversation.id,
+                    Conversation.customer_id,
+                    Conversation.courier_id,
+                )
+                .outerjoin(CourierProfile, CourierProfile.user_id == User.id)
+                .outerjoin(
+                    Conversation,
+                    (Conversation.id == conversation_id)
+                    & (
+                        (Conversation.customer_id == actor_id)
+                        | (Conversation.courier_id == actor_id)
+                    ),
+                )
+                .where(User.id == actor_id)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return LiveChatState(AccountState(*row[:5]), *row[5:])
 
     async def get_for_actor(
         self, conversation_id: uuid.UUID, actor_id: uuid.UUID, *, for_update: bool = False

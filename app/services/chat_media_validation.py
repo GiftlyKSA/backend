@@ -4,15 +4,18 @@ import asyncio
 import json
 import math
 import os
-from contextlib import suppress
+from collections.abc import AsyncIterator
+from contextlib import aclosing, asynccontextmanager, suppress
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import TypeVar
 
 from PIL import Image, UnidentifiedImageError
 
 from app.core.config import Settings
 from app.core.exceptions import BadRequestError, MediaValidationUnavailableError
+from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, StorageClient
 
 MEDIA_TYPES = {
     "IMAGE": {"image/jpeg": "jpg", "image/png": "png"},
@@ -27,6 +30,7 @@ MEDIA_TYPES = {
     },
 }
 _DEMUXERS = "mov,matroska,webm,ogg,mp3,wav,aac"
+_TaskResult = TypeVar("_TaskResult")
 
 
 def media_policy(settings: Settings, kind: str, mime: str, size: int) -> tuple[str, int]:
@@ -69,6 +73,66 @@ def verify_image(body: bytes, mime: str) -> None:
         raise BadRequestError("The image is malformed.") from exc
 
 
+async def _complete_task(task: asyncio.Task[_TaskResult]) -> _TaskResult:
+    """Drain owned I/O before cancellation can release its file or process."""
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+def _append_chunk(path: Path, chunk: bytes) -> None:
+    with path.open("ab") as recording:
+        recording.write(chunk)
+
+
+@asynccontextmanager
+async def bounded_recording_file(
+    storage: StorageClient, storage_key: str, *, max_bytes: int
+) -> AsyncIterator[Path]:
+    """Download an exact-size recording into a private, bounded temporary file."""
+    directory = TemporaryDirectory(prefix="giftly-media-")
+    path = Path(directory.name) / "recording"
+    total = 0
+    try:
+        async with aclosing(
+            storage.iter_bounded_object(storage_key, max_bytes=max_bytes)
+        ) as stream:
+            async for chunk in stream:
+                total += len(chunk)
+                if total > max_bytes or len(chunk) > STORAGE_READ_CHUNK_BYTES:
+                    raise ValueError("Private media exceeds the declared size.")
+                await _complete_task(
+                    asyncio.create_task(asyncio.to_thread(_append_chunk, path, chunk))
+                )
+        if total != max_bytes:
+            raise BadRequestError("The uploaded file size does not match its upload grant.")
+        yield path
+    finally:
+        await _complete_task(asyncio.create_task(asyncio.to_thread(directory.cleanup)))
+
+
+async def _cleanup_process(
+    process: asyncio.subprocess.Process, tasks: list[asyncio.Task[bytes]], waiter: asyncio.Task[int]
+) -> None:
+    if process.returncode is None:
+        with suppress(ProcessLookupError):
+            process.kill()
+        await process.wait()
+    for task in tasks:
+        task.cancel()
+    waiter.cancel()
+    await asyncio.gather(*tasks, waiter, return_exceptions=True)
+
+
 async def _read_output(stream: asyncio.StreamReader | None) -> bytes:
     assert stream is not None
     output = bytearray()
@@ -105,14 +169,7 @@ async def _run(*args: str) -> bytes:
     except TimeoutError as exc:
         raise BadRequestError("Media validation took too long.") from exc
     finally:
-        if process.returncode is None:
-            with suppress(ProcessLookupError):
-                process.kill()
-            await asyncio.shield(process.wait())
-        for task in tasks:
-            task.cancel()
-        waiter.cancel()
-        await asyncio.gather(*tasks, waiter, return_exceptions=True)
+        await _complete_task(asyncio.create_task(_cleanup_process(process, tasks, waiter)))
 
 
 def probe_duration(output: bytes, kind: str, mime: str, maximum: int) -> float | None:
@@ -157,66 +214,74 @@ def probe_duration(output: bytes, kind: str, mime: str, maximum: int) -> float |
 
 
 async def verify_recording(body: bytes, *, kind: str, mime: str, maximum: int) -> float:
-    """Probe and decode a bounded private file with network protocols disabled."""
-    with TemporaryDirectory(prefix="giftly-media-") as directory:
-        path = Path(directory) / "recording"
-        await asyncio.to_thread(path.write_bytes, body)
-        output = await _run(
-            "ffprobe",
-            "-max_alloc",
-            "67108864",
-            "-v",
-            "fatal",
-            "-protocol_whitelist",
-            "file,pipe",
-            "-format_whitelist",
-            _DEMUXERS,
-            "-show_entries",
-            "stream=codec_type,width,height:format=duration,format_name",
-            "-of",
-            "json",
-            str(path),
-        )
-        duration = probe_duration(output, kind, mime, maximum)
-        progress = await _run(
-            "ffmpeg",
-            "-max_alloc",
-            "67108864",
-            "-nostdin",
-            "-v",
-            "fatal",
-            "-xerror",
-            "-threads",
-            "1",
-            "-protocol_whitelist",
-            "file,pipe",
-            "-format_whitelist",
-            _DEMUXERS,
-            "-i",
-            str(path),
-            "-t",
-            str(maximum + 1),
-            "-map",
-            "0:v?",
-            "-map",
-            "0:a?",
-            "-threads",
-            "1",
-            "-f",
-            "null",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-            "-",
-        )
-        try:
-            times = [
-                int(line.split(b"=", 1)[1]) / 1_000_000
-                for line in progress.splitlines()
-                if line.startswith(b"out_time_us=") and line != b"out_time_us=N/A"
-            ]
-        except ValueError as exc:
-            raise BadRequestError("Invalid decoded recording duration.") from exc
-        if not times or not 0 < max(times) <= maximum:
-            raise BadRequestError("The recording exceeds the duration limit.")
-        return max(max(times), duration or 0)
+    """Keep the byte validation API for existing callers."""
+    directory = TemporaryDirectory(prefix="giftly-media-")
+    path = Path(directory.name) / "recording"
+    try:
+        await _complete_task(asyncio.create_task(asyncio.to_thread(path.write_bytes, body)))
+        return await verify_recording_file(path, kind=kind, mime=mime, maximum=maximum)
+    finally:
+        await _complete_task(asyncio.create_task(asyncio.to_thread(directory.cleanup)))
+
+
+async def verify_recording_file(path: Path, *, kind: str, mime: str, maximum: int) -> float:
+    """Probe and fully decode a private local file with network protocols disabled."""
+    output = await _run(
+        "ffprobe",
+        "-max_alloc",
+        "67108864",
+        "-v",
+        "fatal",
+        "-protocol_whitelist",
+        "file,pipe",
+        "-format_whitelist",
+        _DEMUXERS,
+        "-show_entries",
+        "stream=codec_type,width,height:format=duration,format_name",
+        "-of",
+        "json",
+        str(path),
+    )
+    duration = probe_duration(output, kind, mime, maximum)
+    progress = await _run(
+        "ffmpeg",
+        "-max_alloc",
+        "67108864",
+        "-nostdin",
+        "-v",
+        "fatal",
+        "-xerror",
+        "-threads",
+        "1",
+        "-protocol_whitelist",
+        "file,pipe",
+        "-format_whitelist",
+        _DEMUXERS,
+        "-i",
+        str(path),
+        "-t",
+        str(maximum + 1),
+        "-map",
+        "0:v?",
+        "-map",
+        "0:a?",
+        "-threads",
+        "1",
+        "-f",
+        "null",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        "-",
+    )
+    try:
+        times = [
+            int(line.split(b"=", 1)[1]) / 1_000_000
+            for line in progress.splitlines()
+            if line.startswith(b"out_time_us=") and line != b"out_time_us=N/A"
+        ]
+    except ValueError as exc:
+        raise BadRequestError("Invalid decoded recording duration.") from exc
+    if not times or not 0 < max(times) <= maximum:
+        raise BadRequestError("The recording exceeds the duration limit.")
+    return max(max(times), duration or 0)

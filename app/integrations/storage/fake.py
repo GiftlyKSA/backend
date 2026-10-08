@@ -7,9 +7,11 @@ verification is reported valid (there are no real bytes to inspect in the fake).
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 from app.core.config import Environment
 from app.integrations._guard import forbid_in_production
-from app.integrations.storage.base import ObjectHead, StorageClient
+from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, ObjectHead, StorageClient
 
 
 class FakeStorageClient(StorageClient):
@@ -54,3 +56,11 @@ class FakeStorageClient(StorageClient):
         if len(body) > max_bytes:
             raise ValueError("Private media exceeds the declared size.")
         return body
+
+    async def iter_bounded_object(
+        self, storage_key: str, *, max_bytes: int
+    ) -> AsyncGenerator[bytes, None]:
+        """Yield bounded chunks from actual test bytes without duplicating the object."""
+        body = await self.read_bounded_object(storage_key, max_bytes=max_bytes)
+        for offset in range(0, len(body), STORAGE_READ_CHUNK_BYTES):
+            yield body[offset : offset + STORAGE_READ_CHUNK_BYTES]

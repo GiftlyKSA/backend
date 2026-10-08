@@ -10,6 +10,7 @@ from app.core.exceptions import NotFoundError, UnauthorizedError
 from app.core.jwt import create_access_token
 from app.core.ws_connections import _ACQUIRE, _RELEASE, _RENEW
 from app.models.enums import UserRole, UserStatus
+from app.repositories.chat_repository import ChatRepository
 from app.repositories.user_repository import UserRepository
 from app.routers import chat
 from app.services.auth_service import AuthService
@@ -54,6 +55,20 @@ def socket_context(monkeypatch):
     conversation = SimpleNamespace(customer_id=user.id, courier_id=uuid4())
     service = SimpleNamespace(get_conversation_for_actor=AsyncMock(return_value=conversation))
     monkeypatch.setattr(chat, "_session_service", Mock(return_value=service))
+
+    async def live_state(_repository, conversation_id, actor_id):
+        current = await service.get_conversation_for_actor(
+            conversation_id=conversation_id, actor_id=actor_id
+        )
+        return SimpleNamespace(
+            user=user,
+            courier_verified=True,
+            conversation_id=conversation_id,
+            customer_id=current.customer_id,
+            courier_id=current.courier_id,
+        )
+
+    monkeypatch.setattr(ChatRepository, "get_live_state", live_state)
     return websocket, user, service
 
 

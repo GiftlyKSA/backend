@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -19,6 +19,7 @@ from sqlalchemy.dialects import postgresql
 async def test_missing_or_out_of_scope_cursor_does_not_restart_list(kind, exists_globally):
     session = AsyncMock()
     session.scalar.return_value = None
+    session.execute.return_value = Mock(one_or_none=Mock(return_value=None))
     session.get.return_value = (
         SimpleNamespace(id=uuid4(), created_at=datetime.now(UTC)) if exists_globally else None
     )
@@ -35,7 +36,7 @@ async def test_missing_or_out_of_scope_cursor_does_not_restart_list(kind, exists
             method = getattr(OrderRepository(session), f"list_for_{kind}")
             await method(owner_id, status=OrderStatus.NEW, limit=20, before_id=cursor_id)
 
-    anchor_query = session.scalar.call_args.args[0]
+    anchor_query = (session.scalar if kind == "wallet" else session.execute).call_args.args[0]
     compiled = anchor_query.compile(dialect=postgresql.dialect())
     sql = str(compiled)
     scope_column = {
@@ -56,6 +57,7 @@ async def test_valid_anchor_preserves_stable_timestamp_id_keyset(kind):
     session = AsyncMock()
     anchor = SimpleNamespace(id=uuid4(), created_at=datetime(2026, 1, 1, tzinfo=UTC))
     session.scalar.return_value = anchor
+    session.execute.return_value = Mock(one_or_none=Mock(return_value=anchor))
     session.get.return_value = anchor
     session.scalars.return_value = ["older-row"]
     if kind == "wallet":

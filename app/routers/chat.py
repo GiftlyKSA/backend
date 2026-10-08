@@ -47,7 +47,7 @@ from app.schemas.chat import (
     SendMessageRequest,
 )
 from app.schemas.media import UploadUrlResponse
-from app.services.auth_service import validate_access_claims
+from app.services.auth_service import validate_access_claims, validate_account_claims
 from app.services.chat_media_service import ChatMediaService
 from app.services.chat_media_validation import MEDIA_TYPES
 from app.services.chat_service import ChatMessage, ChatService, conversation_channel
@@ -518,11 +518,21 @@ async def _authenticate_ws(
     redis: Redis = websocket.app.state.redis
     try:
         async with websocket.app.state.session_factory() as session:
-            await validate_access_claims(claims, redis=redis, users=UserRepository(session))
-            if conversation_id is not None:
-                await _session_service(session, redis, settings).get_conversation_for_actor(
-                    conversation_id=conversation_id, actor_id=uuid.UUID(claims.sub)
+            if conversation_id is None:
+                await validate_access_claims(claims, redis=redis, users=UserRepository(session))
+            else:
+                if await redis.get(f"jwt:denylist:{claims.jti}"):
+                    raise UnauthorizedError("This session has been revoked.")
+                state = await ChatRepository(session).get_live_state(
+                    conversation_id, uuid.UUID(claims.sub)
                 )
+                validate_account_claims(claims, state.user if state else None)
+                assert state is not None
+                CourierEligibilityService.validate_eligible_actor(
+                    state.user, state.courier_verified
+                )
+                if state.conversation_id is None:
+                    raise NotFoundError("Conversation not found.")
     except UnauthorizedError:
         return None
     if claims.exp <= datetime.now(UTC).timestamp():

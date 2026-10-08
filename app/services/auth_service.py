@@ -31,7 +31,7 @@ from app.models import User
 from app.models.enums import UserGender, UserRole, UserStatus
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.city_repository import CityRepository
-from app.repositories.user_repository import UserRepository
+from app.repositories.user_repository import AccountState, UserRepository
 from app.services.city_service import CityService
 from app.services.otp_service import OtpService
 
@@ -47,7 +47,7 @@ async def validate_access_claims(
     validate_account_claims(claims, user)
 
 
-def validate_account_claims(claims: AccessClaims, user: User | None) -> None:
+def validate_account_claims(claims: AccessClaims, user: User | AccountState | None) -> None:
     """Validate a currently selected account against its access credentials."""
     if (
         user is None

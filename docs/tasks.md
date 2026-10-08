@@ -95,21 +95,21 @@ The earlier usage-limit checkpoint above is historical; payment/PDF release stat
 now updated. Provider/live database validation and query-plan/load measurements remain
 pending. No Docker, live-provider payment or production database operation was performed.
 
-## Remaining API performance work — created/updated 2026-10-08
+## Remaining API performance work — updated 2026-10-08
 
-AP-P01/AP-P02 are implemented in this source release; other tasks remain outstanding. Source, impact, security
-constraints and verification requirements are in the matching AP-P review findings.
+| Task | Status | Created | Urgency / remaining note |
+| --- | --- | --- | --- |
+| AP-P01/AP-P02 | Previously implemented | 2026-10-08 | High7/Medium6; live Redis/load verification remains. |
+| AP-P03 | Implemented; focused tests/review pass | 2026-10-08 | Medium6; native decoder/S3 load pending. |
+| AP-P04/AP-P05 | Implemented; PostgreSQL/query-count tests pass | 2026-10-08 | Medium6/5; live socket/pool latency pending. |
+| AP-P06/AP-P07 | Measured; unsafe/unhelpful cache/index rejected | 2026-10-08 | Medium5; exact aggregates retained; real growing-history latency remains to measure. |
+| AP-P08/AP-P09 | Candidate indexes pending; not released | 2026-10-08 | Medium5/4;0025 up/down/re-up verified; deploy migration and measure actual distributions. Broad calendar/status opportunity remains. |
+| AP-P10 | Implemented; nine tests/review pass | 2026-10-08 | Low4; bounded fingerprint coalescing; multi-worker/load pending. |
+| AP-VERIFY | Complete PostgreSQL/Redis and native media gate | Pending | 2026-10-08; date-dependent older tests fail and Redis/native decoder unavailable. |
 
-| Task | Short description | Status | Created | Urgency / note |
-| --- | --- | --- | --- | --- |
-| AP-P01 | Isolate WebSocket subscriptions from HTTP security Redis capacity | Fixed; live load pending | 2026-10-08 | High7;80 subscription/100 HTTP connections per worker, shared leases and current authorization preserved. |
-| AP-P02 | Batch chat media grant/claim/attachment persistence | Fixed; PostgreSQL runtime pending | 2026-10-08 | Medium6; preparation1 grant query; persistence3 queries independent of1..5 attachments. Secure partial-batch rejection and rollback regression. |
-| AP-P03 | Stream large private media into bounded temporary storage | Open | 2026-10-08 | Medium6; reduce full payload copies; retain complete media validation and cancellation guards. |
-| AP-P04 | Reduce socket monitor SQL while preserving current authorization | Open | 2026-10-08 | Medium6; compact chat projection first; bounded batch checks require load proof. |
-| AP-P05 | Project eligibility and cursor anchors without unused city loads | Open | 2026-10-08 | Medium5; keep exact current-account and pagination filters. |
-| AP-P06 | Measure/invalidate bounded courier rating display summaries | Needs measurement | 2026-10-08 | Medium5; all API/admin/system corrections; never cache access decisions. |
-| AP-P07 | Measure exact statement totals and covering/summary alternatives | Needs measurement | 2026-10-08 | Medium5; current pending/reversed totals must remain authoritative and consistent. |
-| AP-P08 | Measure calendar filters and deterministic index candidates | Needs query plans | 2026-10-08 | Medium5; no speculative index migration; account for writes/storage/locking. |
-| AP-P09 | Measure owned payment recovery priority sorting | Needs query plans | 2026-10-08 | Medium4; retain REVIEW priority and fresh payer-scoped state. |
-| AP-P10 | Coalesce concurrent identical invoice PDF cache misses | Open | 2026-10-08 | Low4; bounded per-worker in-flight map, fingerprint and ownership checks. |
+No new API endpoint or response field was introduced. Prior product/security tasks
+above remain separate; this performance release does not claim to resolve them.
 
+### Usage-limit checkpoint — 2026-10-08
+
+At91% five-hour usage, the approved checkpoint publishes AP-P03/AP-P04/AP-P05/AP-P10 only. AP-P06/AP-P07 retain exact queries after measurement. AP-P08/AP-P09 candidate indexes are NOT published: generic prepared plans may lose partial-index and expression-order benefits; approved-only write costs need validation. Candidate source and raw plans are preserved in the attached worktree's ignored workflow folder. No new migration is required for this checkpoint. Full unit suite passed; broad service suites remain incomplete (PostgreSQL run interrupted on existing date/Redis failures, non-service integration checks also too slow for the checkpoint). Deployment and full PostgreSQL/Redis/native decoder checks remain unconfirmed.

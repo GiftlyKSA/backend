@@ -23,7 +23,12 @@ from app.integrations.storage.base import StorageClient
 from app.models.enums import MessageType
 from app.repositories.chat_repository import AttachmentInput, ChatRepository
 from app.repositories.media_repository import MediaRepository
-from app.services.chat_media_validation import media_policy, verify_image, verify_recording
+from app.services.chat_media_validation import (
+    bounded_recording_file,
+    media_policy,
+    verify_image,
+    verify_recording_file,
+)
 from app.services.chat_service import ChatMessage, ChatService, attachment_dto
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.media_service import TransactionBoundary
@@ -191,17 +196,22 @@ class ChatMediaService:
         ):
             raise BadRequestError("The uploaded file does not match its upload grant.")
         try:
-            body = await self._storage.read_bounded_object(grant.key, max_bytes=grant.size)
+            if kind == "IMAGE":
+                body = await self._storage.read_bounded_object(grant.key, max_bytes=grant.size)
+                if len(body) != grant.size:
+                    raise BadRequestError("The uploaded file size does not match its upload grant.")
+                await asyncio.to_thread(verify_image, body, grant.mime)
+                return grant
+            async with bounded_recording_file(
+                self._storage, grant.key, max_bytes=grant.size
+            ) as path:
+                duration = await verify_recording_file(
+                    path, kind=kind, mime=grant.mime, maximum=maximum
+                )
         except ValueError as exc:
             raise BadRequestError("The uploaded file exceeds its declared size.") from exc
         except NotImplementedError as exc:
             raise MediaValidationUnavailableError() from exc
-        if len(body) != grant.size:
-            raise BadRequestError("The uploaded file size does not match its upload grant.")
-        if kind == "IMAGE":
-            await asyncio.to_thread(verify_image, body, grant.mime)
-            return grant
-        duration = await verify_recording(body, kind=kind, mime=grant.mime, maximum=maximum)
         return replace(
             grant,
             duration=Decimal(str(duration)).quantize(Decimal("0.001"), rounding=ROUND_CEILING),

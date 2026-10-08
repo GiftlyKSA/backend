@@ -5,9 +5,10 @@ from __future__ import annotations
 import uuid
 
 from app.core.exceptions import ForbiddenError
+from app.models import User
 from app.models.enums import UserRole, UserStatus
 from app.repositories.courier_repository import CourierRepository
-from app.repositories.user_repository import UserRepository
+from app.repositories.user_repository import AccountState, UserRepository
 
 
 class CourierEligibilityService:
@@ -18,9 +19,22 @@ class CourierEligibilityService:
         self._users = users
         self._couriers = couriers
 
+    async def _get_account(self, actor_id: uuid.UUID) -> User | AccountState | None:
+        if isinstance(self._users, UserRepository):
+            return await self._users.get_account(actor_id)
+        return await self._users.get(actor_id)
+
+    @staticmethod
+    def validate_eligible_actor(user: User | AccountState, courier_verified: bool | None) -> None:
+        """Apply courier eligibility to an already selected current account state."""
+        if user.role is UserRole.COURIER and (
+            user.status is not UserStatus.ACTIVE or not courier_verified
+        ):
+            raise ForbiddenError("This courier account is not eligible for this action.")
+
     async def require_eligible_actor(self, actor_id: uuid.UUID) -> None:
         """Allow non-couriers, but apply the courier boundary to courier accounts."""
-        user = await self._users.get(actor_id)
+        user = await self._get_account(actor_id)
         if user is None:
             raise ForbiddenError("This account is not eligible for this action.")
         if user.role is UserRole.COURIER:
@@ -28,14 +42,14 @@ class CourierEligibilityService:
 
     async def require_courier(self, courier_id: uuid.UUID) -> None:
         """Require an existing active and verified courier account."""
-        user = await self._users.get(courier_id)
+        user = await self._get_account(courier_id)
         if user is None or user.role is not UserRole.COURIER:
             raise ForbiddenError("This courier account is not eligible for this action.")
         await self._require_active_verified(user.id, user.status)
 
     async def require_marketplace_actor(self, actor_id: uuid.UUID) -> None:
         """Require an active customer or a currently verified, active courier."""
-        user = await self._users.get(actor_id)
+        user = await self._get_account(actor_id)
         if (
             user is None
             or user.role not in {UserRole.CUSTOMER, UserRole.COURIER}
@@ -48,7 +62,7 @@ class CourierEligibilityService:
 
     async def require_customer(self, customer_id: uuid.UUID) -> None:
         """Require an active, non-erased customer for financial mutations."""
-        user = await self._users.get(customer_id)
+        user = await self._get_account(customer_id)
         if (
             user is None
             or user.role is not UserRole.CUSTOMER
@@ -60,6 +74,10 @@ class CourierEligibilityService:
     async def _require_active_verified(self, courier_id: uuid.UUID, status: UserStatus) -> None:
         if status is not UserStatus.ACTIVE:
             raise ForbiddenError("This courier account is not eligible for this action.")
-        profile = await self._couriers.get(courier_id)
-        if profile is None or not profile.is_verified:
+        if isinstance(self._couriers, CourierRepository):
+            verified = await self._couriers.is_verified(courier_id)
+        else:
+            profile = await self._couriers.get(courier_id)
+            verified = profile is not None and profile.is_verified
+        if not verified:
             raise ForbiddenError("This courier account is not eligible for this action.")

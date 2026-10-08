@@ -9,7 +9,10 @@ only the Real/Fake implementations know the S3/CloudFront wire format.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+
+STORAGE_READ_CHUNK_BYTES = 65536
 
 
 @dataclass(frozen=True)
@@ -49,3 +52,13 @@ class StorageClient(ABC):
     async def read_bounded_object(self, storage_key: str, *, max_bytes: int) -> bytes:
         """Read private bytes for validation; unsupported providers fail closed."""
         raise NotImplementedError("Bounded private media reads are not configured.")
+
+    async def iter_bounded_object(
+        self, storage_key: str, *, max_bytes: int
+    ) -> AsyncGenerator[bytes, None]:
+        """Adapt legacy bounded readers; streaming providers override this method."""
+        body = await self.read_bounded_object(storage_key, max_bytes=max_bytes)
+        if len(body) > max_bytes:
+            raise ValueError("Private media exceeds the declared size.")
+        for offset in range(0, len(body), STORAGE_READ_CHUNK_BYTES):
+            yield body[offset : offset + STORAGE_READ_CHUNK_BYTES]

@@ -320,7 +320,11 @@ class OrderRepository:
         self, query: Select[tuple[Order]], limit: int, before_id: uuid.UUID | None
     ) -> list[Order]:
         if before_id is not None:
-            anchor = await self._session.scalar(query.where(Order.id == before_id))
+            anchor = (
+                await self._session.execute(
+                    query.with_only_columns(Order.created_at, Order.id).where(Order.id == before_id)
+                )
+            ).one_or_none()
             if anchor is None:
                 raise NotFoundError("Pagination cursor not found in this list.")
             query = query.where(tuple_(Order.created_at, Order.id) < (anchor.created_at, anchor.id))

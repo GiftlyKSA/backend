@@ -10,7 +10,7 @@ short-TTL signed CloudFront URLs. A synchronous boto call would be wrapped in
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
-from app.integrations.storage.base import ObjectHead, StorageClient
+from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, ObjectHead, StorageClient
 
 _IMAGE_MAGIC = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG\r\n\x1a\n"}
 
@@ -175,19 +175,32 @@ class S3StorageClient(StorageClient):
         return signature is not None and head.startswith(signature)
 
     async def read_bounded_object(self, storage_key: str, *, max_bytes: int) -> bytes:
-        """Read at most the declared size plus one byte, always closing the S3 body."""
+        """Keep the bounded byte API for image validation and existing callers."""
+        result = bytearray()
+        async for chunk in self.iter_bounded_object(storage_key, max_bytes=max_bytes):
+            result.extend(chunk)
+        return bytes(result)
+
+    async def iter_bounded_object(
+        self, storage_key: str, *, max_bytes: int
+    ) -> AsyncGenerator[bytes, None]:
+        """Stream bounded private chunks, always closing the S3 response body."""
+        if max_bytes < 0:
+            raise ValueError("Private media size must not be negative.")
         async with self._client() as s3:
             response = await s3.get_object(Bucket=self._bucket, Key=storage_key)
             body = response["Body"]
-            result = bytearray()
+            total = 0
             try:
-                while chunk := await body.read(min(65536, max_bytes + 1 - len(result))):
-                    result.extend(chunk)
-                    if len(result) > max_bytes:
+                while chunk := await body.read(
+                    min(STORAGE_READ_CHUNK_BYTES, max_bytes + 1 - total)
+                ):
+                    total += len(chunk)
+                    if total > max_bytes:
                         raise ValueError("Private media exceeds the declared size.")
+                    yield chunk
             finally:
                 body.close()
-        return bytes(result)
 
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
         """Return a short-lived, RSA-signed CloudFront read URL."""

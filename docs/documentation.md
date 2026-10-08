@@ -923,3 +923,11 @@ and global decoding slots remain; larger media memory optimizations are outstand
 No schema migration or mobile contract change is required. Rollback uses the prior
 application image; no data conversion is needed. Real Redis/PostgreSQL load and
 query-plan measurements remain pending; local tests cannot establish production speed.
+
+## Measured read optimizations — 2026-10-08
+
+Recordings stream in64KiB chunks into private temporary files before full decoding. Chat monitoring uses one fresh joined authorization query; cursor anchors use scalar projections. Identical invoice PDF misses share bounded per-worker rendering. Candidate migration0025 is retained locally but not released; prepared/generic query plans and write costs need further validation. Exact ratings and statement totals remain uncached. See codebase_review.md for measurements, tradeoffs and verification limits.
+
+### Usage-limit checkpoint — 2026-10-08
+
+At91% five-hour usage, the approved checkpoint publishes AP-P03/AP-P04/AP-P05/AP-P10 only. AP-P06/AP-P07 retain exact queries after measurement. AP-P08/AP-P09 candidate indexes are NOT published: generic prepared plans may lose partial-index and expression-order benefits; approved-only write costs need validation. Candidate source and raw plans are preserved in the attached worktree's ignored workflow folder. No new migration is required for this checkpoint. Full unit suite passed; broad service suites remain incomplete (PostgreSQL run interrupted on existing date/Redis failures, non-service integration checks also too slow for the checkpoint). Deployment and full PostgreSQL/Redis/native decoder checks remain unconfirmed.

@@ -20,6 +20,17 @@ _DASHBOARD_ADMIN_NAMESPACE = uuid.UUID("48c72a54-78e4-4a0e-a20f-54378ed7f950")
 
 
 @dataclass(frozen=True, slots=True)
+class AccountState:
+    """Current account fields used by authentication and eligibility checks."""
+
+    id: uuid.UUID
+    role: UserRole
+    status: UserStatus
+    deleted_at: datetime | None
+    auth_version: int
+
+
+@dataclass(frozen=True, slots=True)
 class ParticipantProjection:
     """The complete privacy-scoped participant projection selected by SQL."""
 
@@ -41,6 +52,24 @@ class UserRepository:
     async def get(self, user_id: uuid.UUID) -> User | None:
         """Return a user by id, or None."""
         return await get_read_row(self._session, User, user_id)
+
+    async def get_account(self, user_id: uuid.UUID) -> AccountState | None:
+        """Project current account fields, retaining an explicit read-only request snapshot."""
+        if self._session.info.get("read_only_request") is True:
+            user = await self.get(user_id)
+            return (
+                AccountState(user.id, user.role, user.status, user.deleted_at, user.auth_version)
+                if user is not None
+                else None
+            )
+        row = (
+            await self._session.execute(
+                select(User.id, User.role, User.status, User.deleted_at, User.auth_version).where(
+                    User.id == user_id
+                )
+            )
+        ).one_or_none()
+        return AccountState(*row) if row is not None else None
 
     async def get_for_update(self, user_id: uuid.UUID) -> User | None:
         """Lock and return a user so competing status transitions serialize."""

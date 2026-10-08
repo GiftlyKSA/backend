@@ -116,3 +116,97 @@ async def test_cached_pdf_expires_after_one_hour_without_extending_hits(monkeypa
     clock[0] = 3600
     await cache.render(stored, lines)
     assert renderer.call_count == 2
+
+
+async def test_identical_pdf_misses_share_render_despite_cancelled_waiter(monkeypatch):
+    import asyncio
+    import threading
+
+    from app.services.invoice_pdf_cache import InvoicePdfCache
+
+    started = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+    calls = []
+
+    def render(*args):
+        calls.append(True)
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(5)
+        return b"%PDF-1.4 shared"
+
+    monkeypatch.setattr("app.services.invoice_pdf_cache.render_invoice_pdf", render)
+    redis = AsyncMock()
+    redis.get.return_value = None
+    cache = InvoicePdfCache(redis)
+    stored, lines = invoice(), items()
+    first = asyncio.create_task(cache.render(stored, lines))
+    second = None
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        second = asyncio.create_task(cache.render(stored, lines))
+        await asyncio.sleep(0.05)
+        first.cancel()
+        await asyncio.gather(first, return_exceptions=True)
+        release.set()
+        assert await asyncio.wait_for(second, 2) == b"%PDF-1.4 shared"
+        assert len(calls) == 1
+    finally:
+        release.set()
+        await asyncio.gather(first, *([second] if second else []), return_exceptions=True)
+
+
+async def test_pdf_fingerprints_remain_separate_and_inflight_capacity_is_bounded(monkeypatch):
+    import asyncio
+    import copy
+    import threading
+
+    from app.services.invoice_pdf_cache import InvoicePdfCache
+
+    started = asyncio.Queue()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def render(stored, lines):
+        loop.call_soon_threadsafe(started.put_nowait, stored.status)
+        assert release.wait(5)
+        return f"%PDF-{stored.status}".encode()
+
+    monkeypatch.setattr("app.services.invoice_pdf_cache.render_invoice_pdf", render)
+    monkeypatch.setattr("app.services.invoice_pdf_cache._MAX_ENTRIES", 2)
+    redis = AsyncMock()
+    redis.get.return_value = None
+    cache = InvoicePdfCache(redis)
+    stored = invoice()
+    changed = copy.copy(stored)
+    changed.status = "PAID"
+    tasks = [asyncio.create_task(cache.render(value, items())) for value in (stored, changed)]
+    third = None
+    try:
+        for _ in tasks:
+            await asyncio.wait_for(started.get(), 2)
+        third = asyncio.create_task(cache.render(invoice(), items()))
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(started.get(), 0.05)
+        assert len(cache._inflight) == 2
+        release.set()
+        results = await asyncio.gather(*tasks, third)
+        assert results[0] != results[1]
+        await asyncio.sleep(0)
+        assert not cache._inflight
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, *([third] if third else []), return_exceptions=True)
+
+
+async def test_failed_shared_pdf_render_is_removed_and_retry_succeeds(monkeypatch):
+    from app.services.invoice_pdf_cache import InvoicePdfCache
+
+    renderer = Mock(side_effect=[ValueError("invalid document"), b"%PDF-1.4 retry"])
+    monkeypatch.setattr("app.services.invoice_pdf_cache.render_invoice_pdf", renderer)
+    cache = InvoicePdfCache(MemoryRedis())
+    stored, lines = invoice(), items()
+    with pytest.raises(ValueError, match="invalid document"):
+        await cache.render(stored, lines)
+    assert await cache.render(stored, lines) == b"%PDF-1.4 retry"
+    assert not cache._inflight

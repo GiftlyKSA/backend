@@ -24,6 +24,14 @@ class CourierRepository:
         """Return a courier profile by user id, or None."""
         return await get_read_row(self._session, CourierProfile, user_id)
 
+    async def is_verified(self, user_id: uuid.UUID) -> bool:
+        """Read only current verification, without loading the profile or city."""
+        return bool(
+            await self._session.scalar(
+                select(CourierProfile.is_verified).where(CourierProfile.user_id == user_id)
+            )
+        )
+
     async def lock(self, user_id: uuid.UUID) -> CourierProfile | None:
         """Keep city assignment and verification stable through an operation."""
         profile: CourierProfile | None = await self._session.scalar(

@@ -154,3 +154,42 @@ async def test_real_decoder_checks_waveform_duration():
         buffer.getvalue(), kind="VOICE", mime="audio/wav", maximum=120
     )
     assert 0.9 <= duration <= 1.1
+
+
+@pytest.mark.asyncio
+async def test_repeated_decoder_cancellation_waits_until_process_is_reaped():
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.services.chat_media_validation import _run
+
+    release, waiting, cleaning = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    calls = 0
+    process = SimpleNamespace(returncode=None, stdout=AsyncMock(), stderr=AsyncMock())
+    process.stdout.read.return_value = b""
+    process.stderr.read.return_value = b""
+    process.kill = lambda: None
+
+    async def wait():
+        nonlocal calls
+        calls += 1
+        (waiting if calls == 1 else cleaning).set()
+        await release.wait()
+        process.returncode = -1
+        return -1
+
+    process.wait = wait
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=process)):
+        task = asyncio.create_task(_run("ffmpeg"))
+        try:
+            await waiting.wait()
+            task.cancel()
+            await cleaning.wait()
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert process.returncode == -1

@@ -72,6 +72,9 @@ class InvoicePdfCache:
         """Use the application pool and at most four rendering threads per process."""
         self._redis = redis
         self._slots = asyncio.Semaphore(4)
+        self._inflight: dict[tuple[str, str], asyncio.Task[bytes]] = {}
+        self._capacity = asyncio.Event()
+        self._capacity.set()
 
     async def _read(self, key: str, fingerprint: str) -> bytes | None:
         try:
@@ -98,6 +101,30 @@ class InvoicePdfCache:
         cached = await self._read(key, fingerprint)
         if cached is not None:
             return cached
+        identity = (key, fingerprint)
+        while True:
+            task = self._inflight.get(identity)
+            if task is not None:
+                return await asyncio.shield(task)
+            if len(self._inflight) < _MAX_ENTRIES:
+                task = asyncio.create_task(self._render_uncached(invoice, items, key, fingerprint))
+                self._inflight[identity] = task
+                task.add_done_callback(lambda done: self._complete(identity, done))
+                if len(self._inflight) == _MAX_ENTRIES:
+                    self._capacity.clear()
+                return await asyncio.shield(task)
+            await self._capacity.wait()
+
+    def _complete(self, identity: tuple[str, str], task: asyncio.Task[bytes]) -> None:
+        if self._inflight.get(identity) is task:
+            del self._inflight[identity]
+            self._capacity.set()
+        if not task.cancelled():
+            task.exception()
+
+    async def _render_uncached(
+        self, invoice: Invoice, items: list[InvoiceItem], key: str, fingerprint: str
+    ) -> bytes:
         await self._slots.acquire()
         render_task: asyncio.Task[bytes] | None = None
         try:

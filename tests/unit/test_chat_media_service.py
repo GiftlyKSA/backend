@@ -223,3 +223,187 @@ async def test_history_fetches_attachments_in_one_batch(count):
     )
     assert len(result) == count
     repository.attachments_for_messages.assert_awaited_once_with([row.id for row in rows])
+
+
+@pytest.mark.asyncio
+async def test_recording_streams_to_file_and_removes_it_after_validation():
+    from pathlib import Path
+    from unittest.mock import patch
+
+    service, deps = stack()
+    deps.storage.head_object.return_value = ObjectHead(True, 9, "audio/ogg")
+    deps.storage.read_bounded_object.side_effect = AssertionError("Recording buffered in memory")
+
+    async def chunks(*args, **kwargs):
+        yield b"record"
+        yield b"ing"
+
+    deps.storage.iter_bounded_object = chunks
+    paths = []
+
+    async def decode(path, **kwargs):
+        paths.append(Path(path))
+        assert paths[-1].read_bytes() == b"recording"
+        return 1.0
+
+    with patch("app.services.chat_media_service.verify_recording_file", decode, create=True):
+        result = await service._verify(ValidatedAttachment("key", "audio/ogg", 9))
+    assert result.duration == 1
+    assert paths and not paths[0].exists()
+    deps.storage.read_bounded_object.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunks,total", [([b"short"], 9), ([b"recording", b"x"], 9)])
+async def test_recording_stream_size_mismatch_never_decodes(chunks, total):
+    from unittest.mock import patch
+
+    service, deps = stack()
+    deps.storage.head_object.return_value = ObjectHead(True, total, "audio/ogg")
+
+    async def stream(*args, **kwargs):
+        for chunk in chunks:
+            yield chunk
+
+    deps.storage.iter_bounded_object = stream
+    with patch(
+        "app.services.chat_media_service.verify_recording_file", new=AsyncMock(), create=True
+    ) as decode:
+        with pytest.raises(BadRequestError):
+            await service._verify(ValidatedAttachment("key", "audio/ogg", total))
+        decode.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_recording_decoder_failure_or_cancellation_removes_private_file(cancel):
+    import asyncio
+    from pathlib import Path
+    from unittest.mock import patch
+
+    service, deps = stack()
+    deps.storage.head_object.return_value = ObjectHead(True, 9, "audio/ogg")
+
+    async def chunks(*args, **kwargs):
+        yield b"recording"
+
+    deps.storage.iter_bounded_object = chunks
+    paths = []
+
+    async def decode(path, **kwargs):
+        paths.append(Path(path))
+        assert paths[-1].exists()
+        if cancel:
+            raise asyncio.CancelledError
+        raise BadRequestError("bad recording")
+
+    with patch("app.services.chat_media_service.verify_recording_file", decode, create=True):
+        with pytest.raises(asyncio.CancelledError if cancel else BadRequestError):
+            await service._verify(ValidatedAttachment("key", "audio/ogg", 9))
+    assert paths and not paths[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_streamed_recording_waits_for_disk_write_before_cancelled_cleanup(monkeypatch):
+    import asyncio
+    import threading
+    from unittest.mock import patch
+
+    from app.services import chat_media_validation as validation
+
+    started, release = threading.Event(), threading.Event()
+    paths = []
+    original = validation.Path.open
+
+    def blocking_open(path, *args, **kwargs):
+        paths.append(path)
+        started.set()
+        assert release.wait(5)
+        return original(path, *args, **kwargs)
+
+    service, deps = stack()
+    deps.storage.head_object.return_value = ObjectHead(True, 9, "audio/ogg")
+
+    async def chunks(*args, **kwargs):
+        yield b"recording"
+
+    deps.storage.iter_bounded_object = chunks
+    monkeypatch.setattr(validation.Path, "open", blocking_open)
+    with patch(
+        "app.services.chat_media_service.verify_recording_file", new=AsyncMock(), create=True
+    ) as decode:
+        task = asyncio.create_task(service._verify(ValidatedAttachment("key", "audio/ogg", 9)))
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+            assert paths[0].parent.exists()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not paths[0].exists()
+        decode.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recording_download_failure_removes_file_and_closes_stream(monkeypatch):
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+
+    from app.services import chat_media_validation as validation
+
+    directories = []
+    closed = False
+
+    def directory(**kwargs):
+        result = TemporaryDirectory(**kwargs)
+        directories.append(validation.Path(result.name))
+        return result
+
+    service, deps = stack()
+    deps.storage.head_object.return_value = ObjectHead(True, 9, "audio/ogg")
+
+    async def chunks(*args, **kwargs):
+        nonlocal closed
+        try:
+            yield b"record"
+            raise OSError("read failed")
+        finally:
+            closed = True
+
+    deps.storage.iter_bounded_object = chunks
+    monkeypatch.setattr(validation, "TemporaryDirectory", directory)
+    with patch(
+        "app.services.chat_media_service.verify_recording_file", new=AsyncMock(), create=True
+    ) as decode:
+        with pytest.raises(OSError, match="read failed"):
+            await service._verify(ValidatedAttachment("key", "audio/ogg", 9))
+        decode.assert_not_awaited()
+    assert closed
+    assert directories and not directories[0].exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "head",
+    [
+        None,
+        ObjectHead(False, 9, "audio/ogg"),
+        ObjectHead(True, 8, "audio/ogg"),
+        ObjectHead(True, 9, "audio/webm"),
+    ],
+)
+async def test_recording_rejects_head_mismatch_before_streaming(head):
+    from unittest.mock import Mock
+
+    service, deps = stack()
+    deps.storage.head_object.return_value = head
+    deps.storage.iter_bounded_object = Mock()
+    with pytest.raises(BadRequestError):
+        await service._verify(ValidatedAttachment("key", "audio/ogg", 9))
+    deps.storage.iter_bounded_object.assert_not_called()

@@ -2,7 +2,7 @@
 
 from datetime import date
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -83,7 +83,7 @@ async def test_range_sql_is_inclusive_scoped_and_applied_to_anchor(kind, start, 
         field, owner = "occasions.occasion_date", "occasions.user_id"
     else:
         anchor = SimpleNamespace(id=uuid4(), created_at="2026-10-01")
-        session.scalar.return_value = anchor
+        session.execute.return_value = Mock(one_or_none=Mock(return_value=anchor))
         await getattr(OrderRepository(session), f"list_for_{kind}")(
             actor_id,
             status=OrderStatus.NEW,
@@ -93,7 +93,7 @@ async def test_range_sql_is_inclusive_scoped_and_applied_to_anchor(kind, start, 
             to_date=end,
         )
         field, owner = "orders.delivery_date", f"orders.{kind}_id"
-        anchor_sql = str(session.scalar.call_args.args[0].compile(dialect=postgresql.dialect()))
+        anchor_sql = str(session.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
         assert (f"{field} >=" in anchor_sql) == (start is not None)
         assert (f"{field} <=" in anchor_sql) == (end is not None)
         assert "orders.status =" in anchor_sql
