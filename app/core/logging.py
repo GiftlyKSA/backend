@@ -1,4 +1,4 @@
-"""Structured JSON logging with a mandatory scrubbing filter (SPEC SECTION 8.17-18).
+"""Structured JSON logging with a mandatory scrubbing filter.
 
 A log file full of OTPs turns a log-read into a breach, so scrubbing is not optional:
 the filter redacts by key name AND by regex before any record is emitted. All logs
@@ -44,7 +44,7 @@ _REDACTED = "***REDACTED***"
 
 
 def _mask_phone(match: re.Match[str]) -> str:
-    """Mask a Saudi mobile as ``+9665•••••67`` (SPEC SECTION 8.18)."""
+    """Mask a Saudi mobile as ``+9665•••••67``."""
     phone = match.group(0)
     return f"{phone[:5]}•••••{phone[-2:]}"
 

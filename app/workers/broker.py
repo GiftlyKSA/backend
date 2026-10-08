@@ -1,4 +1,4 @@
-"""TaskIQ broker wired to the Redis broker (SPEC SECTION 2, 21).
+"""TaskIQ broker wired to the Redis broker.
 
 Background tasks (push, SMS, the invoice-paid receipt, reconciliation) are declared
 against this broker so an HTTP handler never waits on a slow integration. Tasks are

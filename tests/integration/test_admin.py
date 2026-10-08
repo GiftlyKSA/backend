@@ -11,8 +11,10 @@ import os
 import secrets as _secrets
 
 import pytest
+from app.admin.i18n import LANGUAGE_COOKIE
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
+from app.core.redis import build_redis
 from app.core.security import make_csrf_token, sha256_hex
 from app.main import create_app
 from app.models import AdminSession, AuditLog, User
@@ -53,10 +55,21 @@ async def test_admin_table_browser_and_controlled_edit_flow() -> None:
         await engine.dispose()
         pytest.skip(f"database unavailable: {exc}")
 
+    redis = build_redis(settings)
+    try:
+        await redis.ping()
+    except Exception as exc:  # noqa: BLE001 - this flow requires actual shared auth state.
+        await engine.dispose()
+        pytest.skip(f"Redis unavailable: {exc}")
+    finally:
+        await redis.aclose()
+
     app = create_app(settings)
-    transport = ASGITransport(app=app)
+    source_ip = f"2001:db8::{_secrets.token_hex(2)}:{_secrets.token_hex(2)}"
+    transport = ASGITransport(app=app, client=(source_ip, 123))
     try:
         async with AsyncClient(transport=transport, base_url="http://t") as client:
+            client.cookies.set(LANGUAGE_COOKIE, "en")
             # 1. Invalid credentials fail generically and create no session.
             denied = await client.post(
                 "/v1/admin/admin/login", data={"username": _ADMIN_USERNAME, "password": "wrong"}

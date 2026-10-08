@@ -1,4 +1,4 @@
-"""Pydantic contracts for the media endpoints (SPEC SECTION 19)."""
+"""Pydantic contracts for the media endpoints."""
 
 from __future__ import annotations
 

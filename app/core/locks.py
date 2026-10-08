@@ -1,4 +1,4 @@
-"""Redis distributed locks with safe release (SPEC SECTION 20.C, known traps).
+"""Redis distributed locks with safe release.
 
 A lock is acquired with ``SET key token NX EX ttl`` and released with a Lua
 compare-and-delete on the random token — a plain ``DEL`` can delete a lock that

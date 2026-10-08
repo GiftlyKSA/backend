@@ -1,4 +1,4 @@
-"""Real S3 + CloudFront storage client (SPEC SECTION 16.1-2, 17.3).
+"""Real S3 + CloudFront storage client.
 
 Uploads are pre-signed PUTs pinned to a content-type and exact content length so a
 URL cannot be used to upload a larger object. Post-upload the object is HEADed and its

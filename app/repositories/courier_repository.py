@@ -1,4 +1,4 @@
-"""Courier profile persistence used by the admin dashboard (SPEC SECTION 10, 18.3)."""
+"""Courier profile persistence used by the admin dashboard."""
 
 from __future__ import annotations
 

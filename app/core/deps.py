@@ -1,4 +1,4 @@
-"""Shared FastAPI dependencies for authentication and authorization (SPEC §17.2 A01).
+"""Shared FastAPI dependencies for authentication and authorization.
 
 Deny by default: every route is authenticated unless explicitly public. The actor's
 id and role come from the verified JWT, never the request body. Role checks are

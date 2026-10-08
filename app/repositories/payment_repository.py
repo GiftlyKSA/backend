@@ -1,4 +1,4 @@
-"""Payment-intent and wallet-top-up persistence (SPEC SECTION 5.1, ADR 0003).
+"""Payment-intent and wallet-top-up persistence.
 
 A single ``payment_intents`` row is the only gateway-facing record, discriminated by
 ``purpose``. The webhook does ONE lookup by ``gateway_reference`` and dispatches on

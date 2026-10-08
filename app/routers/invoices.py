@@ -1,4 +1,4 @@
-"""Invoice routes (SPEC SECTION 11, 14).
+"""Invoice routes.
 
 The courier authors an invoice; the platform prices it. Reads are open to the order's
 participants (customer or courier) and 404 to anyone else — no existence leak. The actor

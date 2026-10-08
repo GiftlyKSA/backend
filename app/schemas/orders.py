@@ -1,4 +1,4 @@
-"""Pydantic contracts for the order endpoints (SPEC SECTION 19)."""
+"""Pydantic contracts for the order endpoints."""
 
 from __future__ import annotations
 

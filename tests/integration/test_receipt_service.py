@@ -99,9 +99,8 @@ async def test_receipt_skipped_when_no_email(db_session: AsyncSession) -> None:
     invoice = await _paid_invoice(db_session, email=None)
     assert await _service(db_session, email).send_receipt(invoice.id) is False
     assert email.sent == []
-    # Still stamped so the sweeper stops retrying it.
     await db_session.refresh(invoice)
-    assert invoice.receipt_email_sent_at is not None
+    assert invoice.receipt_email_sent_at is None
 
 
 async def test_receipt_not_sent_for_unpaid_invoice(db_session: AsyncSession) -> None:

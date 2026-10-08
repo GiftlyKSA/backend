@@ -1,4 +1,4 @@
-"""Push notifications (SPEC SECTION 5.1, 13).
+"""Push notifications.
 
 Notifications are BEST-EFFORT: a push failure is logged and swallowed so it never breaks
 the flow that triggered it. The body must NEVER carry Restricted data — chat text, exact
@@ -27,15 +27,36 @@ class NotificationService:
 
     async def notify_user(self, *, user_id: uuid.UUID, title: str, body: str) -> int:
         """Push to all of a user's devices. Returns how many tokens were targeted."""
-        tokens = await self._devices.tokens_for_user(user_id)
-        await self._send(tokens, title, body)
-        return len(tokens)
+        return await self._send_pages(user_id=user_id, title=title, body=body)
 
     async def notify_city_couriers(self, *, city: str, title: str, body: str) -> int:
         """Push to every active, verified courier in a city (the new-order radar ping)."""
-        tokens = await self._devices.tokens_for_city_couriers(city)
-        await self._send(tokens, title, body)
-        return len(tokens)
+        return await self._send_pages(city=city, title=title, body=body)
+
+    async def _send_pages(
+        self,
+        *,
+        title: str,
+        body: str,
+        user_id: uuid.UUID | None = None,
+        city: str | None = None,
+    ) -> int:
+        targeted = 0
+        after = None
+        while True:
+            page = await self._devices.token_page(
+                user_id=user_id,
+                city=city,
+                after=after,
+                limit=_PUSH_BATCH_SIZE,
+            )
+            if not page:
+                return targeted
+            await self._send([token for _, token in page], title, body)
+            targeted += len(page)
+            after = page[-1][0]
+            if len(page) < _PUSH_BATCH_SIZE:
+                return targeted
 
     async def _send(self, tokens: list[str], title: str, body: str) -> None:
         if not tokens:

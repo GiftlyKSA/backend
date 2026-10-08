@@ -1,4 +1,4 @@
-"""Expiry sweeper for unpaid invoices and stale payment intents (SPEC SECTION 13, 21).
+"""Expiry sweeper for unpaid invoices and stale payment intents.
 
 Two kinds of stale gateway state are cleaned up:
 

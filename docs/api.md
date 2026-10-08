@@ -97,10 +97,10 @@ Screens listed as gaps still need later backend work; do not build or guess rout
   matching the other request models. Send only the properties declared in OpenAPI.
 - Base path is `/api`. Send `Authorization: Bearer <access_token>` on protected HTTP calls. Existing users receive 30-minute access and rotating 30-day refresh credentials; use `POST /api/auth/refresh` and replace both stored tokens. Logout invalidates credentials on every device. Do not derive role or ownership from the phone number, local fixture, or a client-supplied user ID.
 - `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money values are decimal strings**, such as `"125.50"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
-- A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; missing/foreign or out-of-filter order/wallet anchors return `404 NOT_FOUND`, so refresh the list when an anchor is no longer valid; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings. Do not use offset or invent a next page when `next_cursor` is null.
+- A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; missing/foreign or out-of-filter order/wallet anchors return `404 NOT_FOUND`, so refresh the list when an anchor is no longer valid; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings; malformed inbox cursors return `400 BAD_REQUEST` rather than restarting the list. Do not use offset or invent a next page when `next_cursor` is null.
 - Domain failures generally use `{"error":{"code":"...","message":"...","request_id":"..."}}`; common codes include `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INVALID_STATE_TRANSITION`, `VALIDATION_ERROR`, `RATE_LIMITED`, `PAYMENTS_DISABLED`, and `RATE_LIMIT_UNAVAILABLE`. FastAPI request-schema errors may instead return `{"detail":[...]}` with HTTP 422. HTTP 429 carries `Retry-After`. Handle status and both shapes; never assume every failure has a domain envelope.
 - Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; The Dhamen testing adapter does not establish verified production integration. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
-- This document describes the current backend, not a proposed API. Each **When/how** paragraph is 50–100 words. **Before** is the prerequisite; **Then / dependent API** tells the UI agent which subsequent call consumes or follows this result.
+- This document describes the current backend, not a proposed API. Each **When/how** paragraph explains practical use and recovery. **Before** is the prerequisite; **Then / dependent API** tells the UI agent which subsequent call consumes or follows this result.
 - **Future API work:** If a screen or action has no matching endpoint documented here, do not create, assume, or integrate a new route for it. Mark that feature as awaiting backend support; its route and contract will be added later in a separate backend change. Use only the implemented calls below for the current UI integration.
 
 ## Service health (not a mobile screen)
@@ -196,7 +196,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Before:** A previous login or registration token pair.
 - **Then / dependent API:** Retry the originally requested protected API with the new access token.
 
-**When/how (60 words):** Rotate the current refresh credential when the access JWT expires or shortly before expiry. Replace both locally stored tokens atomically with the returned pair; a used token must never be retried in parallel because replay revokes its family. If refresh fails, clear local credentials and return to login. Do not send the refresh token as a normal bearer access token.
+**When/how:** Rotate the current refresh credential when the access JWT expires or shortly before expiry. Replace both locally stored tokens atomically with the returned pair; a used token must never be retried in parallel. Detected reuse returns 401 and invalidates access, refresh and dashboard credentials on every device, including current socket actions. All devices must sign in again. If refresh fails, clear local credentials and return to login. Do not send the refresh token as a normal bearer access token.
 
 ### POST /api/auth/logout
 
@@ -693,12 +693,12 @@ their original result invoice; refresh active state if it has since been superse
 - **Screens:** Customer/Courier Chat `/chat/[id]` composer.
 - **Who / authorization:** Authenticated conversation participant; bearer access token.
 - **Path, query, headers:** `conversation_id: UUID string` (path).
-- **Request body:** `SendMessageRequest` — `text: string`
+- **Request body:** `SendMessageRequest` — `text: string`; `client_message_id?: UUID string | null`
 - **Response:** HTTP 201; `MessageResponse` — `id: string`; `conversation_id: string`; `sender_id: string`; `message_type: string`; `content: string`; `is_read: boolean`; `created_at: string`
 - **Before:** Conversation exists and actor is a participant.
 - **Then / dependent API:** WebSocket receives committed event; refresh messages/inbox as needed.
 
-**When/how (62 words):** Send a text message with a nonempty `text` field, at most 4,000 characters. The server encrypts it at rest, commits it, publishes a live event, and sends a generic push notification without message text. Show the returned message after success and reconcile it with a matching WebSocket event to avoid duplicates. This route does not accept media attachments or arbitrary recipient IDs.
+**When/how:** Send nonempty text of at most 4,000 characters. Generate an optional `client_message_id` UUID once per intended send and retain it across retries. Within the same conversation and sender, repeating that ID with the same text returns the persisted message with HTTP 201 and its original message ID and timestamp; different text or media payload returns `409 CONFLICT`. Omitting the ID preserves existing send behavior and provides no client retry deduplication. Render returned and live messages once per server message ID. The server commits encrypted content and a durable live-delivery intent before publication; generic push notifications omit message text.
 
 ### POST /api/conversations/{conversation_id}/read
 
@@ -723,7 +723,7 @@ for exact requests, responses, accepted MIME types, limits and error handling.
 | --- | --- | --- | --- |
 | `GET /api/chat/media-limits` | No body | `ChatMediaLimitsResponse` — integer size/duration/pixel limits and MIME string arrays | Eligible customer/courier bearer token; load before recording/selection. |
 | `POST /api/conversations/{conversation_id}/media-upload-urls` | `ChatUploadRequest`: `media_type: IMAGE\|VIDEO\|VOICE`, `content_type: string`, `byte_size: integer` | 201 `UploadUrlResponse`: `upload_url: string`, `storage_key: string`, `expires_in: integer` | Eligible conversation participant; then direct create-only signed S3 PUT. |
-| `POST /api/conversations/{conversation_id}/media-messages` | `SendChatMediaRequest`: `storage_keys: string[1..5]`, `text?: string` | 201 `MessageResponse` with `attachments: ChatAttachmentResponse[]` | Same participant; successful S3 upload required. No separate chat confirm endpoint. |
+| `POST /api/conversations/{conversation_id}/media-messages` | `SendChatMediaRequest`: `storage_keys: string[1..5]`, `text?: string`, `client_message_id?: UUID string | null` | 201 `MessageResponse` with `attachments: ChatAttachmentResponse[]` | Same participant; successful S3 upload required. No separate chat confirm endpoint. |
 | `GET /api/chat/attachments/{attachment_id}/url` | UUID path; no body | `AttachmentUrlResponse`: `url: string`, `expires_in: integer` | Eligible conversation participant; fetch on demand for private playback. |
 
 **When/how:** Load configured limits, record a microphone voice note or select camera/
@@ -742,6 +742,8 @@ requirement; the server cannot attest file provenance. Missing decoder/capacity 
 503, and reused grants return 409. Rebuild the image and apply migration `0015_chat_media`;
 real private-storage deployment still needs staging verification.
 
+Media sends use the same optional retry UUID, scoped to conversation and sender. Retrying the same text and ordered storage-key list returns the original persisted message with HTTP 201, including after its grants were consumed. A changed text or attachment list for that ID returns `409 CONFLICT`. Keep the retry ID and uploaded keys until acknowledgement; begin a new send with a new ID.
+
 ## Push devices
 
 ### POST /api/devices
@@ -755,7 +757,7 @@ real private-storage deployment still needs staging verification.
 - **Before:** OS push token obtained after user permission.
 - **Then / dependent API:** Push delivery for order and chat notices; delete on sign-out.
 
-**When/how (62 words):** Register or refresh the current device's push token using `IOS` or `ANDROID`. The server associates that token with the authenticated account and can move a handed-down device token away from a previous owner. Register again after token rotation or a successful new login. Do not confuse this with an in-app notification-list API; the backend has no endpoint to fetch a notification feed.
+**When/how:** Register or refresh the current device's push token using `IOS` or `ANDROID`. The server associates that token with the authenticated account and can move a handed-down device token away from a previous owner. Register again after token rotation or a successful new login. Each account can register at most 10 device tokens. Refreshing its existing token remains allowed at the quota; adding another returns `409 DEVICE_LIMIT_REACHED`. Delete an owned registration before adding another. Do not confuse this with an in-app notification-list API; the backend has no endpoint to fetch a notification feed.
 
 ### DELETE /api/devices
 
@@ -882,14 +884,14 @@ For the complete acceptance integration brief, see
 
 - **API name:** Live conversation stream.
 - **Screens:** Customer/Courier Chat `/chat/[id]` live stream.
-- **Who / authorization:** Authenticated conversation participant; `?token=<access JWT>` at handshake.
-- **Path/query:** `conversation_id: UUID string` (path); `token: access JWT string` (query).
-- **Client frame:** JSON `{"text":"message"}` (`text: string`; keep it within 4,000 characters for REST parity; the socket itself enforces a 4,096-byte frame cap).
+- **Who / authorization:** Authenticated conversation participant. Prefer `Authorization: Bearer <access JWT>` where supported, or offer WebSocket subprotocols `giftly.chat` and `bearer.<access JWT>`. The server selects only `giftly.chat`, never the credential protocol. Legacy `?token=<access JWT>` remains supported.
+- **Path/query:** `conversation_id: UUID string` (path); optional legacy `token: access JWT string` (query). Keep credentials out of URLs and logs when using the preferred handshake methods.
+- **Client frame:** JSON `{"text":"message","client_message_id":"11111111-1111-4111-8111-111111111111"}`; `client_message_id` is an optional UUID. Text must be a nonempty string of at most 4,000 characters. Null, objects and unknown fields are invalid; the whole frame also has a 4,096-byte cap.
 - **Server frame:** JSON `MessageResponse` — `id: string`; `conversation_id: string`; `sender_id: string`; `message_type: string`; `content: string`; `is_read: boolean`; `created_at: string`
 - **Before:** Conversation ID from inbox and a valid access token.
 - **Then / dependent API:** Use REST messages/read for history and unread state.
 
-**When/how (63 words):** Open this WebSocket only while the conversation screen needs live updates. Send JSON text frames shaped as `{"text":"..."}`; the server persists accepted messages before publishing message-shaped JSON events to participants. Invalid, oversized, or throttled frames may be dropped. Reconnect with a fresh access token after refresh, close on logout, and fetch REST history after reconnection because pub/sub is not a durable replay log.
+**When/how:** Open the socket while the conversation screen needs live updates. Reuse the same optional retry UUID and payload for an unacknowledged send; the server reuses its persisted message instead of creating a duplicate. Reusing that ID with different text produces an `error` frame with `code: "CONFLICT"`; HTTP sends return 409 for this conflict. Invalid JSON or request-schema fields receive an `error` frame with `code: "VALIDATION_ERROR"` and `message: "Invalid chat message."`; the connection stays open and no message is persisted. HTTP schema errors return 422. Oversized or throttled frames may be dropped. Durable live-delivery intents retry publication after transient failures or process restarts, with bounded attempts and at-least-once publication: duplicates are possible, and publication does not prove a disconnected client received it. Deduplicate by server message `id`, reconnect with a fresh access token, and fetch REST history to recover missed messages. Close on logout or revoked authentication.
 
 ## Reusable nested data types
 
@@ -997,7 +999,7 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **56 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **61 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
 
 ## Invoice PDF and final item prices (2026-10-08)
 

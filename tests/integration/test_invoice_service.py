@@ -345,3 +345,55 @@ async def test_create_rejects_too_many_items(db_session: AsyncSession) -> None:
             courier_id=order.courier_id,
             data=_input(items=[_line() for _ in range(21)]),
         )
+
+
+async def test_tiny_price_invoice_persistence_and_promo_revision_have_bounded_discounts(
+    db_session: AsyncSession,
+) -> None:
+    from app.models import InvoiceItem
+    from sqlalchemy import select
+
+    order = await _assigned_order(db_session)
+    original = await _service(db_session).create_invoice(
+        order_id=order.id,
+        courier_id=order.courier_id,
+        data=_input(
+            items=[_line(title=str(n), unit_price_amount=Decimal("0.01")) for n in range(20)]
+        ),
+    )
+    promo = Promo(
+        code=f"TINY{uuid.uuid4().hex[:8].upper()}",
+        description="tiny cent allocation",
+        discount_type=PromoDiscountType.PERCENT,
+        percent_value=Decimal("50"),
+    )
+    db_session.add(promo)
+    await db_session.flush()
+    revised, _ = await _customer_promos(db_session).apply(
+        invoice_id=original.id,
+        customer_id=order.customer_id,
+        code=promo.code,
+        key="tiny-promo",
+    )
+    lines = list(
+        await db_session.scalars(
+            select(InvoiceItem)
+            .where(InvoiceItem.invoice_id == revised.id)
+            .order_by(InvoiceItem.position)
+        )
+    )
+    assert len(lines) == 20
+    assert [line.line_discount_amount for line in lines] == (
+        [Decimal("0.01")] * 10 + [Decimal("0.00")] * 10
+    )
+    assert sum((line.line_discount_amount for line in lines), Decimal("0.00")) == Decimal("0.10")
+    assert (
+        sum((line.line_total_amount for line in lines), revised.service_fee_amount)
+        == revised.total_amount
+    )
+    assert original.status is InvoiceStatus.CANCELLED
+    assert revised.id != original.id
+    historical = list(
+        await db_session.scalars(select(InvoiceItem).where(InvoiceItem.invoice_id == original.id))
+    )
+    assert all(line.line_discount_amount == Decimal("0.00") for line in historical)

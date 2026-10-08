@@ -1,4 +1,4 @@
-"""In-memory storage double (SPEC SECTION 5.1, 16.1).
+"""In-memory storage double.
 
 Lets the full media + order flow run with no S3. ``create_upload_url`` registers the
 key so a later ``head_object`` reports it, mirroring a completed client PUT; magic-byte

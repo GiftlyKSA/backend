@@ -1,4 +1,4 @@
-"""Order and order-media persistence (SPEC SECTION 10, 13, 20.C)."""
+"""Order and order-media persistence."""
 
 from __future__ import annotations
 

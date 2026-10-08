@@ -1,4 +1,4 @@
-"""Real push client via Supabase webhook / FCM / APNs (SPEC SECTION 5.1)."""
+"""Real push client via Supabase webhook / FCM / APNs."""
 
 from __future__ import annotations
 

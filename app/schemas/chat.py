@@ -1,8 +1,9 @@
-"""Pydantic contracts for the chat endpoints (SPEC SECTION 10, 20)."""
+"""Pydantic contracts for the chat endpoints."""
 
 from __future__ import annotations
 
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -11,6 +12,7 @@ class SendMessageRequest(BaseModel):
     """Send a text message into a conversation."""
 
     model_config = ConfigDict(extra="forbid")
+    client_message_id: UUID | None = None
     text: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
 
 
@@ -37,6 +39,7 @@ class SendChatMediaRequest(BaseModel):
     """Send up to five images, one video, or one recorded voice note."""
 
     model_config = ConfigDict(extra="forbid")
+    client_message_id: UUID | None = None
     storage_keys: list[Annotated[str, StringConstraints(max_length=512)]] = Field(
         min_length=1, max_length=5
     )

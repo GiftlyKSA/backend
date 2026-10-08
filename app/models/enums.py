@@ -1,4 +1,4 @@
-"""Domain enumerations, one-to-one with the native PG enums (SPEC SECTION 9).
+"""Domain enumerations, one-to-one with the native PG enums.
 
 Members are UPPER_SNAKE to match the database enum members exactly. These are the
 canonical Python-side names used across services, schemas, and the state machine.
@@ -37,7 +37,7 @@ class UserGender(StrEnum):
 
 
 class OrderStatus(StrEnum):
-    """Order lifecycle status (see the state machine in SPEC SECTION 9)."""
+    """Order lifecycle status (see app/services/order_state.py)."""
 
     NEW = "NEW"
     ASSIGNED = "ASSIGNED"

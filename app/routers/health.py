@@ -1,4 +1,4 @@
-"""Health endpoints (SPEC SECTION 19).
+"""Health endpoints.
 
 ``/api/health`` is a pure liveness probe with no dependencies so an orchestrator
 never restarts the container over a transient Redis blip. ``/api/health/ready``

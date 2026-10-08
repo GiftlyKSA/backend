@@ -112,7 +112,7 @@ existing accounts receive access/refresh tokens and their role.
 Access JWTs validate configured algorithm, issuer, audience, expiry, current role,
 deletion/ban status, credential version and revocation. Refresh tokens are stored as
 hashes, rotate and detect family reuse. Logout invalidates account credentials on all
-devices. Current review SEC-18 records the remaining access-token consequence of replay.
+devices. Detected refresh reuse also commits account-wide credential invalidation before returning 401, rejecting previously minted access tokens, current socket actions and other-device refresh/dashboard sessions. Every device must sign in again.
 Admin dashboard login uses environment-managed credentials and production-only TOTP,
 server-side sessions, CSRF protection and secure cookie settings.
 
@@ -220,19 +220,19 @@ after reauthentication. Cleanup and claim races must be verified on PostgreSQL.
 Image decoding is limited to 20 million pixels. Recording validation needs FFmpeg/
 ffprobe, with allowlisted protocols/demuxers, bounded output, process deadlines and Redis
 admission. Missing validators fail closed. Validations materialize bounded content in
-memory and use temporary files for recordings. Cancellation currently has an image-thread
-admission flaw (PERF-10); existing limits do not prove sustained safe capacity.
+memory for images and use bounded temporary files for recordings. Image decoding runs in an isolated subprocess with a deadline; cancellation terminates and reaps the decoder before releasing its admission lease. The decoder environment excludes application secrets. Existing limits do not prove sustained safe capacity.
 
 REST chat history is paginated and remains available for past orders to eligible
 participants. Live chat uses `/api/ws/conversations/{conversation_id}`. Order status
 uses `/api/ws/orders/{order_id}`, with committed snapshots, Pub/Sub hints and periodic
 reconciliation. Reconnect through REST; Redis Pub/Sub is not durable event storage.
 Committed chat sends retain their successful response when notification delivery fails.
-There is no durable client-send idempotency/outbox guarantee yet.
+Text, media and socket sends accept an optional `client_message_id` UUID scoped to conversation and sender. Same-payload retries reuse the persisted message; changed payloads conflict. A reference-only PostgreSQL live outbox retries committed publication with fenced leases and at most eight attempts. Publication is at least once, so clients deduplicate by message ID and reload REST history after reconnecting. Redis Pub/Sub remains ephemeral; retries do not establish client receipt.
 
-Use secure transport. Prefer supported Authorization/subprotocol authentication for the
-order stream. The chat stream still uses a token query parameter; ingress/query logging
-redaction remains deployment work. Never log live socket URLs containing credentials.
+Use secure transport. Prefer Authorization/subprotocol authentication for both order and
+chat streams. Chat accepts a Bearer header or `giftly.chat` plus `bearer.<JWT>` subprotocols,
+with legacy query-token compatibility. Ingress/query logging redaction remains deployment
+work. Never log socket credentials, including handshake headers and protocols.
 
 ## 6. Configuration and secrets
 
@@ -955,3 +955,10 @@ review confirmed matching model/migration predicates and safe concurrent retry/r
 Full PostgreSQL/Redis/native decoder verification and public deployment remain pending;
 previous broad-suite date/Redis failures were not hidden. No Docker or production writes.
 API contracts are unchanged; no mobile changes are required.
+
+
+### Chat retry recovery rollout — 2026-10-08
+
+Apply `0026_chat_retry_recovery` after `0025_measured_read_indexes` before starting the updated API, Taskiq worker and scheduler. It adds nullable client-send UUIDs, a conversation/sender/UUID uniqueness constraint and a reference-only `chat_live_deliveries` table with a pending index. Existing messages retain null client IDs and receive no retrospective live fanout. New message content remains encrypted in the message table; the outbox stores references and claim/retry metadata. The scheduler recovers eligible live-delivery intents every minute using bounded claims and fenced leases; exhausted attempts remain visible for investigation.
+
+Rollback requires stopping the updated services and deploying the prior application together with a downgrade to `0025_measured_read_indexes`. Downgrade removes client-send identities and pending live retry metadata while retaining committed message rows and ciphertext. It therefore loses retry deduplication and pending publication recovery; coordinate a maintenance window and review pending intents before rollback. Deployment and real-provider acceptance remain UNCONFIRMED.

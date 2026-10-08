@@ -1,4 +1,4 @@
-"""Pydantic contracts for device-token registration (SPEC SECTION 13)."""
+"""Pydantic contracts for device-token registration."""
 
 from __future__ import annotations
 

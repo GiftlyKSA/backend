@@ -1,4 +1,4 @@
-"""Invoice authoring and lifecycle service (SPEC SECTION 11, 14).
+"""Invoice authoring and lifecycle service.
 
 The courier authors an itemised invoice; the platform computes the service fee, the
 discount allocation through the single pricing engine (``core/pricing.py``).

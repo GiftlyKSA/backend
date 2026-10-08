@@ -1,4 +1,4 @@
-"""User profile routes (SPEC SECTION 19).
+"""User profile routes.
 
 The client fetches profile data here rather than from the JWT (which carries only
 ids), so edits take effect immediately. Ownership is implicit: the actor id comes from

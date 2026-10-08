@@ -20,6 +20,7 @@ import pytest
 import pytest_asyncio
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
+from app.core.exceptions import InsufficientFundsError
 from app.models import PaymentIntent, User, Wallet
 from app.models.enums import (
     PaymentIntentStatus,
@@ -178,8 +179,7 @@ async def test_overdraft_of_user_wallet_is_blocked(db_session: AsyncSession) -> 
     service = MoneyService(repo)
     wallet = await _make_user_wallet(db_session, WalletType.CUSTOMER)
     gateway = await repo.get_system(WalletType.SYSTEM_GATEWAY)
-    # Debiting a user wallet below zero violates chk_balance_non_negative.
-    with pytest.raises(IntegrityError):
+    with pytest.raises(InsufficientFundsError):
         await service.post_group(
             correlation_id=uuid.uuid4(),
             legs=[
@@ -463,3 +463,167 @@ async def test_reconciliation_snapshot_survives_post_between_reads(
         after = await MoneyService(WalletRepository(verifier)).reconcile()
         assert after.ok, after.drifts
         assert after.correlations_checked == baseline.correlations_checked + 1
+
+
+async def test_wallet_debit_waits_for_concurrent_reservation_and_rejects_stale_available(
+    committing_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with committing_factory() as setup:
+        wallet = await _make_user_wallet(setup, WalletType.CUSTOMER)
+        repo = WalletRepository(setup)
+        gateway = await repo.get_system(WalletType.SYSTEM_GATEWAY)
+        intent = await _make_topup_intent(setup, wallet.user_id, Decimal("100.00"))
+        await MoneyService(repo).credit_topup(
+            user_wallet_id=wallet.id,
+            amount=Decimal("100.00"),
+            intent_id=intent.id,
+        )
+        wallet_id, user_id, gateway_id = wallet.id, wallet.user_id, gateway.id
+        await setup.commit()
+
+    async with committing_factory() as payer, committing_factory() as reserver:
+        payer_repo = WalletRepository(payer)
+        payer_money = MoneyService(payer_repo)
+        assert await payer_money.available_balance(user_id) == Decimal("100.00")
+        await MoneyService(WalletRepository(reserver)).hold_funds(
+            wallet_id=wallet_id,
+            amount=Decimal("80.00"),
+        )
+        locking = asyncio.Event()
+        original_lock = payer_repo.lock_wallets
+
+        async def signal_lock(wallet_ids):
+            locking.set()
+            return await original_lock(wallet_ids)
+
+        monkeypatch.setattr(payer_repo, "lock_wallets", signal_lock)
+        debit = asyncio.create_task(
+            payer_money.post_group(
+                correlation_id=uuid.uuid4(),
+                legs=[
+                    Leg(wallet_id, Decimal("-80.00"), TransactionType.PAYMENT),
+                    Leg(gateway_id, Decimal("80.00"), TransactionType.PAYMENT),
+                ],
+            )
+        )
+        await asyncio.wait_for(locking.wait(), timeout=5)
+        assert not debit.done()
+        await reserver.commit()
+        with pytest.raises(InsufficientFundsError):
+            await asyncio.wait_for(debit, timeout=5)
+        await payer.rollback()
+        refreshed = await payer_repo.get_by_user(user_id)
+        assert refreshed is not None
+        assert (refreshed.balance, refreshed.held_balance) == (Decimal("100.00"), Decimal("80.00"))
+        assert (await payer_money.reconcile()).ok
+
+
+async def test_legacy_payment_consumes_only_own_hold_and_replay_preserves_others(
+    db_session: AsyncSession,
+) -> None:
+    repo = WalletRepository(db_session)
+    money = MoneyService(repo)
+    wallet = await _make_user_wallet(db_session, WalletType.CUSTOMER)
+    intent = await _make_topup_intent(db_session, wallet.user_id, Decimal("100.00"))
+    await money.credit_topup(
+        user_wallet_id=wallet.id, amount=Decimal("100.00"), intent_id=intent.id
+    )
+    await money.hold_funds(wallet_id=wallet.id, amount=Decimal("100.00"))
+    gateway = await repo.get_system(WalletType.SYSTEM_GATEWAY)
+    legs = [
+        Leg(
+            wallet.id,
+            Decimal("-25.00"),
+            TransactionType.PAYMENT,
+            idempotency_key=f"legacy:{uuid.uuid4()}",
+        ),
+        Leg(gateway.id, Decimal("25.00"), TransactionType.PAYMENT),
+    ]
+    for expected in (True, False):
+        assert (
+            await money.post_group(
+                legs=legs,
+                correlation_id=uuid.uuid4(),
+                held_wallet_id=wallet.id,
+                held_amount=Decimal("25.00"),
+            )
+            is expected
+        )
+        await db_session.refresh(wallet)
+        assert (wallet.balance, wallet.held_balance) == (Decimal("75.00"), Decimal("75.00"))
+    assert (await money.reconcile()).ok
+
+
+async def test_distinct_invoice_payment_cannot_consume_gateway_payment_reservation(
+    committing_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.models import Invoice, Order
+    from app.models.enums import InvoiceStatus, OrderStatus
+
+    from tests.integration.test_payment_service import _issued_invoice, _service
+
+    async with committing_factory() as setup:
+        user, _, first_invoice = await _issued_invoice(setup)
+        _, second_order, second_invoice = await _issued_invoice(setup)
+        second_order.customer_id = user.id
+        second_invoice.items_net_amount = Decimal("1000.00")
+        second_invoice.courier_fee_amount = Decimal("0.00")
+        second_invoice.service_fee_amount = Decimal("0.00")
+        second_invoice.net_after_discount_amount = Decimal("1000.00")
+        second_invoice.total_amount = Decimal("1000.00")
+        repo = WalletRepository(setup)
+        wallet = await repo.get_by_user(user.id)
+        assert wallet is not None
+        topup = await _make_topup_intent(setup, user.id, Decimal("630.00"))
+        await MoneyService(repo).credit_topup(
+            user_wallet_id=wallet.id,
+            amount=Decimal("630.00"),
+            intent_id=topup.id,
+        )
+        user_id = user.id
+        first_invoice_id, second_invoice_id = first_invoice.id, second_invoice.id
+        await setup.commit()
+
+    async with committing_factory() as payer, committing_factory() as reserver:
+        service = _service(payer, AsyncMock())
+        read_available, reserved = asyncio.Event(), asyncio.Event()
+        original_available = service._money.available_balance
+
+        async def stale_available(user_id):
+            available = await original_available(user_id)
+            read_available.set()
+            await reserved.wait()
+            return available
+
+        monkeypatch.setattr(service._money, "available_balance", stale_available)
+        payment = asyncio.create_task(
+            service.pay_invoice(
+                invoice_id=first_invoice_id,
+                customer_id=user_id,
+            )
+        )
+        await asyncio.wait_for(read_available.wait(), timeout=5)
+        pending = await _service(reserver, AsyncMock()).pay_invoice(
+            invoice_id=second_invoice_id,
+            customer_id=user_id,
+        )
+        assert pending.status == "PENDING"
+        assert pending.amount_from_wallet == Decimal("630.00")
+        assert pending.amount_from_gateway == Decimal("370.00")
+        await reserver.commit()
+        reserved.set()
+        with pytest.raises(InsufficientFundsError):
+            await asyncio.wait_for(payment, timeout=5)
+        await payer.rollback()
+        wallet = await WalletRepository(payer).get_by_user(user_id)
+        assert wallet is not None
+        assert (wallet.balance, wallet.held_balance) == (Decimal("630.00"), Decimal("630.00"))
+        first = await payer.get(Invoice, first_invoice_id)
+        assert first is not None and first.status is InvoiceStatus.ISSUED
+        order = await payer.get(Order, first.order_id)
+        assert order is not None and order.status is OrderStatus.WAITING_PAYMENT
+        assert (await service._money.reconcile()).ok

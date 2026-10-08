@@ -84,7 +84,7 @@ clients localize API timestamps. Financial amounts use exact decimal arithmetic.
 2. **Order:** a customer creates an order. An eligible courier in the same city accepts
    it through an atomic claim. Committed changes reach the customer through the order stream.
 3. **Chat and media:** participants retrieve paginated history or exchange live messages.
-   Media uses scoped upload grants, validation and temporary private access links.
+   Media uses scoped upload grants, isolated image decoding and temporary private access links. Optional scoped client-send UUIDs deduplicate retries; committed messages enqueue durable live-publication intents in PostgreSQL.
 4. **Billing:** final courier-entered item prices and fees determine totals; no additional VAT is charged.
    Ledger and settlement services manage balances. Production payment processing is
    disabled until Dhamen integration and callback verification are validated.
@@ -102,8 +102,7 @@ Compose uses a dedicated migration service followed by the dependent services.
 API and worker replicas share database state, queues and coordination. Growth requires
 connection budgets, bounded jobs, indexed queries and measured memory/CPU use. WebSocket
 clients recover persisted state through HTTP after reconnecting. Pub/Sub alone does not
-guarantee message delivery; chat delivery and other reliability follow-ups remain in
-the [task tracker](tasks.md).
+guarantee client receipt. Migration `0026_chat_retry_recovery` adds a bounded, fenced live-publication outbox; workers retry publication at least once, so clients deduplicate server message IDs and reload persisted history after reconnecting. Other reliability follow-ups remain in the [task tracker](tasks.md).
 
 ## Security boundaries and current limits
 

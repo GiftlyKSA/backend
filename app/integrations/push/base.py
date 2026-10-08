@@ -1,4 +1,4 @@
-"""The push-notification client contract (SPEC SECTION 5.1)."""
+"""The push-notification client contract."""
 
 from __future__ import annotations
 

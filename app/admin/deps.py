@@ -1,7 +1,7 @@
 """Admin dashboard request wiring: sessions, CSRF, and service assembly.
 
 The dashboard is a browser surface with cookies, so CSRF protection is mandatory on
-every state-changing form (SPEC SECTION 18.2). Unauthenticated access raises
+every state-changing form. Unauthenticated access raises
 :class:`AdminRedirect`, which the app turns into a redirect to the login page.
 """
 

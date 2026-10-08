@@ -1,4 +1,4 @@
-"""Fixed-window request rate limiting backed by Redis (SPEC SECTION 17.2 A04).
+"""Fixed-window request rate limiting backed by Redis.
 
 A single Redis counter per identity per window, advanced by one atomic Lua eval —
 ``INCR``, TTL set (or repair), and ceiling check in one round trip, so a crash can

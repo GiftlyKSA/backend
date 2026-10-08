@@ -11,14 +11,16 @@ from app.models.enums import UserRole
 from app.repositories.city_repository import CityRepository
 from app.seed import seed_cities_in_session
 from app.services.city_service import CityService
-from sqlalchemy import delete, select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def test_city_seed_is_idempotent_and_inactive_cities_are_rejected(
     db_session: AsyncSession,
 ) -> None:
-    await db_session.execute(delete(City))
+    await db_session.execute(
+        text("CREATE TEMP TABLE cities (LIKE public.cities INCLUDING ALL) ON COMMIT DROP")
+    )
     assert await seed_cities_in_session(db_session) == 20
     assert await seed_cities_in_session(db_session) == 0
     service = CityService(CityRepository(db_session))

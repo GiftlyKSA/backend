@@ -1,4 +1,4 @@
-"""Wallet routes (SPEC SECTION 19).
+"""Wallet routes.
 
 Reads are scoped to the authenticated user's own wallet — ownership is enforced by
 filtering on the actor id from the JWT, never a path or body value.

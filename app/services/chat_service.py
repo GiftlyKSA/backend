@@ -1,9 +1,8 @@
-"""Chat service: encrypted messaging over an order's conversation (SPEC SECTION 10, 20).
+"""Encrypted messaging over an order's conversation.
 
 Message content and the inbox preview are AES-256-GCM encrypted at rest, bound by AAD to
-their row and column. Plaintext never lands in an unencrypted column (ADR 0004). On send
-the service publishes the (decrypted) message to a Redis channel so every connected
-WebSocket for that conversation — on any instance — receives it in real time.
+their row and column. Committed messages carry durable delivery references. Authorized
+live delivery decrypts content and publishes it to the conversation's Redis channel.
 """
 
 from __future__ import annotations
@@ -11,15 +10,16 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 
 from redis.asyncio import Redis
 
 from app.core.config import Settings
 from app.core.crypto import build_aad, build_cipher
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.models import Conversation, Message, MessageAttachment
 from app.models.enums import MessageType
+from app.repositories.chat_live_delivery_repository import ChatLiveDeliveryRepository
 from app.repositories.chat_repository import ChatRepository
 from app.services.courier_eligibility_service import CourierEligibilityService
 
@@ -126,7 +126,7 @@ class ChatService:
         self, *, conversation_id: uuid.UUID, actor_id: uuid.UUID, for_update: bool = False
     ) -> Conversation:
         """Return an eligible actor's conversation or hide it as not found."""
-        await self._eligibility.require_eligible_actor(actor_id)
+        await self._eligibility.require_marketplace_actor(actor_id)
         if for_update:
             conversation = await self._chat.get_for_actor(
                 conversation_id, actor_id, for_update=True
@@ -135,17 +135,44 @@ class ChatService:
             conversation = await self._chat.get_for_actor(conversation_id, actor_id)
         if conversation is None:
             raise NotFoundError("Conversation not found.")
+        if for_update:
+            await self._eligibility.require_marketplace_actor(actor_id)
         return conversation
 
     async def get_conversation_for_order(
         self, *, order_id: uuid.UUID, actor_id: uuid.UUID
     ) -> Conversation:
         """Return an order's conversation to its eligible customer or courier."""
-        await self._eligibility.require_eligible_actor(actor_id)
+        await self._eligibility.require_marketplace_actor(actor_id)
         conversation = await self._chat.get_for_order_and_actor(order_id, actor_id)
         if conversation is None:
             raise NotFoundError("Conversation not found.")
         return conversation
+
+    async def replay_message(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        sender_id: uuid.UUID,
+        text: str,
+        client_message_id: uuid.UUID | None,
+        storage_keys: list[str],
+    ) -> ChatMessage | None:
+        """Authorize freshly and reuse a committed send only for the same payload."""
+        await self._require_conversation(conversation_id, sender_id, for_update=True)
+        if client_message_id is None:
+            return None
+        row = await self._chat.message_for_client_id(conversation_id, sender_id, client_message_id)
+        if row is None:
+            return None
+        attachments = await self._chat.attachments_for_messages([row.id])
+        content = self._decrypt_content(conversation_id, row.content_encrypted)
+        if content != text or [item.storage_key for item in attachments] != storage_keys:
+            raise ConflictError("This client message ID was already used for a different message.")
+        return replace(
+            self._to_dto(row, content),
+            attachments=[attachment_dto(item) for item in attachments],
+        )
 
     async def send_message(
         self,
@@ -154,12 +181,23 @@ class ChatService:
         sender_id: uuid.UUID,
         text: str,
         message_type: MessageType = MessageType.TEXT,
+        client_message_id: uuid.UUID | None = None,
     ) -> ChatMessage:
         """Encrypt and append a message for its caller to commit.
 
         Raises:
             NotFoundError: The sender does not participate in the conversation.
         """
+        if message_type == MessageType.TEXT and client_message_id is not None:
+            replay = await self.replay_message(
+                conversation_id=conversation_id,
+                sender_id=sender_id,
+                text=text,
+                client_message_id=client_message_id,
+                storage_keys=[],
+            )
+            if replay is not None:
+                return replay
         conversation = await self._require_conversation(conversation_id, sender_id, for_update=True)
         content = self._encrypt_content(conversation_id, text)
         preview_text = text or {
@@ -175,12 +213,32 @@ class ChatService:
             preview_encrypted=preview,
             sender_is_customer=sender_id == conversation.customer_id,
             message_type=message_type,
+            client_message_id=client_message_id,
         )
         return self._to_dto(message, text)
 
-    async def publish_message(self, message: ChatMessage) -> None:
+    async def publish_message(self, message: ChatMessage) -> bool:
         """Publish a committed message for live delivery."""
-        await self._publish(uuid.UUID(message.conversation_id), message)
+        delivery = ChatLiveDeliveryRepository(self._chat.session)
+        batch = await delivery.claim_pending(
+            now=datetime.now(UTC),
+            limit=1,
+            lease_seconds=30,
+            message_id=uuid.UUID(message.id),
+        )
+        await self._chat.session.commit()
+        if not batch.claims:
+            return False
+        claim = batch.claims[0]
+        try:
+            await self._publish(uuid.UUID(message.conversation_id), message)
+        except Exception:
+            await delivery.retry(claim, now=datetime.now(UTC))
+            await self._chat.session.commit()
+            raise
+        await delivery.advance(claim, now=datetime.now(UTC))
+        await self._chat.session.commit()
+        return True
 
     async def list_messages(
         self,
@@ -220,7 +278,7 @@ class ChatService:
         before: tuple[datetime, uuid.UUID] | None,
     ) -> list[InboxItem]:
         """Return a user's conversations with decrypted previews and unread counts."""
-        await self._eligibility.require_eligible_actor(user_id)
+        await self._eligibility.require_marketplace_actor(user_id)
         conversations = await self._chat.list_for_user(user_id, limit=limit, before=before)
         items: list[InboxItem] = []
         for conv in conversations:

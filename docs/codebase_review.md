@@ -1,479 +1,126 @@
 # Giftly codebase review
 
-## Scoped invoice VAT removal — 2026-10-08
+**Reviewed:** 2026-10-08 · **Scope:** remaining confirmed findings and combined changes against `4a10919`.
 
-Courier item prices are final. Separate VAT input/output/configuration, computation,
-PDF/admin rows, receipt variables and settlement tax legs have been removed. Service
-fees, courier fees, promo allocation, commission, role/ownership checks and payment
-interlocks remain. Migration0024 follows0023; it removes the tax columns, empty system
-tax wallet and native enum labels without rewriting applied migration history.
+[Documentation](documentation.md) · [API contract](api.md) · [Outstanding tasks](tasks.md)
 
-Verification: full local suite874passed217skipped1upstreamwarning; all isolated
-unit tests863passed1skipped; merged primary unit tests927passed1skipped. Ruff,
-strict mypy, API drift, PDF cache and both hook stages passed in the isolated release.
-The purple English PDF was rendered and visually checked, with GMT+3 dates and no VAT.
-Full offline upgrade and scoped downgrade SQL generation passed; one Alembic head.
-
-**Deployment limitation:** PostgreSQL application/rollback and race checks remain
-UNCONFIRMED locally. No Docker or remote database writes were performed. Migration
-refuses any tax-bearing invoice/ledger data or nonempty tax wallet; it does not erase
-financial history. Review a backup and separately authorize reconciliation/reset of
-disposable data if the guard fires. Coordinate API/mobile rollout: obsolete tax fields
-in strict invoice creation bodies return422. No new general security certification or
-resolution of unrelated open findings is implied by this scoped change.
-
-## Scoped mobile-read review — 2026-10-07
-
-Scope: invoice listing, wallet statement/history date filters, order-media reads and
-their new account eligibility guard. This is not a new full-codebase security certification.
-
-| ID | Category | Severity / score | Status | Evidence / impact | Fix / verification |
-| --- | --- | --- | --- | --- | --- |
-| MOB-R1 | Reliability / validation | Medium (5/10) | Fixed | reporting_dates.py converted the first calendar day before adding the exclusive day, causing an OverflowError/500 for a valid upper-only bound. | Advance the local day before UTC conversion; reproduced failing regression now passes. |
-| MOB-R2 | Performance / SQL verification | Unverified risk | Pending disposable DB | Bounded page queries and SQL sums compiled; real invoice revision/ledger aggregation plans and PostgreSQL integration were not available locally. | Run new integration tests and EXPLAIN on representative data; existing ownership/date indexes reused, no speculative migration. |
-
-Independent read-only review found no other concrete defects in ownership/cursor scope,
-latest-visible invoice revisions, money serialization, signed media URLs or the final
-active-account guard. New reads use private,no-store; collections are bounded and do
-not perform per-row relationship queries. Statement page/totals share one SQL snapshot,
-but later pages refresh totals if ledger state changes. Existing unrestricted financial
-and audit admin CRUD remains an accepted integrity risk; this change does not claim
-immutable statements. Deployment and real-provider behavior remain UNCONFIRMED.
-
-Verification: focused regression tests passed, including HTTP schema/role boundaries
-and inactive/deleted/unverified-account cases. Ruff/format/strict mypy passed on the
-isolated release checkout. Final full suite: 740 passed, 204 skipped, four Starlette deprecation warnings.
-Both pre-commit and pre-push hook suites passed.
-No Docker, real-provider request or production database operation ran.
-
-
-**Review date:** 2026-10-04 · **Status:** current review after prior-finding fixes.
-
-[Project documentation](documentation.md) · [API](api.md) · [Outstanding tasks](tasks.md)
-
-## Executive assessment
-
-The previous confirmed HTTP, media-transaction, notification paging, migration ownership,
-profile and misleading-admin-display findings were addressed with targeted patches and
-regression checks. The new review still finds financial correctness, authentication,
-delivery and resource-control issues. This is **not** a vulnerability-free certification
-or proof that production integration and capacity are ready.
-
-Security takes precedence, followed by application/SQL performance, memory/CPU efficiency
-and scalable maintainability. Severity scores are this review's prioritization estimates
-(0–10), not CVSS. **High**: 7–10; **Medium**: 4–6; **Low**: 1–3. Findings within each
-category are ordered by severity and impact. **Open** requires a change; **Needs validation**
-requires measurements/external proof; **Accepted risk** reflects an explicit user decision.
+Security comes first, followed by application/SQL efficiency, memory/CPU use and maintainable scalability. Scores are priority estimates, not CVSS: High 7–10, Medium 4–6, Low 1–3. Implementation, local verification, publication and deployment are separate states. This review does not certify that the system has no vulnerabilities.
 
 ## Global priority index
 
-| Priority | ID | Category / finding | Severity | Status |
+| Priority | Finding | Category | Severity | Current disposition |
 | --- | --- | --- | --- | --- |
-| P1 | FIN-01 | Discount rounding creates negative line discounts | High 7 | Open; reproduced |
-| P1 | FIN-02 | Wallet payment can consume another reservation | High 7 | Open; locking gap confirmed |
-| P1 | SEC-19 | Production settings accept published development keys | High 7 | Open; configuration gap |
-| P2 | SEC-18 | Refresh reuse leaves existing access credentials valid | Medium 6 | Open; reproduced |
-| P2 | PERF-10 | Cancelled decoding releases admission too early | Medium 6 | Open; reproduced |
-| P2 | REL-12 | Missing-email receipt backlog starves deliverable receipts | Medium 6 | Open; source confirmed |
-| P2 | PERF-11 | Unlimited device registration creates unbounded push work | Medium 5 | Open; growth path confirmed |
-| P2 | REL-13 | Committed chat has no durable delivery/idempotent retry | Medium 5 | Open; known limitation |
-| P2 | API-02 | Malformed inbox cursor silently restarts pagination | Medium 4 | Open; source confirmed |
-| P2 | REL-14 | Unexpected errors lose correlation/security headers | Medium 4 | Open; reproduced |
-| P3 | QUAL-02 | WebSocket text bypasses REST input schema | Low 3 | Open; boundary reproduced |
-| P3 | QUAL-03 | Source comments reference removed design documents | Low 2 | Open; source confirmed |
-| Gate | SQL-01 | Representative query/pool/resource capacity proof | Medium 5 | Needs validation |
-| Gate | PERF-09 | Audit retention/export and write amplification | Medium 5 | Needs validation |
-| Gate | SEC-15 | Query-token and ingress logging exposure | Medium 5 | Needs validation |
-| Gate | SEC-20 | Reconcile GitHub dependency alerts with current lockfile | Medium 5 | Needs validation; alert details unavailable |
-| Gate | OPS-01 | New migrations, decoder and service startup on deployment | Medium 5 | Needs validation |
-| Gate | INT-01 | Live vendor contracts and Dhamen readiness | Medium 5 | External scope; needs validation |
-| Accepted | SEC-16 | Privileged maintenance bypasses financial immutability | High 9 | User-approved unrestricted CRUD |
-| Accepted | SEC-17 | Privileged admin can alter/delete action audit history | High 9 | User-approved unrestricted CRUD |
+| Policy | SEC-16 | Financial integrity | High 9/10 | Accepted: unrestricted authenticated admin financial CRUD retained |
+| Policy | SEC-17 | Audit integrity | High 9/10 | Accepted: unrestricted authenticated admin audit CRUD retained |
+| Excluded | SEC-19 | Secret configuration | High 7/10 | Deferred by explicit user instruction; public test-secret rejection not implemented |
+| P1 | FIN-01 | Discount allocation | High 7/10 | Fixed; exact cent allocation and bounded shares |
+| P1 | FIN-02 | Wallet reservations | High 7/10 | Fixed; freshly locked funds and unrelated holds preserved |
+| P2 | SEC-18 | Authentication | Medium 6/10 | Fixed; refresh replay commits account-wide credential revocation |
+| P2 | PERF-10 | CPU/memory and cancellation | Medium 6/10 | Fixed; isolated image decoding and owned child cleanup |
+| P2 | REL-12 | Receipt delivery | Medium 6/10 | Fixed; eligible email candidates selected before LIMIT |
+| P2 | PERF-11 | Push fanout | Medium 5/10 | Fixed; serialized ten-device quota and bounded pages |
+| P2 | REL-13 | Chat recovery | Medium 5/10 | Fixed; scoped send identity and durable fenced live retries |
+| P2 | API-02 | Pagination | Medium 4/10 | Fixed; malformed nonempty inbox cursors return 400 |
+| P2 | REL-14 | Failure handling | Medium 4/10 | Fixed; correlated protected safe 500 responses |
+| P3 | QUAL-02 | Input consistency | Low 3/10 | Fixed; REST/WebSocket share the typed send schema |
+| P3 | QUAL-03 | Readability | Low 2/10 | Fixed; obsolete design citations removed from application source |
+| Gate | SEC-15 | Credential transport | Medium 5/10 | Mitigated in source; ingress redaction remains UNCONFIRMED |
+| Gate | SQL-01 | Capacity measurement | Medium 5/10 | Partially measured; representative deployment load remains open |
+| Gate | PERF-09 | Audit retention | Medium 5/10 | Policy and independent archive validation needed |
+| Gate | SEC-20 | Supply chain | Medium 5/10 | Current remote alert disposition remains UNCONFIRMED |
+| Gate | OPS-01 | Runtime/deployment | Medium 5/10 | Full service/native media/CI and public rollout validation needed |
+| Gate | INT-01 | Vendor contracts | Medium 5/10 | External validation; production provider integration not certified |
 
-## 1. Security and authentication
+## Security and authentication
 
-### High
+### High: accepted risks and explicit exclusion
 
-#### SEC-19 — Known testing keys are accepted by production configuration
+**SEC-16 — Privileged financial maintenance (9/10, accepted).** `app/services/admin_table_service.py`, `app/repositories/admin_table_repository.py` and migration `0002_schema_guards` retain the user-approved maintenance override. An authorized mistaken or compromised administrator can alter posted financial history. Authentication and CSRF cannot prove accounting correctness. Preserve the requested CRUD; restrict administrative access operationally and use independently reviewed reconciliation and backup recovery. An immutable ledger maintenance policy requires a new product decision.
 
-- **Status / score:** Open, High 7/10; source-confirmed startup validation gap. Real deployment keys were not inspected.
-- **Evidence:** `app/core/config.py:190` checks encryption lengths/key versions; JWT validation checks length; production interlocks check nonempty provider configuration. `.env.example` publishes an all-zero AES key and predictable local JWT/OTP/session keys. None is rejected merely for matching a public testing value.
-- **Trigger / impact:** copying testing secrets into otherwise valid production configuration can permit token forgery or decryptable personal/chat data. It is unsafe to infer production key strength from a successful Settings construction.
-- **Minimal fix:** reject the exact published test values and clearly patterned placeholders in production, preserve development/test behavior, and enforce externally generated keys through deployment secret handling. Do not claim entropy can be fully measured from string length.
-- **Expected impact:** unsafe deployments fail before traffic; no API contract change. Existing unsafe environments require key rotation and a reviewed ciphertext/session migration.
-- **Verify:** negative boot tests for each published secret; valid randomized production settings; rotation/rollback on disposable encrypted data. Never silently replace encryption keys.
+**SEC-17 — Mutable audit history (9/10, accepted).** Generic admin CRUD still includes audit logs. Changes to audit rows do not recursively audit themselves. A privileged actor can erase investigation evidence. An independently secured archive would preserve evidence after local edits or deletions; its delivery, restoration and access controls remain unverified. This risk is not reported as fixed.
 
-### Medium
+**SEC-19 — Public testing secrets accepted in production (7/10, deferred).** `app/core/config.py` validates key sizes and configuration interlocks without rejecting exact published test values. Copying public test secrets into a real environment can permit credential forgery or exposed encrypted data. The user explicitly excluded the proposed rejection rule. Development examples and secret checks were not changed; no real deployment secrets were inspected. Replace testing values through the protected deployment secret store before real use. Safe rotation requires a separately reviewed ciphertext/session plan.
 
-#### SEC-18 — Refresh replay detection does not revoke minted access tokens
+### Medium: fixed and remaining validation
 
-- **Status / score:** Open, Medium 6/10; reproduced with offline collaborators.
-- **Evidence:** `app/services/auth_service.py:234` revokes only `row.family_id` and commits on replay. `app/repositories/auth_repository.py:152` does not change `users.auth_version`; `validate_access_claims` relies on that version and JTI denial.
-- **Trigger / impact:** after reuse detection, an already issued access JWT still passes the current-account check until expiry. A detected compromised session can retain HTTP/WebSocket access.
-- **Minimal fix:** invalidate account credentials in the committed replay transaction, or add family-bound access revocation. Preserve the lock order and explicit commit that makes denial durable.
-- **Expected impact:** compromised credentials lose access immediately; account-wide invalidation also signs out other devices and must be documented.
-- **Verify:** replay a rotated token and reject earlier/newer access tokens, refresh tokens and socket actions; assert revocation survives the 401 and concurrent rotation.
+| ID / score | Evidence and original impact | Minimal change and system effect | Verification |
+| --- | --- | --- | --- |
+| SEC-18 / 6 | `app/services/auth_service.py:240` previously revoked only one refresh family; minted access JWTs remained valid after detected replay. | Reuse existing credential invalidation under User → RefreshToken locks, advance auth_version, revoke refresh/admin sessions and commit before 401. All account devices must authenticate again. Current HTTP/socket account checks reject old credentials. | Offline access checks and PostgreSQL replay/rotation/session tests; explicit denial survives rollback of the outer error response. |
+| SEC-15 / 5 | Legacy query JWTs can appear in ingress logs. Actual credential capture is UNCONFIRMED. | `app/routers/chat.py:612` prefers Authorization Bearer, then `bearer.JWT` subprotocol; legacy query remains compatible. Only `giftly.chat` is echoed as negotiated protocol. Production origins are checked when supplied; native clients may omit Origin. | Transport/precedence/auth checks; do not claim upstream query/header redaction has been verified. Next: fake-token probes at every ingress boundary, without real credentials. |
+| SEC-20 / 5 | Earlier pushes reported GitHub alerts, but authenticated alert metadata was unavailable. A previous complete locked-graph audit was clear after targeted patches. | Reconcile each remote advisory with the exact current master lockfile/image, and apply only relevant reviewed version changes. No broad dependency churn or suppression. | Earlier audit evidence is dated 2026-10-04, not a current remote-alert clearance. CI and repository security-maintainer confirmation remain required. |
 
-#### SEC-15 — Chat query-token exposure depends on unverified ingress logging
+The device and chat review also reproduced concurrent account changes. Device registration now checks current locked role/status before token mutation. Chat checks current marketplace eligibility before reads/decryption and again after acquiring the conversation lock. Delayed workers cannot decrypt/publish for inactive senders. PostgreSQL barrier tests reproduce a committed ban between the initial check and lock acquisition.
 
-- **Status / score:** Needs validation, Medium 5/10; legacy design present, credential capture UNCONFIRMED.
-- **Evidence:** `app/routers/chat.py:536` uses the `token` query parameter. The order stream also supports Authorization/subprotocol methods. No production ingress configuration was available for inspection.
-- **Impact:** a proxy/access/error log that records query strings can retain live access credentials. Backend redaction cannot undo logs written by upstream infrastructure.
-- **Minimal fix:** verify query/header redaction and migrate chat to a short-lived socket ticket or supported header/subprotocol authentication while preserving existing clients during rollout.
-- **Expected impact:** safer credential transport; a ticket changes client connection sequencing and needs bounded expiry/replay controls.
-- **Verify:** controlled fake-token probes at every logging boundary, ticket expiry/reuse tests and compatibility checks. Never use real tokens for log inspection.
+## Financial correctness
 
-### Supply-chain validation
+### High: fixed
 
-#### SEC-20 — GitHub dependency-alert disposition remains unconfirmed
+| ID / score | Trigger and impact if unresolved | Fix and expected system impact | Evidence / verification |
+| --- | --- | --- | --- |
+| FIN-01 / 7 | Twenty SAR 0.01 items with a 50% discount produced a negative final component discount under residual-to-last rounding. Line prices became misleading despite a correct aggregate. | `app/core/pricing.py:195` uses integer-cent largest remainders with deterministic component-order ties. Every allocation stays within its component and the exact sum equals the discount. Decimal serialization and aggregate pricing policy remain unchanged. No historical invoices are silently rewritten. | Tiny/fixed/percentage/full discounts, zero courier fee and exact reconstruction regressions; pricing and invoice integration checks. Existing issued/paid malformed history, if any, needs an explicitly scoped reconciliation. |
+| FIN-02 / 7 | A payer's available balance could be read before another request reserved those funds, then incorrectly fund another invoice. | `app/services/money_service.py` checks gross debits against fresh locked available balances, consumes only the operation's own hold atomically and preserves other holds. Sorted wallet/ledger locking and under-lock replay checks retain double-entry and idempotency guarantees. | PostgreSQL two-session race: one request reserves SAR 630 while another tries a stale SAR 630 wallet payment; the second is rejected and the first hold, invoice and order state remain intact. Unit debit/hold and integration reconciliation tests. |
 
-- **Status / score:** Needs validation, Medium 5/10; alert presence is confirmed, current package applicability is UNCONFIRMED.
-- **Evidence:** an initial master push reported 20 alerts; the next reported four (three High, one Moderate). Alert metadata access returned HTTP 401. The production graph scan was clear; an expanded production/development scan identified four distinct virtualenv advisories (duplicated by platform markers), resolved by locking the minimal patched version21.7.13. The repeated complete-graph scan is now clear.
-- **Impact:** the local scan cannot prove GitHub's alert disposition or cover another deployment/image graph. The earlier warning must not be automatically dismissed as stale; current remote refresh needs authorized confirmation.
-- **Minimal action:** an authorized repository security maintainer should inspect each alert against the current master lockfile, relevant environment and upstream advisory, resolve applicable versions and document disposition with evidence.
-- **Expected impact:** reliable supply-chain release evidence; no automatic alert suppression or unrelated upgrades.
-- **Verify:** current-master graph scan, package/manifest reconciliation and exact-commit CI audit. System/container packages need their own scan.
+No cached authorization, available balance, unresolved payment state or client-calculated total authorizes a mutation. Monetary API values remain decimal strings. No new financial schema migration or production data correction is introduced by FIN-01/FIN-02.
 
-### Accepted High risks
+## Performance, SQL, memory and CPU
 
-#### SEC-16 — Financial maintenance bypass
+### Medium: fixed and measurement limits
 
-- **Status / score:** Accepted risk, High 9/10. The user explicitly retained unrestricted authorized admin CRUD.
-- **Evidence:** `app/repositories/admin_table_repository.py:184`, `app/services/admin_table_service.py:109`, and `app/migrations/versions/0002_schema_guards.py:35` permit authenticated maintenance to bypass normal posted-record guards.
-- **Impact:** an authorized malicious, compromised or mistaken administrator can alter financial history and undermine balance/settlement invariants. Authentication/CSRF does not prove an accounting change is valid.
-- **Mitigation / system impact:** preserve requested CRUD; restrict admin credentials operationally, require reviewed financial maintenance and independent reconciliation/backup recovery. An immutable accounting design would require a new user decision.
-- **Verify:** PostgreSQL authorized/unauthorized maintenance boundaries and deliberate corruption detection by reconciliation on disposable data.
+| ID / score | Original cost or risk | Change and expected effect | Evidence / limitation |
+| --- | --- | --- | --- |
+| PERF-10 / 6 | Cancelled Pillow threads continued consuming CPU after admission was released, allowing overlapping decoders. Native subprocess output could also block cleanup when pipes filled. | `app/services/image_decoder.py` performs complete validated JPEG/PNG decode in an isolated child. `chat_media_validation.py` owns spawn, bounded private files, 20-second deadline and 64 KiB output limits; cancellation drains writes and kills/reaps the child before releasing admission. Cleanup drains both output pipes after cancelling readers. | Native valid/misdeclared image and oversized two-megabyte output regressions; cancellation during process creation, repeated cancellation and output cleanup tested. Pixel limit remains 20 million. Python allocation limits are not a production RSS/cgroup guarantee. Native ffmpeg/ffprobe and concurrent deployment load remain open. |
+| PERF-11 / 5 | Unlimited registrations made recipient snapshots and push work grow without an account bound; generic fanout loaded complete token collections. | `app/services/device_service.py` serializes destination quota under the user lock: at most ten active devices, including safe token reassignment. Existing token refresh at ten succeeds; an eleventh returns 409 DEVICE_LIMIT_REACHED. `notification_service.py` pages generic fanout at 500. | PostgreSQL last-slot concurrency, foreign deletion/reassignment, rejected account changes and legacy 501-device paging tests. Provider invalid-token feedback is not implemented: do not delete valid tokens based on an invented age rule. Existing legacy over-quota accounts can unregister owned tokens. |
+| SQL-01 / 5 | Dataset/pool/snapshot costs need representative measurement; local tests alone cannot establish capacity. | Constant-query projections and five measured indexes in migration0025 are already released. Preserve bounded keysets and exact aggregates rather than blanket caching. Measure pool waits, p95/p99 latency, audit/snapshot writes and decoder RSS/CPU before increasing capacity. | Synthetic PostgreSQL plans and query counts exist; real distribution, multi-worker Redis/socket load and production pool headroom remain unverified. |
+| PERF-09 / 5 | Committed-row auditing, recipient snapshots and delivery state add storage/index/backup write amplification. | Retain action-only metadata auditing. Agree retention and independent archive access/restore policy before implementing bounded archival; do not silently purge records. Existing protected database export is not proof of a running independent archive. | Source growth path confirmed; production pressure, approved retention and archive restoration remain unverified. New chat delivery CRUD adds one metadata audit row per actual mutation. |
 
-#### SEC-17 — Editable/deletable audit history
+### Previously released API optimizations
 
-- **Status / score:** Accepted risk, High 9/10; explicit user decision.
-- **Evidence:** audit logs remain in `Base.metadata` and generic admin table CRUD. The action-only trigger deliberately avoids recursively auditing audit-log mutations.
-- **Impact:** a privileged actor can erase or alter the record used for investigation. The same database is not an independent tamper-evident archive.
-- **Mitigation / system impact:** preserve CRUD; externally archive attributable audit changes and verify restore/retention access controls. Actual external export is UNCONFIRMED.
-- **Verify:** independent archive survives local edits/deletion and access boundaries cannot be bypassed with a non-admin account.
-
-## 2. Financial correctness and concurrency
-
-### High
-
-#### FIN-01 — Rounding residue can produce negative item discounts
-
-- **Status / score:** Open, High 7/10; reproduced without external services.
-- **Evidence:** `app/core/pricing.py` rounds each proportional share, then assigns the entire residual to one last component. With twenty SAR0.01 items, a 50% promo and zero courier fee, the total discount is SAR0.10 but the last line discount becomes **−0.09** and its final price **0.10**.
-- **Impact:** valid small-price invoices contain nonsensical negative discounts and incorrect per-item prices. Arithmetic-only invoice-item constraints permit the outcome. Separate VAT has been removed; the allocation defect remains.
-- **Minimal fix:** deterministic bounded largest-remainder allocation with every share between zero and its component net, plus persisted nonnegative/bounded discount checks after reviewing old data.
-- **Expected impact:** correct cent allocation; some edge-case totals change legitimately. Existing issued/paid invoices need separate reviewed remediation, not silent rewriting.
-- **Verify:** tiny prices, twenty items, fixed/percent/full discounts, zero fees and exact sum invariants; PostgreSQL persistence and invoice revision behavior.
-
-#### FIN-02 — Available funds are read before wallet locking
-
-- **Status / score:** Open, High 7/10; source-confirmed locking gap. PostgreSQL concurrent reproduction remains UNCONFIRMED.
-- **Evidence:** `app/services/payment_service.py:235` reads available balance before escrow funding takes wallet locks. `app/services/money_service.py:130` debits balance without enforcing remaining holds; `app/models/tables.py:1013` requires nonnegative balance/held balance separately.
-- **Trigger / impact:** transaction A reads available100; B reserves80; A later debits80 for another invoice, leaving balance20/held80. Another invoice's reserved funds can be consumed, causing later settlement failures.
-- **Minimal fix:** reservation-aware debit validation against freshly locked wallet state, with consistent lock ordering and correct distinction between consuming this operation's hold and unrelated holds. Consider a reviewed balance-versus-held constraint/backfill.
-- **Expected impact:** concurrent insufficiency becomes a stable conflict instead of an invalid financial state; careless earlier locks can introduce deadlocks, so avoid an isolated lock-order change.
-- **Verify:** two-session barrier regression for distinct invoices sharing one wallet; mixed gateway/wallet paths, retries, cancellation, withdrawal and ledger invariants.
-
-## 3. Performance, SQL, memory and CPU
-
-### Medium
-
-#### PERF-10 — Cancelled image validation releases admission before its thread finishes
-
-- **Status / score:** Open, Medium 6/10; cancellation reproduced locally.
-- **Evidence:** `app/services/chat_media_service.py:156` controls leases; line197 runs Pillow validation through `asyncio.to_thread`. Probe results: `decoder_running_after_request_cancel=True`, `decoder_lease_released=True`.
-- **Impact:** repeated cancelled requests can exceed the intended two global decoding slots while background threads continue using CPU/memory. Per-file limits alone do not bound this accumulation.
-- **Minimal fix:** retain admission until actual decoder completion during cancellation; prefer a terminable process boundary for hard deadlines. Keep cancellation-safe cleanup and finite lease renewal/fencing.
-- **Expected impact:** bounded work under disconnect/timeout; process isolation can add startup cost and requires resource measurements.
-- **Verify:** blocking-decoder cancellation regression, repeated aborted sends, bounded active decoders, timeout cleanup and measured peak memory/CPU on deployment hardware.
-
-#### PERF-11 — Device registrations and push fanout are unbounded
-
-- **Status / score:** Open, Medium 5/10; confirmed growing query/work path, production cost unmeasured.
-- **Evidence:** `app/repositories/device_token_repository.py:28,51` imposes no per-user quota/expiry and materializes all device tokens; `app/services/notification_service.py:28` sends the resulting batches sequentially.
-- **Impact:** a valid account can grow persistent token rows, memory and notification latency/cost. HTTP throttling slows growth but does not cap it.
-- **Minimal fix:** concurrent-safe active-device quota, invalid/stale token cleanup, bounded recipient pages and bounded delivery concurrency. Preserve multi-device use and ownership checks.
-- **Expected impact:** stable memory and delivery cost; legitimate old devices may need re-registration under a documented expiry policy.
-- **Verify:** quota races, token reassignment/revocation, cleanup, fixed-size SQL results and delivery latency across increasing account sizes.
-
-#### SQL-01 — Query plans, pool budget and snapshot costs lack representative proof
-
-- **Status / score:** Needs validation, Medium 5/10; not a confirmed missing-index or N+1 defect.
-- **Evidence:** inspected list queries, joins, keyset anchors, admin labels and worker pages; no disposable PostgreSQL/load environment was available. Snapshot `INSERT SELECT` and its row audit trigger scale with eligible token count.
-- **Impact:** unmeasured sort/scan/lock/pool costs can dominate latency as the dataset grows; three default API pools allow 45 connections before other processes.
-- **Minimal action:** capture query counts and `EXPLAIN (ANALYZE, BUFFERS)` on disposable representative data; measure pool waits, snapshot/audit writes and media peak RSS/CPU before choosing indexes or concurrency.
-- **Expected impact:** evidence-based capacity limits; indexes have storage/write costs and should not be added speculatively.
-- **Verify:** fixed query counts as list size grows, indexed keysets, bounded lock duration, pool headroom and agreed p95 latency/memory budgets.
-
-#### PERF-09 — Action audit storage needs a retention/export policy
-
-- **Status / score:** Needs validation, Medium 5/10; row growth confirmed, production pressure unmeasured.
-- **Evidence:** migration `0009_action_only_audit` records committed changes; migration0016 adds recipient-row activity. There is no implemented externally approved archival/retention policy.
-- **Impact:** audit/index/backup growth and recipient write amplification can consume database I/O/storage. Deleting activity without policy would also undermine traceability.
-- **Minimal action:** agree retention requirements, independent archive/access controls and measured capacity alerts; then implement bounded archival and verified restoration.
-- **Expected impact:** predictable storage with preserved investigation evidence; never silently purge history to improve performance.
-- **Verify:** archive replay/restore, incremental paging, index/storage growth and user/admin/system attribution after retention.
-
-## 4. Reliability and API behavior
-
-### Medium
-
-#### REL-12 — Missing-email invoices can starve deliverable receipts
-
-- **Status / score:** Open, Medium 6/10; source confirmed.
-- **Evidence:** `app/repositories/invoice_repository.py:228` selects oldest100 paid/unsent invoices; `app/services/receipt_service.py:73` defers claims when optional customer email is absent. Claims expire before the next five-minute sweep.
-- **Impact:** a backlog of 100 older no-email invoices keeps filling every sweep, preventing newer valid recipients from receiving paid-invoice PDFs.
-- **Minimal fix:** select reachable-email candidates or persist a deferred state with retry when an email is later provided; preserve ownership, stable idempotency and provider retry semantics.
-- **Expected impact:** fair progress for deliverable receipts without falsely marking missing-email invoices sent.
-- **Verify:** 100 no-email invoices followed by an emailable one, later-added email, retries, overlapping sweeps and claim-expiry races.
-
-#### REL-13 — Live chat remains best-effort without durable retries
-
-- **Status / score:** Open, Medium 5/10; limitation retained after the postcommit-error fix.
-- **Evidence:** `app/routers/chat.py:198` isolates notification failures; Redis Pub/Sub has no durable event retention and send schemas have no client idempotency key.
-- **Impact:** disconnect/delivery failure can hide committed messages until history reconciliation; an uncertain client retry can create duplicate messages.
-- **Minimal fix:** persisted idempotent client-send identity and a bounded outbox/retry path, with REST history reconciliation and delivery sequence semantics.
-- **Expected impact:** stronger recovery at the cost of extra indexed rows and worker throughput; do not promise exactly-once network delivery.
-- **Verify:** committed-send timeout, duplicate retries, Redis outage, reconnect replay, ownership and worker duplicate delivery.
-
-#### API-02 — Invalid inbox cursors restart the first page
-
-- **Status / score:** Open, Medium 4/10; source confirmed.
-- **Evidence:** `app/routers/chat.py:587` returns `None` for nonempty malformed input instead of rejecting it. Order/wallet anchors now reject invalid scope.
-- **Impact:** clients see duplicate inbox pages and hidden synchronization errors; valid-looking malformed inputs do not receive a consistent client error.
-- **Minimal fix:** reject malformed nonempty cursors with a stable documented error; retain the empty-first-page contract and valid timestamp/UUID keyset behavior.
-- **Expected impact:** invalid input becomes an explicit failure; compliant clients retain normal pagination.
-- **Verify:** malformed separator/time/UUID, empty cursor, valid next page and participant scoping.
-
-#### REL-14 — Unexpected500 responses lose request correlation and security headers
-
-- **Status / score:** Open, Medium 4/10; synthetic route exception reproduced.
-- **Evidence:** `app/core/middleware.py:47,122` resets context before the outer server exception handler renders. Probe returned request_id `-`, no `X-Request-ID` and no `X-Content-Type-Options`.
-- **Impact:** error investigation loses correlation, and failed responses do not receive the same protective headers as ordinary responses.
-- **Minimal fix:** retain correlation in request state and handle/stamp unexpected errors inside a protected ASGI boundary; avoid leaking exception text.
-- **Expected impact:** consistent failure observability/header policy without exposing internals.
-- **Verify:** exception before/during routing, safe500 envelope, request ID, CORS/security headers and logging redaction.
-
-## 5. Quality, readability and maintainability
-
-### Low
-
-#### QUAL-02 — WebSocket text input differs from REST validation
-
-- **Status / score:** Open, Low 3/10; boundary calls reproduced.
-- **Evidence:** `app/routers/chat.py:519` string-coerces null/dictionaries and accepts4001-character strings inside the frame limit; `app/schemas/chat.py:12` rejects these inputs.
-- **Impact:** inconsistent validation admits surprising encrypted content and complicates client behavior/testing. Safe literal rendering is still required; this alone is not proof of executable injection.
-- **Minimal fix:** validate text frames with the shared message schema and reject invalid values before persistence.
-- **Expected impact:** one typed boundary for both transports; malformed legacy socket clients receive an explicit failure.
-- **Verify:** null/object/oversized text, valid literal code text, rate limits and REST/socket parity.
-
-#### QUAL-03 — Source docstrings reference removed design records
-
-- **Status / score:** Open, Low 2/10; source confirmed.
-- **Evidence:** `app/models/tables.py:87` references deleted `DECISIONS.md`; scattered `SPEC SECTION` comments have no maintained linked specification in this repository.
-- **Impact:** stale references make maintenance/review harder and may imply requirements no longer authoritative.
-- **Minimal fix:** change misleading references only while touching relevant modules; link current documentation or state the invariant plainly. Avoid broad formatting churn.
-- **Expected impact:** clearer maintenance with no runtime change.
-- **Verify:** repository reference scan, readable affected docstrings and unchanged runtime contracts.
-
-No additional confirmed naming/style defect or N+1 issue was manufactured to populate a
-category. SQL/runtime measurements remain necessary before asserting broad optimization.
-
-## 6. External release validation
-
-| ID | Status / score | Evidence, impact, next action and verification |
+| IDs | Current result | Cost / remaining verification |
 | --- | --- | --- |
-| OPS-01 | Needs validation, Medium5 | New migrations and prepared-claim races only received offline/local checks. Apply upgrade/downgrade on disposable PostgreSQL; exercise decoder image, three-worker startup, Redis outages and worker/scheduler operation. Failure here can prevent deployment or invalidate concurrency assumptions. |
-| INT-01 | Needs validation, Medium5; outside prior vendor-fix scope | SMS/email/push payloads and provider acceptance are unproven; Dhamen production payments intentionally return503. Verify sandbox contracts/authentication/timeouts/idempotency and controlled delivery before enabling production flows. No production credentials/data were used. |
+| AP-P01 / AP-P02 | Separate bounded HTTP/security and WebSocket Redis pools; one grant-preparation query and three batch attachment persistence queries for 1–5 objects. | Live Redis reconnect/load and complete service suite remain required. |
+| AP-P03 / AP-P04 / AP-P05 | 64 KiB recording streams, one fresh joined chat-monitor query, scalar eligibility/keyset projections without unused city loading. | Synthetic 120 MiB stream used under 1 MiB traced Python allocation; cursor pages keep three queries at 1/100 rows. These are not process RSS or production throughput claims. |
+| AP-P06 / AP-P07 | Rating/statement alternatives measured; exact aggregates retained because candidate indexes did not provide consistent benefit. | No stale financial-summary cache. Revisit only with measured deployment latency and transactional invalidation. |
+| AP-P08 / AP-P09 | Migration0025 released: two owner/date indexes and three partial payment-priority indexes. | Synthetic day lookup about 29 ms → 0.07–0.09 ms; repeated automatic prepared recovery 0.010–0.013 ms, forced-generic 14.5–24.7 ms. Write medians per 1,000 rows: orders 12 → 27.9 ms; payments 4.95 → 7.13 ms. Measure broader ranges/status and real writes before claiming universal speedup. |
+| AP-P10 | Bounded identical PDF-render coalescing, current ownership/content fingerprints and one-hour cache. | Per-worker map 128 and four render slots; cross-worker bursts and real Redis measurements remain open. |
 
-## 7. Disposition of previous review findings
+No unbounded quadratic loop was confirmed in the inspected mobile read paths. This is a scoped observation, not a whole-program complexity guarantee.
 
-| Previous ID | Current disposition | Evidence / scope |
-| --- | --- | --- |
-| SEC-13 | Fixed locally | Cumulative ASGI body limit before parsing/dependency side effects; oversized-byte regressions. |
-| SEC-14 | Fixed locally | HTTP limiter dependency failure returns503; health/preflight remain exempt. |
-| API-01 | Fixed locally | Missing/foreign/out-of-filter order and wallet anchors return identical404; scoped SQL regressions. Moving status-filter anchors may invalidate a page; clients refresh. |
-| PERF-08 | Fixed for production request flows | S3 waits before write locks; typed scoped prepared metadata, reauthentication and locked claim rechecks. Direct internal calls retain validation behavior. PostgreSQL race proof remains OPS-01. |
-| REL-10 (old chat error) | Fixed locally; durable-delivery residual REL-13 | Committed sends retain success when fanout/push/cleanup fails; authenticated socket sender fallback. |
-| REL-09 | Fixed locally | First-claim recipient snapshot, eligible scoped pages, fenced completion cleanup and migration0016. PostgreSQL proof remains OPS-01. |
-| DEP-01 | Fixed configuration | Compose app services wait for the migration service and bypass inherited migration entrypoints; normal PaaS gate retained. |
-| DATA-01 | Implemented | Optional typed gender; DELETED/reason fields, migration0017 and access denial tests. |
-| DATA-02 | Implemented per latest clarified requirement | Encrypted numbers retained; fingerprints, index, pepper and duplicate checks removed through forward0018. Applied migration history preserved. |
-| QUAL-01 | Fixed | Generic user detail no longer renders removed customer rating fields. |
-| CLEAN-01 | Fixed | Obsolete180-second OTP comment removed; configured default remains60. |
-| REL-11 | Superseded | Transactional PostgreSQL action auditing already replaced HTTP request audit writes; independent archival remains PERF-09/SEC-17. |
-| ENH-01 | Superseded | Participant order WebSocket and snapshots already implemented; durable replay is a limitation, not a missing route. |
-| SEC-09 | Dependency graph updated and re-audited | Targeted PyJWT/urllib3 runtime updates and minimal virtualenv hook-dependency patch. Complete locked graph scan is clear; remote disposition remains SEC-20. |
-| SEC-16 / SEC-17 | Accepted High risks | Explicit user instruction preserves unrestricted admin CRUD; not reported fixed. |
-| SQL-01 / PERF-09 / SEC-15 / INT-01 | Reassessed above | Unverified operational risks kept explicit; no fabricated live proof. |
+## Reliability and API behavior
 
-## 8. Review method and verification record
+### Medium: fixed
 
-Inspected HTTP/WebSocket routers, auth/JWT/OTP/admin, schemas, services/repositories,
-financial state/locks/pricing, private media/decoder/cleanup, all worker families,
-configuration/pools, models/migrations, Compose/entrypoint, locked dependencies and CI.
-Independent change review found no additional confirmed introduced High/Medium defect.
+| ID / score | Trigger and impact | Fix and system effect | Verification |
+| --- | --- | --- | --- |
+| REL-12 / 6 | The oldest 100 paid invoices without customer email repeatedly filled receipt sweeps and starved reachable recipients. | `app/repositories/invoice_repository.py:287` joins the owner and filters nonempty email before LIMIT. No-email invoices are not falsely marked sent; adding an email makes them eligible later. Fenced receipt claims/provider idempotency remain intact. | PostgreSQL 100-missing-email plus reachable recipient, stable ordering and later-email eligibility tests. Live email acceptance remains INT-01. |
+| REL-13 / 5 | Committed chat sends could be duplicated after uncertain retries and live fanout could disappear during Redis/API failure. | Optional client_message_id UUID is unique within conversation + sender; replay returns the original message only for identical type/text/ordered attachment keys. A metadata-only live outbox persists with the encrypted message. Fenced 30-second leases, five-second publish timeout, at most eight attempts and bounded minute sweeps recover temporary failures. | PostgreSQL concurrent replay, changed-payload conflict, used-upload retry, account-ban lock races, lease/retry exhaustion, migration rollback and action-audit rollback tests. Only authorized active senders are decrypted. Delivery is at least once, not offline retention or exactly once; clients deduplicate by message ID and reconcile history on reconnect. |
+| API-02 / 4 | A malformed nonempty inbox cursor silently restarted page one, hiding synchronization mistakes. | `app/routers/chat.py:643` validates bounded timezone-aware timestamp + UUID and returns 400 BAD_REQUEST for invalid input. Empty/omitted cursor and existing deterministic keysets are unchanged. | Invalid separators/date/UUID/naive timestamp, empty and valid aware cursor tests. Clients reset a bad cursor explicitly. |
+| REL-14 / 4 | Unhandled exceptions lost request_id and protective response headers. | `app/core/middleware.py` renders safe pre-response failures inside the protective ASGI boundary, retains request state and correlation, and resets contexts in finally. Cancellation and already-started streams are not converted into a second response. Logs contain safe exception type and request ID, not exception text/secrets. | Synthetic 500 envelope, security/CORS headers, redaction, response-start and cancellation tests. Upstream logging remains SEC-15. |
 
-- New regression failures were observed before fixes for body/rate/cursor, media/delivery and profile boundaries.
-- Ruff lint/format and strict mypy results are recorded after the final combined gate below.
-- Offline Alembic upgrade0015→0018 and downgrade0018→0015 SQL generation passed. No database was migrated.
-- Dependency audit on the full locked production graph initially reported16 advisories in PyJWT2.13.0 and urllib3 2.7.0. Targeted resolution changed only PyJWT→2.15.1 and urllib3→2.8.0. The repeated `pip-audit2.10.1 --strict --no-deps --disable-pip` scan reported **no known vulnerabilities** on 2026-10-04. This excludes system/image packages and undisclosed flaws.
-- Upstream sources checked 2026-10-04: [PyJWT PEM guard advisory](https://github.com/jpadilla/pyjwt/security/advisories/GHSA-ffc3-869f-jxw9), [PyJWT release history](https://github.com/jpadilla/pyjwt/releases), [urllib3 2.8.0](https://github.com/urllib3/urllib3/releases/tag/2.8.0). The application already pins one allowed JWT algorithm; upstream advisory presence is not proof of exploitability in this deployment.
-- Expanded audit found four distinct development-only virtualenv advisories in21.7.10. The locked minimal patch is21.7.13 ([upstream activation-script advisory](https://github.com/pypa/virtualenv/security/advisories/GHSA-p58f-9548-mpm2)). Repeated `uv export --locked --all-groups` plus the same strict audit reported **no known vulnerabilities**. No application runtime dependency changed in this follow-up. Subsequent admin/config tests passed37 checks, and both hook stages passed.
-- Read-only remote CI inspection found successful older runs, latest returned SHA3352467 ([run](https://github.com/GiftlyKSA/backend/actions/runs/37133529592)). These do not validate this change or current source SHA.
-- Push verification confirmed master commit `72e08ba`, then documentation commit `405b9f3`; each push succeeded. The remote alert count decreased20→4 before the hook-dependency patch; metadata access remained HTTP401. Current complete-lockfile scan and remote alert disposition are separate evidence, recorded as SEC-20.
-- Final aggregate gate: `uv run --locked pytest -n 4 -o addopts="" -q -p no:cacheprovider --basetemp <fresh temporary directory>` finished with **668 passed, 198 skipped, four existing Starlette/httpx deprecation warnings**. The unavailable PostgreSQL/Redis and native decoder checks remain skipped. Ruff lint/format, strict mypy (184 source files), both pre-commit stages, mobile OpenAPI drift, local documentation links and `git diff --check` passed.
+**Migration0026:** adds nullable legacy-compatible messages.client_message_id, its scoped unique constraint and chat_live_deliveries with a pending index and existing metadata audit trigger. Legacy messages are not retroactively broadcast. Rollback keeps message IDs/ciphertext but removes retry identities and pending delivery metadata; stop publishers/workers and review pending work before rollback. This adds indexed writes and audit rows. New server/worker code requires migration0026 before traffic.
 
-No Docker, live PostgreSQL/Redis, production repair, secrets inspection or vendor delivery
-was performed. Native decoder availability, database concurrency/query plans, actual
-deployment settings, independent backups/audit export and production load remain
-UNCONFIRMED. New tasks contain only outstanding work from this review.
+## Quality, readability and maintainability
 
-## Courier performance verification — 2026-10-08
+### Low: fixed
 
-Scope: courier-accessible order/radar/realtime, chat/media, invoices, account lookup
-and wallet read paths. This is a scoped performance/security regression review,
-not a new whole-codebase security certification. Production latency was not measured.
+| ID / score | Evidence / impact | Minimal change | Verification |
+| --- | --- | --- | --- |
+| QUAL-02 / 3 | Socket coercion accepted null/object values and overlong text rejected by REST, making validation inconsistent. | `app/routers/chat.py` validates with SendMessageRequest, preserves literal code/whitespace, and emits safe VALIDATION_ERROR frames without persistence or closing the connection. Existing byte/rate guards remain. | Null/object/4,001-character negative sends followed by a valid send; one valid commit and retained socket. HTTP invalid bodies remain 422. Rendering remains escaped text; input content is not executed. |
+| QUAL-03 / 2 | Application comments/docstrings cited removed SPEC/ADR/decision documents and could mislead maintenance. | Removed stale citations and stated current invariants; most affected files change comments/docstrings only. Updated refresh-replay, plain-text order description and privileged ledger-maintenance explanations. | Citation scan and runtime AST comparison on the 89 citation-only files; Ruff and strict typing validate combined source. Applied migration history was not rewritten. |
 
-| ID | Category | Severity / score | Status | Evidence / unresolved impact | Minimal change / expected impact / verification |
-| --- | --- | --- | --- | --- | --- |
-| CP-01 | Reliability / resource use | Medium6 | Fixed | `app/services/invoice_pdf_cache.py:97`: cancelled requests released permits while render threads kept running, admitting excess work. | Shielded rendering owns permit until completion; blocked-thread cancellation regression now enforces four renderers. |
-| CP-02 | Reliability / background work | Medium5 | Fixed | `app/services/chat_notification_service.py:91`: retirement of exhausted retries was treated as an empty queue, delaying healthy work by scheduled sweeps. | Named claim batch distinguishes retirement from exhaustion; mixed backlog and bounded20retirement regressions. |
-| CP-03 | Performance / latency | Medium5 | Fixed | `app/routers/chat.py` waited for synchronous push after message persistence. | Transactional outbox, bounded paged worker and retries; provider calls outside transactions; response no longer waits for push. |
-| CP-04 | Performance / SQL | Medium5 | Fixed | `app/repositories/invoice_repository.py:141` flushed every item; repeated user/courier repository lookups and realtime order hydration caused avoidable round trips. | One item-batch flush; transaction-local read reuse; one scoped realtime projection; query-count and authorization regressions. |
-| CP-05 | Performance / CPU | Medium4 | Fixed | media signing and per-message cipher construction repeated synchronous work on the event loop. | Off-loop signing, reused signer/cipher, rotation snapshot and thread regressions. |
-| CP-06 | Performance / SQL | Low3 | Fixed | `app/services/order_service.py:322` queried customer rating eligibility even for couriers; keyset indexes omitted ID tie-breakers. | Skip courier-only futile lookup; migration0021 covers actor/revision ordering and NEW city radar. Compiled indexes tested; real plans pending. |
-| CP-07 | Performance / cache | Low3 | Fixed | identical invoice PDFs regenerated for each owned download. | Content/template fingerprint reuse, one-hour TTL, capped memory/concurrency,100msRedis budgets and outage regressions. |
-| CP-08 | Performance / evidence | Unverified risk | Needs deployment validation | Query plans, actual pool/Redis/network costs and endpoint p95 are unmeasured. | Run disposable PostgreSQL/Redis integrations and representative EXPLAIN/load comparisons; timing logs now separate successful SQL execution from other waits. |
+## Verification and release gates
 
-Priority: CP-08 is the remaining validation work; no unresolved concrete defect was
-found in the final scoped review. Fresh authorization and financial aggregates are
-intentional costs, not justified candidates for stale response caching. Index builds
-can block writes; chat push is at least once and may arrive after the next minute
-sweep. Local database/container/provider checks did not run. Existing findings below
-and unrelated unreleased payment work retain their previous status.
+Focused regression failures were reproduced before fixes. Independent whole-change review inspected pricing/holds, replay/session locks, current eligibility, outbox idempotency/privacy/fencing, migration compatibility, cancellation ownership, cursor/input boundaries and admin table integration. Selected review tests passed; no concrete introduced blocker remained in that scope.
 
-Verification on the isolated master-based release: full pytest suite **788 passed,
-207 skipped** (four upstream Starlette deprecation warnings); both all-file
-pre-commit and pre-push gates passed, including Ruff and strict mypy. Generated
-development OpenAPI exactly matches the pushed specification. Skips include absent
-disposable PostgreSQL/Redis services; migration graph/compiled DDL tests do not
-substitute for migration execution or query plans. Final independent scoped review
-found no remaining concrete defects after CP-01/CP-02 regressions were corrected.
+Native PostgreSQL 16.15 was run only in a disposable loopback temporary cluster. Migration0025 upgrade/downgrade/re-upgrade and migration0026 transactional roundtrip preserve committed messages. Focused financial, account-ban, device quota, receipt, chat recovery and paging tests passed. No Docker, real provider delivery, production writes or deployment-secret inspection was performed.
 
+Checkpoint verification: full unit suite passed. Both all-file pre-commit and pre-push gates passed, including Ruff and strict mypy over 218 application files; generated OpenAPI drift/export checks passed. Independent combined review ran 72 selected checks without a blocker. Focused PostgreSQL follow-ups passed: 86 financial/expiry/mobile checks; 24 legacy finance/eligibility checks; 23 chat/recovery/media checks; six audit/rotation/catalog checks; ten receipt/admin checks with one explicit missing-Redis skip. These sets overlap and must not be added into a claimed unique total.
 
-## Scoped payment/PDF release review — 2026-10-08
+The initial broad PostgreSQL run finished with **1,140 passed, 49 skipped and 47 failed**: 32 depended on unavailable Redis; 15 exposed outdated expectations or fixture isolation/coding issues. The relevant fixtures were repaired while preserving authorization, ledger, rollback and audit assertions. An offline rerun exposed six standalone chat tests missing the standard database-availability guard; that guard was then added. The final offline aggregate rerun is still running at this checkpoint. Complete PostgreSQL/Redis CI, live native ffmpeg/ffprobe and the 85% coverage gate are not claimed green. Service tests were not replaced with fakes merely to pass.
 
-This supplements the existing full-codebase review; it does not mark unrelated open
-findings resolved. The release excludes unrelated workspace SMS, email-copy and payout
-changes. Independent review inspected runtime, ownership, ledger/checkpoints, migrations,
-PDF/cache and focused regressions; remedies were independently rechecked.
+**OPS-01 / Medium 5:** verify complete disposable PostgreSQL + Redis CI, native ffmpeg/ffprobe, Python3.13 image startup, scheduler/worker recovery and public route/schema readiness. Database migrations cannot prove a new image is deployed.
 
-| Finding | Category | Severity / score | Status | Trigger / impact | Minimal fix / system effect | Verification |
-| --- | --- | --- | --- | --- | --- | --- |
-| PS-FIN-01 | Financial integrity / reliability | High7/10 | Fixed | Late PAID callback after closure could roll back its REVIEW marker, allowing replacement despite unresolved received money. | Preflight fresh locked intents and persist review-only quarantine before batch settlement; no partial financial settlement. | Callback regression; disposable PostgreSQL receiver-rollback regression added, runtime unverified. |
-| PS-SEC-01 | Security / provider input | High7/10 | Fixed | Literal numeric status accepted bool/decimal values as PAID/PENDING, weakening provider response validation. | Require actual integer0/1 before interpreting status; fail closed on malformed provider data. | Bool/decimal negative tests reproduced and passed. |
-| PS-REL-01 | Reliability / concurrency | Medium6/10 | Fixed | Multi-intent callbacks retained first invoice/wallet locks while requesting later subsets; concurrent payments could deadlock. | Batch locks every invoice/order/intent, then bounded ledger rows and full referenced/payer/system wallet union in globally sorted order; atomic settlement retained. | Lock-order and overflow regressions pass; disposable two-connection test added, runtime unverified. |
-| PS-SEC-02 | Access control | Medium5/10 | Fixed | Session role checks could admit an active courier after verification revocation despite wallet eligibility restrictions. | Reuse current account/courier eligibility service before owned recovery or mutation. | All five route role/ownership checks; revoked-courier403 regression. |
-| PDF-01 | Readability / delivery | Low3/10 | Fixed | Download used the old plain layout rather than approved branded attachment design. | Shared English Giftly purple renderer, itemized pricing, GMT+3 issue/payment times; static escaped PDF. | Branding/date/static/pagination tests and rendered visual check. |
+**INT-01 / Medium 5:** verify SMS/email/push vendor sandbox contracts and Dhamen callback authentication/merchant flow before enabling live payments. Mock success is not live success. Vendor-contract work remains external scope.
 
-### Verification boundaries
+**Deployment:** last recorded CranL rollout failed with missing DHAMEN_APP_ID while Dhamen was selected; the old service stayed healthy and new payment-session routes returned routing404. Current deployment is UNCONFIRMED. Do not change provider selection or credentials without the required operational approval. Source/pushed contract and deployed contract must be checked separately.
 
-Production payment execution remains disabled. Dhamen testing mocks do not prove a
-live integration; merchant/callback protocols remain external validation. The published
-mobile contract adds only the five owned session operations and compatible creation
-metadata. HTTP payment responses are private,no-store; no financial response cache is
-introduced. PDF reuse is server-side only, after current ownership/content reads, with
-one-hour TTL and content/template fingerprint,128 entries/256KiB maximum and bounded
-render concurrency. Updates regenerate rather than serve the prior status.
-
-Alembic has one0023 merge head; complete PostgreSQL upgrade SQL generated offline.
-Applied0021/0022 are unchanged. Duplicate open-order upgrades and unresolved financial
-downgrades refuse rather than discard state. Database upgrade/downgrade/concurrency
-execution, representative query plans and provider behavior require disposable CI/staging.
-
-Final verification: 878 tests passed, 218 skipped, and four upstream TestClient
-deprecation warnings. PostgreSQL/Redis-dependent tests were skipped because no
-disposable services were available. Full pre-commit and pre-push gates passed,
-including Ruff formatting/lint and strict mypy over 213 application files.
-No Docker or live database/provider writes were performed. Deployment is a separate
-check from this source release.
-
-### Deployment check — 2026-10-08
-
-Source release8ad88f3 is pushed. CranL built the image successfully, but the new
-service failed before migration/server startup: `DHAMEN_APP_ID is required for Dhamen`.
-The running public contract therefore remains the previous version; all five new
-payment-session paths returned routing404. Existing readiness reports database/Redis ok.
-This is an incomplete selected-provider configuration, not proof of migration success.
-Approval is pending to set `PAYMENT_PROVIDER=disabled`; do not substitute credentials,
-weaken validation or describe the new operations as deployed until public checks pass.
-
-## API performance follow-up — 2026-10-08
-
-Security, permissions, response schemas and cursor ordering are unchanged. No
-unbounded quadratic Python loop was confirmed in the inspected mobile read paths.
-Scores indicate priority and impact, not CVSS or measured production latency.
-
-| ID / category | Severity | Status and evidence | Impact / minimal change | Remaining verification |
-| --- | --- | --- | --- | --- |
-| AP-P01 / Pool contention | High7/10 | Previously fixed; app/core/redis.py | Separate bounded HTTP/security and subscription pools preserve leases and fresh authorization. | Live Redis/load/reconnect tests. |
-| AP-P02 / SQL round trips | Medium6/10 | Previously fixed; repositories/chat_repository.py, media_repository.py | One grant preparation query and three attachment persistence queries for1..5 objects. | Full PostgreSQL/Redis integration gate. |
-| AP-P03 / Memory/CPU | Medium6/10 | Fixed; integrations/storage/real.py, services/chat_media_validation.py | Recordings stream in64KiB chunks to private bounded temporary files; exact byte/MIME checks and complete decode retained. Synthetic120MiB stream peak traced Python allocation below1MiB. Cancellation drains writes/process cleanup before removing files. | Native ffmpeg/ffprobe and live S3; tracemalloc is not process RSS or production capacity. |
-| AP-P04 / Live authorization queries | Medium6/10 | Fixed; repositories/chat_repository.py, routers/chat.py | One fresh joined query per chat monitor check; five-second checks, denylist/account/profile/membership remain. | Live concurrent socket load. |
-| AP-P05 / Unused ORM loads | Medium5/10 | Fixed; repositories/user_repository.py, courier_repository.py, order_repository.py | Scalar eligibility/cursor projections retain read-only request snapshot reuse and page city serialization. PostgreSQL proves constant3 cursor-page queries at1/100rows;2 eligibility queries. | Deployment latency/pool measurements. |
-| AP-P06 / Rating aggregates | Medium5/10 | Measured; no speculative cache/index added; repositories/rating_repository.py | Exact AVG/COUNT and order ownership join retained. Covering candidate still joins orders and costs9.5MB/100k ratings; insufficient consistent benefit to justify churn. TTL-only caching cannot cover admin/system corrections safely. | Growing histories still require aggregation; revisit with actual profile latency and transactional invalidation design. |
-| AP-P07 / Statement aggregates | Medium5/10 | Measured; exact query retained; repositories/wallet_repository.py | Covering candidate did not change aggregate scan/buffers. Reject added write/storage cost. Totals/page remain one authoritative SQL snapshot including pending/reversed states. | Large real ledger latency; exact transactional summaries are a separate larger change. |
-| AP-P08 / Calendar SQL | Medium5/10 | Candidate measured; not released | Measured owner/delivery-date indexes reduce synthetic single-day queries from about29ms to0.07–0.09ms. About6.8MB per100k orders per index. Broad/status alternatives not justified; existing ordering unchanged. | Selected week/month/status queries can still scan histories; real data plans/write load required. |
-| AP-P09 / Payment recovery SQL | Medium4/10 | Candidate measured; not released | Three partial priority indexes preserve REVIEW then NEW then created_at/id and payer ownership; synthetic recovery about29–33ms to0.02–0.03ms. No payment-state cache. | Production distributions, updates and concurrent provider flows. |
-| AP-P10 / PDF CPU | Low4/10 | Fixed; services/invoice_pdf_cache.py | Identical invoice/fingerprint misses share one render. Map bounded128, rendering4threads; cancelled waiters cannot cancel shared work. Status/items/template changes remain distinct and ownership is checked first. | Real Redis/load and multi-worker bursts (coalescing is per worker). |
-
-### Evidence and operational limits
-
-PostgreSQL16.15 ran only in a disposable localhost temporary cluster without Docker.
-Fresh migrations through0024 succeeded;0025 upgrade/downgrade/re-upgrade succeeded.
-Five additive indexes use concurrent creation/deletion; interrupted invalid builds are
-removed on retry. Autocommit commits earlier migration work: inspect migration status
-after failure and rerun; rollback0025 removes indexes only, with no data conversion.
-
-`uv run --locked python -m tests.financial_query_plans` reproduces synthetic temporary
-table EXPLAIN ANALYZE BUFFERS measurements. Set GIFTLY_PERF_DATABASE_URL to an
-explicitly disposable loopback database. Measurements do not establish production
-capacity. Raw local plans remain in ignored workflow evidence, not production data.
-
-Full unit suite passed; focused media90passed/1native-decoder skip, PDF9passed,
-new access unit/PostgreSQL30passed, independent access review110passed.
-The broad PostgreSQL suite was attempted and interrupted after existing date/Redis
-failures; hard-coded October7 delivery dates violate the October8 creation window.
-The non-service full suite and final gates are recorded at the release checkpoint.
-Do not claim the complete PostgreSQL/Redis suite or deployment is verified.
-No production database writes, provider calls, secrets or Docker were used.
-Mobile contracts are unchanged; these optimizations require no UI schema changes.
-
-### Usage-limit checkpoint — 2026-10-08
-
-At91% five-hour usage, the approved checkpoint publishes AP-P03/AP-P04/AP-P05/AP-P10 only. AP-P06/AP-P07 retain exact queries after measurement. AP-P08/AP-P09 candidate indexes are NOT published: generic prepared plans may lose partial-index and expression-order benefits; approved-only write costs need validation. Candidate source and raw plans are preserved in the attached worktree's ignored workflow folder. No new migration is required for this checkpoint. Full unit suite passed; broad service suites remain incomplete (PostgreSQL run interrupted on existing date/Redis failures, non-service integration checks also too slow for the checkpoint). Deployment and full PostgreSQL/Redis/native decoder checks remain unconfirmed.
-
-### Resumed index release — 2026-10-08
-
-This supersedes the pending-index checkpoint above. AP-P08/AP-P09's five additive
-indexes and migration0025_measured_read_indexes are now implemented. The reproducible
-tests/financial_query_plans.py harness correctly types enum binds and compares actual
-asyncpg-dialect prepared SQL under custom, generic and automatic plan selection.
-On synthetic100k-row histories, repeated automatic payment recovery was0.010–0.013ms;
-forced generic plans remained14.5–24.7ms. Do not force generic plans or assume this
-benchmark establishes deployment latency. Single-day calendar improvement remains
-about29ms to0.07–0.09ms; broader date/status paths remain opportunities to measure.
-
-Approved-only indexes increased synthetic1000-order insert median12.0→27.9ms and
-1000-payment insert4.95→7.13ms; closing active intents0.077→0.087ms. This read/write
-tradeoff is accepted for the measured recovery/calendar paths, not described as free
-performance. Monitor real writes/storage/plans and remove indexes if benefits do not
-hold. No cached authorization, balances or unresolved payment state was introduced.
-
-Migration upgrade/downgrade/re-upgrade passed on disposable PostgreSQL16.15. Focused
-financial/access/wallet/OpenAPI tests16passed, and full push gates passed. Independent
-review confirmed matching model/migration predicates and safe concurrent retry/rollback.
-Full PostgreSQL/Redis/native decoder verification and public deployment remain pending;
-previous broad-suite date/Redis failures were not hidden. No Docker or production writes.
-API contracts are unchanged; no mobile changes are required.
+Previous body-size/rate-limit/access-cursor/media-lock/recipient-snapshot/profile/identity/doc-cleanup fixes remain in source. VAT is fully removed; item prices are final, service/courier fees remain. Encrypted identity numbers are retained per policy; fingerprints and duplicate checks are removed. User-approved admin CRUD risks are not silently reversed.

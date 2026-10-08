@@ -1,4 +1,4 @@
-"""In-memory push double (SPEC SECTION 5.1 / 23)."""
+"""In-memory push double."""
 
 from __future__ import annotations
 

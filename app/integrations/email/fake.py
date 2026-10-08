@@ -1,4 +1,4 @@
-"""In-memory email double for development and test (SPEC SECTION 5.3 / 23)."""
+"""In-memory email double for development and test."""
 
 from __future__ import annotations
 

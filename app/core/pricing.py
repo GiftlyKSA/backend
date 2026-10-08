@@ -1,4 +1,4 @@
-"""The pricing engine — the single source of pricing truth (SPEC SECTION 11).
+"""The pricing engine — the single source of pricing truth.
 
 ``calculate_invoice_totals`` is a PURE function: values in, values out, no DB, no
 I/O, no clock. Every caller — invoice creation, the customer preview, the admin
@@ -104,7 +104,7 @@ class PricingResult:
 
 @dataclass(frozen=True)
 class Settlement:
-    """How a paid invoice's escrow total splits on completion (SPEC SECTION 20.G, ADR 0005).
+    """How a paid invoice's escrow total splits on completion.
 
     Attributes:
         commission_amount: The platform commission on the pre-discount base.
@@ -131,7 +131,7 @@ def compute_settlement(
 ) -> Settlement:
     """Split a paid invoice's total into courier payout and platform revenue.
 
-    The courier is paid on the PRE-discount base (ADR 0005): the platform funds any promo,
+    The courier is paid on the PRE-discount base: the platform funds any promo,
     so marketing never silently reduces the courier's pay. ``platform_revenue_amount`` is
     the residual (``total - courier_payout``), so the legs always reconstruct the
     total; it absorbs the promo subsidy and can be negative.
@@ -163,7 +163,7 @@ def _compute_service_fee(base: Decimal, cfg: PricingConfig) -> Decimal:
 def _compute_discount(discountable: Decimal, promo: PricingPromo | None) -> Decimal:
     """Compute the raw discount against the discountable base (0 if no promo).
 
-    The service fee is deliberately NOT in ``discountable`` (SPEC SECTION 11.5): the
+    The service fee is deliberately NOT in ``discountable``: the
     promo subsidises goods and craft, not the platform's own fee.
     """
     if promo is None:
@@ -179,7 +179,7 @@ def _compute_discount(discountable: Decimal, promo: PricingPromo | None) -> Deci
             raise PricingIntegrityError("A fixed promo needs fixed_amount.")
         d = promo.fixed_amount
     # A discount can never exceed the base it is applied to.
-    return min(d, discountable)
+    return quantize_money(min(max(d, ZERO), discountable))
 
 
 def compute_promo_discount(discountable: Decimal, promo: PricingPromo) -> Decimal:
@@ -198,34 +198,25 @@ def _allocate_discount(
     discount: Decimal,
     discountable: Decimal,
 ) -> tuple[list[Decimal], Decimal]:
-    """Allocate the discount pro-rata across each line and the courier fee.
-
-    Applies the largest-remainder correction so allocations sum to ``discount``
-    EXACTLY — the last component (courier fee if present, else the highest-position
-    item) absorbs the rounding residue. Without this the invoice total would not
-    equal the sum of its parts and the DB CHECK would reject the write.
-
-    Returns:
-        (per-line allocations, courier-fee allocation).
-    """
-    if discount <= ZERO or discountable <= ZERO:
+    """Allocate whole cents by largest remainder, breaking ties in component order."""
+    if discount < ZERO or discount > discountable:
+        raise PricingIntegrityError("Discount is outside its discountable base.")
+    if discount == ZERO or discountable <= ZERO:
         return [ZERO for _ in line_nets], ZERO
 
-    line_alloc = [quantize_money(discount * net / discountable) for net in line_nets]
-    courier_alloc = (
-        quantize_money(discount * courier_fee_net / discountable)
-        if courier_fee_net > ZERO
-        else ZERO
-    )
-    residue = discount - (sum(line_alloc, ZERO) + courier_alloc)
-    if residue != ZERO:
-        if courier_fee_net > ZERO:
-            courier_alloc += residue
-        else:
-            # Highest-position item with a non-zero base absorbs the residue.
-            last = max((i for i, net in enumerate(line_nets) if net > ZERO), default=0)
-            line_alloc[last] += residue
-    return line_alloc, courier_alloc
+    component_cents = [int(net * 100) for net in [*line_nets, courier_fee_net]]
+    base_cents = sum(component_cents)
+    discount_cents = int(discount * 100)
+    if any(net < 0 for net in component_cents) or base_cents != int(discountable * 100):
+        raise PricingIntegrityError("Discount components do not match their base.")
+    shares_and_remainders = [divmod(discount_cents * net, base_cents) for net in component_cents]
+    shares = [share for share, _ in shares_and_remainders]
+    remaining = discount_cents - sum(shares)
+    ranked = sorted(range(len(shares)), key=lambda index: (-shares_and_remainders[index][1], index))
+    for index in ranked[:remaining]:
+        shares[index] += 1
+    allocations = [quantize_money(Decimal(share) / 100) for share in shares]
+    return allocations[:-1], allocations[-1]
 
 
 def calculate_invoice_totals(

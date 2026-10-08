@@ -1,4 +1,4 @@
-"""Field-encryption key rotation (SPEC SECTION 17.1, 21).
+"""Field-encryption key rotation.
 
 Rotation re-encrypts every MUTABLE Restricted column that is still under an older key
 version to the active version, using each column's original AAD so the binding is

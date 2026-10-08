@@ -1,4 +1,4 @@
-"""Async database engine and session factory (SPEC SECTION 3, 16.6).
+"""Async database engine and session factory.
 
 Uses SQLAlchemy 2.x async with asyncpg. Driver-side prepared-statement caching is
 disabled because PgBouncer runs in transaction mode, where a pooled connection may

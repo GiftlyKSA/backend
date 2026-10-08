@@ -1,4 +1,4 @@
-"""Security primitives: OTP codes, token hashing, and CSRF tokens (SPEC SECTION 17.2).
+"""Security primitives: OTP codes, token hashing, and CSRF tokens.
 
 All randomness comes from ``secrets`` (never ``random``); every secret comparison uses
 ``compare_digest`` to avoid timing oracles. Tokens are stored only as SHA-256 hashes —

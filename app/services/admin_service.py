@@ -1,4 +1,4 @@
-"""Admin dashboard operations (SPEC SECTION 18.3).
+"""Admin dashboard operations.
 
 The dashboard calls these methods; it never queries the DB directly. Reads aggregate
 through the read repository. These domain edits cover users, courier profiles, and

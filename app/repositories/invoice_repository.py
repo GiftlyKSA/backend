@@ -1,4 +1,4 @@
-"""Invoice and invoice-item persistence (SPEC SECTION 11, 14).
+"""Invoice and invoice-item persistence.
 
 Every stored amount is the OUTPUT of the pricing engine; this layer never computes a
 price, it only writes what ``core/pricing.py`` produced and reads it back verbatim.
@@ -18,7 +18,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.exceptions import NotFoundError
 from app.core.pricing import PricingLine, PricingResult
-from app.models import Invoice, InvoiceItem, Order
+from app.models import Invoice, InvoiceItem, Order, User
 from app.models.enums import InvoiceStatus, UserRole
 
 # An invoice in one of these statuses blocks a second active invoice for the order
@@ -293,13 +293,17 @@ class InvoiceRepository:
         return list(
             await self._session.scalars(
                 select(Invoice)
+                .join(Order, Order.id == Invoice.order_id)
+                .join(User, User.id == Order.customer_id)
                 .where(
                     Invoice.status == InvoiceStatus.PAID,
+                    User.email.is_not(None),
+                    User.email != "",
                     Invoice.receipt_email_sent_at.is_(None),
                     (Invoice.receipt_claimed_until.is_(None))
                     | (Invoice.receipt_claimed_until <= datetime.now(UTC)),
                 )
-                .order_by(Invoice.paid_at)
+                .order_by(Invoice.paid_at, Invoice.id)
                 .limit(limit)
             )
         )

@@ -1,4 +1,4 @@
-"""Auto-approve sweeper (SPEC SECTION 20.G, 21).
+"""Auto-approve sweeper.
 
 A delivered order the customer never acts on auto-approves after AUTO_APPROVE_HOURS,
 releasing escrow to the courier so funds are never stranded. Backed by

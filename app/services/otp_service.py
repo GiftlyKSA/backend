@@ -1,4 +1,4 @@
-"""OTP request and verification (SPEC SECTION 17.2 A07, 20.A).
+"""OTP request and verification.
 
 Codes are generated with a CSPRNG and stored in Redis only as an HMAC — a Redis dump
 must not be a free login. Requests are rate limited per phone with a block window;

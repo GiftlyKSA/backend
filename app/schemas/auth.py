@@ -1,4 +1,4 @@
-"""Pydantic contracts for the auth endpoints (SPEC SECTION 19).
+"""Pydantic contracts for the auth endpoints.
 
 Every inbound model forbids extra fields (mass assignment is an attack) and validates
 strict types and bounds at the boundary. Saudi mobile input is canonicalized to E.164.

@@ -1,4 +1,4 @@
-"""Real SMS provider client (SPEC SECTION 5.1)."""
+"""Real SMS provider client."""
 
 from __future__ import annotations
 

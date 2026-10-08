@@ -1,4 +1,4 @@
-"""Order lifecycle service (SPEC SECTION 20.C, 9).
+"""Order lifecycle service.
 
 Owns order creation (with media validation and the concurrency limits), the accept
 race (a Redis lock AND a SELECT ... FOR UPDATE — both layers deliberate), cancellation

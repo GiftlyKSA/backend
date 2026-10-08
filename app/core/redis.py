@@ -1,4 +1,4 @@
-"""Async Redis client factory (SPEC SECTION 16.7).
+"""Async Redis client factory.
 
 Redis backs OTP TTLs, rate limits, distributed locks, and the admin login throttle.
 The client is created once from settings and shared; callers never construct their own.

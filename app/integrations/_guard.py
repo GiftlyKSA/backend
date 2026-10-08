@@ -1,6 +1,6 @@
 """Shared production guard for environment-gated integration doubles.
 
-Layer 3 of the §5.2 interlock: every Fake calls this in ``__init__`` so a fake is
+Layer 3 of the production interlock: every Fake calls this in ``__init__`` so a fake is
 structurally incapable of existing in production, not merely un-selected.
 """
 

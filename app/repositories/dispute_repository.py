@@ -1,4 +1,4 @@
-"""Dispute persistence (SPEC SECTION 20.H).
+"""Dispute persistence.
 
 A dispute freezes an order's escrow until an admin resolves it. One dispute per order
 (the ``uq_disputes_order`` unique constraint), so raising is idempotent per order.

@@ -1,4 +1,4 @@
-"""The email client contract (SPEC SECTION 5.3).
+"""The email client contract.
 
 Services depend on this ABC only; nothing outside ``sndr_client.py`` knows the
 vendor wire format. The system sends exactly ONE email: the invoice-paid receipt.

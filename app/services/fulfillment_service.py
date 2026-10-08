@@ -1,4 +1,4 @@
-"""Order fulfilment: delivery, approval, and disputes (SPEC SECTION 20.G-H).
+"""Order fulfilment: delivery, approval, and disputes.
 
 The escrow lifecycle lives here. A courier submits delivery photo proof;
 the customer (or the auto-approve job) approves, which RELEASES escrow through the money

@@ -1,4 +1,4 @@
-"""Nightly ledger reconciliation job (SPEC SECTION 21).
+"""Nightly ledger reconciliation job.
 
 Asserts, for every wallet, ``balance == SUM(settled amounts)`` and, for every
 correlation group, that the settled amounts sum to 0.00. Any drift is logged at ERROR

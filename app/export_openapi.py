@@ -1,4 +1,4 @@
-"""Export the OpenAPI schema to docs/openapi.json (SPEC SECTION 4.3, 23).
+"""Export the OpenAPI schema to docs/openapi.json.
 
 The /docs endpoint is disabled outside development, so CI runs this with
 ENVIRONMENT=development to publish a reviewable contract as a CI artifact.

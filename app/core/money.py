@@ -1,7 +1,7 @@
 """Decimal money primitives for Giftly.
 
-This module owns every money quantization rule in the codebase (SPEC SECTION 8.9,
-SECTION 11). Money is a ``Decimal`` parsed from strings and serialized to strings;
+This module owns every money quantization rule in the codebase. Money is a ``Decimal``
+parsed from strings and serialized to strings;
 floats are banned in every money path because ``0.1 + 0.2 != 0.3`` is how halalas
 silently disappear. Nothing else in the codebase may call ``.quantize`` on a money
 value — it goes through :func:`quantize_money` so rounding is uniform and auditable.

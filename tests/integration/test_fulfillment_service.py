@@ -236,7 +236,7 @@ async def test_resolve_split_divides_escrow(db_session: AsyncSession) -> None:
     courier_wallet = await repo.get_by_user(courier.id)
     customer_wallet = await repo.get_by_user(customer.id)
     assert courier_wallet is not None and courier_wallet.balance == Decimal("400.00")
-    assert customer_wallet is not None and customer_wallet.balance == Decimal("324.50")
+    assert customer_wallet is not None and customer_wallet.balance == Decimal("230.00")
     assert (await MoneyService(repo).reconcile()).ok
 
 

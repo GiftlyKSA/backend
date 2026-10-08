@@ -11,6 +11,7 @@ import pytest
 import pytest_asyncio
 from app.admin.deps import require_admin
 from app.core.db import build_engine, build_session_factory
+from app.core.deps import require_auth
 from app.core.exceptions import ConflictError, ForbiddenError, RateLimitedError, UnauthorizedError
 from app.core.jwt import create_access_token, decode_access_token
 from app.core.redis import build_redis
@@ -189,6 +190,16 @@ async def test_concurrent_refresh_has_one_successor_and_replay_revocation_surviv
         )
         assert len(rows) == 2
         assert all(row.revoked_at is not None for row in rows)
+        user = await session.get(User, user_id)
+        assert user.auth_version == 1
+        redis = AsyncMock()
+        redis.get.return_value = None
+        with pytest.raises(UnauthorizedError):
+            await validate_access_claims(
+                decode_access_token(settings(), winners[0].access_token),
+                redis=redis,
+                users=UserRepository(session),
+            )
         with pytest.raises(UnauthorizedError):
             await auth_service(session).refresh(winners[0].refresh_token)
 
@@ -231,7 +242,7 @@ async def test_identity_change_revokes_all_credentials_and_new_identity_can_logi
         result = await service.verify_otp(new_phone, "123456")
         assert result.tokens is not None
         claims = decode_access_token(settings(), result.tokens.access_token)
-        assert claims.auth_version == 1
+        assert claims.auth_version == 2
         await validate_access_claims(claims, redis=redis, users=UserRepository(session))
 
 
@@ -294,3 +305,70 @@ async def test_redis_otp_attempt_limit_is_atomic(redis_client, monkeypatch):
         await redis_client.delete(
             *(f"otp:{kind}:{phone}" for kind in ("code", "attempts", "rate", "block"))
         )
+
+
+async def test_refresh_replay_durably_rejects_older_newer_and_other_device_access(auth_database):
+    factory, user_id, raw = auth_database
+    older_access, _, _ = create_access_token(settings(), user_id=user_id, role="CUSTOMER")
+    async with factory() as session:
+        pair = await auth_service(session).refresh(raw)
+        other_device = await auth_service(session)._issue_tokens(user_id, "CUSTOMER")
+        await session.commit()
+    async with factory() as session:
+        with pytest.raises(UnauthorizedError, match="reuse"):
+            await auth_service(session).refresh(raw)
+        await session.rollback()
+    redis = AsyncMock()
+    redis.get.return_value = None
+    app = SimpleNamespace(state=SimpleNamespace(settings=settings(), redis=redis))
+    async with factory() as session:
+        assert (await session.get(User, user_id)).auth_version == 1
+        for access in (older_access, pair.access_token, other_device.access_token):
+            request = Request(
+                {
+                    "type": "http",
+                    "app": app,
+                    "headers": [(b"authorization", f"Bearer {access}".encode())],
+                }
+            )
+            with pytest.raises(UnauthorizedError):
+                await require_auth(request, session)
+        rows = list(
+            (
+                await session.scalars(select(RefreshToken).where(RefreshToken.user_id == user_id))
+            ).all()
+        )
+        assert len(rows) == 3
+        assert all(row.revoked_at is not None for row in rows)
+        for refresh in (pair.refresh_token, other_device.refresh_token):
+            with pytest.raises(UnauthorizedError):
+                await auth_service(session).refresh(refresh)
+
+
+async def test_cancelled_rotation_rolls_back_consumption_before_retry(auth_database):
+    factory, user_id, raw = auth_database
+    consumed = asyncio.Event()
+
+    async def interrupted():
+        async with factory() as session:
+            service = auth_service(session)
+
+            async def blocked_successor(*args):
+                consumed.set()
+                await asyncio.Event().wait()
+
+            service._new_refresh = blocked_successor
+            await service.refresh(raw)
+
+    task = asyncio.create_task(interrupted())
+    try:
+        await asyncio.wait_for(consumed.wait(), timeout=2)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    async with factory() as session:
+        pair = await auth_service(session).refresh(raw)
+        await session.commit()
+        assert decode_access_token(settings(), pair.access_token).auth_version == 0
+        assert (await session.get(User, user_id)).auth_version == 0

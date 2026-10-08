@@ -1,4 +1,4 @@
-"""Audit-log persistence (SPEC SECTION 8.19).
+"""Audit-log persistence.
 
 Every security-relevant and admin action writes one append-only row here. Metadata is
 scrubbed of Restricted data before it reaches this layer.

@@ -1,4 +1,4 @@
-"""The object-storage contract (SPEC SECTION 16.1, 17.3).
+"""The object-storage contract.
 
 Zero-proxy media: the API never streams bytes. It issues a pre-signed PUT URL, the
 client uploads straight to S3, then confirms the key. Reads go through short-TTL

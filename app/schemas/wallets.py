@@ -1,4 +1,4 @@
-"""Pydantic contracts for the wallet endpoints (SPEC SECTION 19).
+"""Pydantic contracts for the wallet endpoints.
 
 Money is always a decimal STRING, never a number.
 """

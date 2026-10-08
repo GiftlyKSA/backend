@@ -1,4 +1,4 @@
-"""The order state machine (SPEC SECTION 9).
+"""The order state machine.
 
 The ONLY legal transitions live here, in one transition table — never scattered
 if-statements. Any transition not in the table raises InvalidStateTransitionError.

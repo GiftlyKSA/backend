@@ -1,7 +1,8 @@
-"""Chat routes: REST messaging plus a live WebSocket per conversation (SPEC SECTION 10).
+"""REST messaging and a live WebSocket per conversation.
 
 Message content is encrypted at rest and decrypted only for participants. The WebSocket
-is authenticated by an access token (``?token=``), verified against the same denylist as
+prefers an access-token header or subprotocol, retaining legacy query authentication.
+Tokens are verified against the same denylist as
 the REST API, and only a conversation's two members may connect. Live delivery rides a
 Redis pub/sub channel, so a message sent on any instance reaches every open socket.
 """
@@ -10,12 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -24,7 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.audit_context import mark_request_transaction, set_audit_actor
 from app.core.config import Settings
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_auth, require_role
-from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    UnauthorizedError,
+)
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
 from app.core.ws_connections import WebSocketLease
@@ -174,11 +183,42 @@ async def send_chat_media(
 ) -> MessageResponse:
     """Validate uploaded bytes, then atomically attach them to a new chat message."""
     service = _media_service(request, db)
-    attachments = await service.prepare(
-        conversation_id=conversation_id,
-        actor_id=actor.id,
-        keys=body.storage_keys,
-    )
+    if body.client_message_id is not None:
+        replay = await _service(request, db).replay_message(
+            conversation_id=conversation_id,
+            sender_id=actor.id,
+            text=body.text,
+            client_message_id=body.client_message_id,
+            storage_keys=body.storage_keys,
+        )
+        if replay is not None:
+            await db.commit()
+            await _deliver_chat_message(_service(request, db), replay)
+            return _message(replay)
+    try:
+        attachments = await service.prepare(
+            conversation_id=conversation_id,
+            actor_id=actor.id,
+            keys=body.storage_keys,
+        )
+    except (BadRequestError, ConflictError):
+        if body.client_message_id is None:
+            raise
+        await mark_request_transaction(db)
+        if await require_auth(request, db) != actor:
+            raise UnauthorizedError("This session is no longer valid.") from None
+        replay = await _service(request, db).replay_message(
+            conversation_id=conversation_id,
+            sender_id=actor.id,
+            text=body.text,
+            client_message_id=body.client_message_id,
+            storage_keys=body.storage_keys,
+        )
+        if replay is None:
+            raise
+        await db.commit()
+        await _deliver_chat_message(_service(request, db), replay)
+        return _message(replay)
     await mark_request_transaction(db)
     current_actor = await require_auth(request, db)
     if current_actor != actor:
@@ -188,6 +228,7 @@ async def send_chat_media(
         actor_id=actor.id,
         attachments=attachments,
         text=body.text,
+        client_message_id=body.client_message_id,
     )
     await db.commit()
     await _deliver_chat_message(_service(request, db), dto)
@@ -202,8 +243,8 @@ async def _deliver_chat_message(
     delivered = False
     try:
         async with asyncio.timeout(5):
-            await service.publish_message(dto)
-        delivered = True
+            published = await service.publish_message(dto)
+        delivered = published is not False
     except Exception:
         _logger.exception("The chat message was saved, but live delivery failed.")
     return delivered
@@ -310,7 +351,10 @@ async def send_message(
     """Send a text message; participants receive it live over the WebSocket."""
     service = _service(request, db)
     dto = await service.send_message(
-        conversation_id=conversation_id, sender_id=actor.id, text=body.text
+        conversation_id=conversation_id,
+        sender_id=actor.id,
+        text=body.text,
+        client_message_id=body.client_message_id,
     )
     # A live event must never race ahead of the durable row it announces.
     await db.commit()
@@ -336,6 +380,11 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
     Authenticated by ``?token=`` (same verification as the REST API). Only the
     conversation's members may connect; anyone else is closed with policy violation.
     """
+    settings = websocket.app.state.settings
+    origin = websocket.headers.get("origin")
+    if settings.is_production and origin is not None and origin not in settings.cors_origins:
+        await websocket.close(code=4403)
+        return
     actor = await _authenticate_ws(websocket)
     if actor is None:
         await websocket.close(code=4401)  # unauthenticated
@@ -392,7 +441,8 @@ async def _run_admitted_ws(
     try:
         async with asyncio.timeout(5):
             await pubsub.subscribe(conversation_channel(conversation_id))
-        await websocket.accept()
+        protocols = websocket.scope.get("subprotocols", [])
+        await websocket.accept(subprotocol="giftly.chat" if "giftly.chat" in protocols else None)
         tasks = [
             asyncio.create_task(_pump_pubsub_to_socket(pubsub, websocket, conversation_id)),
             asyncio.create_task(
@@ -469,16 +519,32 @@ async def _pump_socket_to_chat(
         if not decision.allowed:
             continue  # over the per-user message ceiling: dropped
         await _require_live_authorization(websocket, conversation_id)
-        text = _extract_text(raw)
-        if not text:
+        body = _extract_send_request(raw)
+        if body is None:
+            await websocket.send_text(
+                json.dumps(
+                    {"error": {"code": "VALIDATION_ERROR", "message": "Invalid chat message."}}
+                )
+            )
             continue
         async with factory() as session:
             await mark_request_transaction(session)
             await set_audit_actor(session, category=actor.role.value, actor_user_id=actor.id)
             service = _session_service(session, redis, settings)
-            dto = await service.send_message(
-                conversation_id=conversation_id, sender_id=actor.id, text=text
-            )
+            try:
+                dto = await service.send_message(
+                    conversation_id=conversation_id,
+                    sender_id=actor.id,
+                    text=body.text,
+                    client_message_id=body.client_message_id,
+                )
+            except ConflictError as exc:
+                await session.rollback()
+                await _require_live_authorization(websocket, conversation_id)
+                await websocket.send_text(
+                    json.dumps({"error": {"code": exc.code, "message": exc.message}})
+                )
+                continue
             # Commit before any external side effect or live event can expose the row.
             await session.commit()
             delivered = await _deliver_chat_message(service, dto)
@@ -487,28 +553,25 @@ async def _pump_socket_to_chat(
                 await websocket.send_text(_message(dto).model_dump_json())
 
 
-def _extract_text(raw: str) -> str:
-    """Extract the message text from a JSON frame; non-JSON frames are rejected.
-
-    The WS contract matches REST (audit LOG-3): a frame must be a JSON object with a
-    ``text`` field. Anything else returns "" and is dropped by the caller.
-    """
-    import json
-
+def _extract_send_request(raw: str) -> SendMessageRequest | None:
+    """Validate REST-compatible text and optional retry identity from a socket frame."""
     try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return ""
-    if isinstance(parsed, dict):
-        return str(parsed.get("text", "")).strip()
-    return ""
+        return SendMessageRequest.model_validate_json(raw)
+    except ValidationError:
+        return None
+
+
+def _extract_text(raw: str) -> str:
+    """Return validated text for callers that only need the text boundary."""
+    body = _extract_send_request(raw)
+    return body.text if body is not None else ""
 
 
 async def _authenticate_ws(
     websocket: WebSocket, conversation_id: uuid.UUID | None = None
 ) -> Actor | None:
-    token = websocket.query_params.get("token", "")
-    if not token:
+    token = _socket_token(websocket)
+    if not token or len(token) > 8192:
         return None
     settings = websocket.app.state.settings
     try:
@@ -546,6 +609,18 @@ async def _authenticate_ws(
     return Actor(id=uuid.UUID(claims.sub), role=role, jti=claims.jti)
 
 
+def _socket_token(websocket: WebSocket) -> str:
+    """Prefer credential headers/protocols; retain query transport for existing clients."""
+    header = websocket.headers.get("authorization")
+    if header is not None:
+        scheme, _, value = header.partition(" ")
+        return value.strip() if scheme.lower() == "bearer" else ""
+    for protocol in websocket.scope.get("subprotocols", []):
+        if protocol.startswith("bearer."):
+            return str(protocol[7:])
+    return websocket.query_params.get("token", "")
+
+
 async def _require_live_authorization(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
     """Check expiry, revocation, account state, and current conversation membership."""
     async with asyncio.timeout(5):
@@ -566,10 +641,15 @@ async def _monitor_authorization(
 
 
 def _parse_cursor(cursor: str | None) -> tuple[datetime, uuid.UUID] | None:
-    if not cursor or "|" not in cursor:
+    if not cursor:
         return None
+    if len(cursor) > 128 or "|" not in cursor:
+        raise BadRequestError("Invalid conversation pagination cursor.")
     ts_raw, _, id_raw = cursor.partition("|")
     try:
-        return datetime.fromisoformat(ts_raw), uuid.UUID(id_raw)
-    except ValueError:
-        return None
+        timestamp = datetime.fromisoformat(ts_raw)
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError("The cursor timestamp must include its timezone.")
+        return timestamp, uuid.UUID(id_raw)
+    except ValueError as exc:
+        raise BadRequestError("Invalid conversation pagination cursor.") from exc

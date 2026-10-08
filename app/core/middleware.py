@@ -1,8 +1,8 @@
-"""Request correlation and the global exception handler (SPEC SECTION 8.14-17).
+"""Request correlation and the global exception handler.
 
 Every request gets a ``request_id`` bound into a context var so logs correlate, and
 every response echoes it in the ``X-Request-ID`` header. The global handler renders
-the §8.16 error envelope and never leaks internals to the client.
+the domain error envelope and never leaks internals to the client.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from time import perf_counter
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.exceptions import DomainError, RateLimitedError
@@ -31,33 +31,52 @@ def current_request_id() -> str:
     return _request_id_ctx.get()
 
 
-class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Assigns and propagates a per-request correlation id."""
+class RequestIdMiddleware:
+    """Bind correlation and render unexpected failures inside protective middleware."""
 
     def __init__(self, app: ASGIApp) -> None:
         """Wrap the ASGI app."""
-        super().__init__(app)
+        self.app = app
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
-        """Bind a request id, run the handler, and echo the id back."""
-        supplied = request.headers.get("X-Request-ID", "")
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Keep correlation through response completion, preserving cancellation."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        supplied = Headers(scope=scope).get("X-Request-ID", "")
         request_id = supplied if _SAFE_REQUEST_ID.fullmatch(supplied) else str(uuid.uuid4())
+        scope.setdefault("state", {})["request_id"] = request_id
         token = _request_id_ctx.set(request_id)
         metrics, metrics_token = begin_query_metrics()
         started = perf_counter()
+        response_started = False
+
+        async def stamp(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+                MutableHeaders(scope=message)["X-Request-ID"] = request_id
+            await send(message)
+
         try:
-            response = await call_next(request)
+            try:
+                await self.app(scope, receive, stamp)
+            except Exception as exc:
+                if response_started:
+                    raise
+                response = unexpected_error_response(request_id, exc)
+                await response(scope, receive, stamp)
         finally:
             elapsed_ms = (perf_counter() - started) * 1000
             if elapsed_ms >= 500:
-                route = request.scope.get("route")
+                route = scope.get("route")
                 _logger.warning(
                     "Slow request completed; inspect database time and dependency waits.",
                     extra={
                         "request_id": request_id,
                         "extra_fields": {
                             "route": str(getattr(route, "path", "unmatched")),
-                            "method": request.method,
+                            "method": scope["method"],
                             "elapsed_ms": round(elapsed_ms, 2),
                             "sql_count": metrics.count,
                             "sql_ms": round(metrics.elapsed_seconds * 1000, 2),
@@ -66,8 +85,6 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
                 )
             end_query_metrics(metrics_token)
             _request_id_ctx.reset(token)
-        response.headers["X-Request-ID"] = request_id
-        return response
 
 
 class BodySizeMiddleware:
@@ -112,14 +129,14 @@ class BodySizeMiddleware:
 
 
 def _envelope(code: str, message: str) -> dict[str, object]:
-    """Build the §8.16 error envelope with the current request id."""
+    """Build the domain error envelope with the current request id."""
     return {"error": {"code": code, "message": message, "request_id": current_request_id()}}
 
 
 def error_response(
     status_code: int, code: str, message: str, *, headers: dict[str, str] | None = None
 ) -> JSONResponse:
-    """Render an §8.16 error envelope as a JSON response.
+    """Render a domain error envelope as a JSON response.
 
     Shared by the exception handlers and the guard middlewares (rate limit, body size)
     so every error the client sees carries the same shape and the current request id.
@@ -141,6 +158,24 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
-        # SECURITY: never leak the exception text, SQL, or a stack trace to a client.
-        _logger.exception("Unhandled error", extra={"request_id": current_request_id()})
-        return error_response(500, "INTERNAL_ERROR", "An unexpected error occurred.")
+        request_id = getattr(request.state, "request_id", current_request_id())
+        return unexpected_error_response(request_id, exc)
+
+
+def unexpected_error_response(request_id: str, exc: Exception) -> JSONResponse:
+    """Report only safe failure metadata and render the stable internal-error envelope."""
+    _logger.error(
+        "Unhandled error",
+        extra={"request_id": request_id, "extra_fields": {"exception_type": type(exc).__name__}},
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred.",
+                "request_id": request_id,
+            }
+        },
+        headers={"X-Request-ID": request_id},
+    )

@@ -1,4 +1,4 @@
-"""Admin JSON actions that move money (SPEC SECTION 20.H).
+"""Admin JSON actions that move money.
 
 Distinct from the HTML admin dashboard (session-cookie auth, read-only for money):
 these are JWT-authenticated actions requiring the ADMIN role. Dispute resolution and

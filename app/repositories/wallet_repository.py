@@ -1,4 +1,4 @@
-"""Wallet and ledger persistence (SPEC SECTION 10, 8.11).
+"""Wallet and ledger persistence.
 
 Money writes lock wallets with ``SELECT ... FOR UPDATE`` in ASCENDING wallet-id order
 to prevent deadlocks. The ledger is append-only; this repository only ever INSERTs

@@ -45,6 +45,8 @@ def socket_context(monkeypatch):
         session_factory=Mock(return_value=session),
     )
     websocket = SimpleNamespace(
+        headers={},
+        scope={"subprotocols": []},
         query_params={"token": token},
         app=SimpleNamespace(state=state),
         send_text=AsyncMock(),
@@ -206,7 +208,7 @@ async def test_refresh_replay_revocation_is_committed_before_unauthorized():
         family_id=family_id,
     )
     sequence = Mock()
-    sequence.attach_mock(repo.revoke_family, "revoke")
+    sequence.attach_mock(repo.invalidate_user_credentials, "revoke")
     sequence.attach_mock(session.commit, "commit")
     service = AuthService(
         settings=make_test_settings(),
@@ -254,3 +256,45 @@ async def test_invalid_refresh_cannot_issue_successor(change):
         await service.refresh("unusable-token")
     repo.add_refresh_token.assert_not_awaited()
     session.commit.assert_not_awaited()
+
+
+async def test_refresh_replay_invalidates_access_across_devices_and_live_socket(monkeypatch):
+    from app.core.jwt import decode_access_token
+    from app.services.auth_service import validate_access_claims
+
+    websocket, user, _ = socket_context(monkeypatch)
+    assert await chat._authenticate_ws(websocket) is not None
+    repo, session = AsyncMock(), AsyncMock()
+    repo.lock_refresh_owner.return_value = user
+    repo.get_refresh_token.return_value = SimpleNamespace(
+        user_id=user.id, revoked_at=None, used_at=datetime.now(UTC), family_id=uuid4()
+    )
+
+    async def invalidate(user_id, now):
+        assert user_id == user.id
+        user.auth_version += 1
+
+    repo.invalidate_user_credentials.side_effect = invalidate
+    service = AuthService(
+        settings=websocket.app.state.settings,
+        redis=websocket.app.state.redis,
+        otp=AsyncMock(),
+        users=AsyncMock(),
+        auth_repo=repo,
+        session=session,
+    )
+    other_access, _, _ = create_access_token(
+        websocket.app.state.settings, user_id=user.id, role=user.role.value
+    )
+    with pytest.raises(UnauthorizedError, match="reuse"):
+        await service.refresh("already-used-token")
+    for access in (websocket.query_params["token"], other_access):
+        with pytest.raises(UnauthorizedError):
+            await validate_access_claims(
+                decode_access_token(websocket.app.state.settings, access),
+                redis=websocket.app.state.redis,
+                users=UserRepository(session),
+            )
+    with pytest.raises(UnauthorizedError):
+        await chat._require_live_authorization(websocket, uuid4())
+    assert user.auth_version == 1

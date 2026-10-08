@@ -42,12 +42,13 @@ async def test_batch_insert_has_distinct_ids_and_foreign_sender_cannot_insert(db
 
 async def test_partial_claim_rolls_back_all_grants_and_message(db_session, monkeypatch):
     customer, courier, conversation = await _conversation(db_session)
-    keys = [f"chat/{conversation.id}/{uuid4()}.jpg" for _ in range(2)]
+    customer_id, conversation_id = customer.id, conversation.id
+    keys = [f"chat/{conversation_id}/{uuid4()}.jpg" for _ in range(2)]
     db_session.add_all(
         [
             MediaUpload(
                 storage_key=key,
-                owner_user_id=customer.id,
+                owner_user_id=customer_id,
                 purpose="CHAT_ATTACHMENT",
                 content_type="image/jpeg",
                 byte_size=12,
@@ -76,8 +77,8 @@ async def test_partial_claim_rolls_back_all_grants_and_message(db_session, monke
     with pytest.raises(ConflictError):
         async with db_session.begin_nested():
             await service.send(
-                conversation_id=conversation.id,
-                actor_id=customer.id,
+                conversation_id=conversation_id,
+                actor_id=customer_id,
                 text="",
                 attachments=[ValidatedAttachment(key, "image/jpeg", 12) for key in keys],
             )
@@ -87,7 +88,7 @@ async def test_partial_claim_rolls_back_all_grants_and_message(db_session, monke
         await db_session.scalar(
             select(func.count())
             .select_from(Message)
-            .where(Message.conversation_id == conversation.id)
+            .where(Message.conversation_id == conversation_id)
         )
         == 0
     )

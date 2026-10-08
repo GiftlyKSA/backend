@@ -1,11 +1,11 @@
-"""The promo engine — validation and atomic reserve/consume/release (SPEC SECTION 12).
+"""The promo engine — validation and atomic reserve/consume/release.
 
 Codes are case-insensitive (normalized to upper). Validation reports a precise error
-per §12.2 without reserving. Reservation uses the atomic conditional UPDATE (§12.3) so
+without reserving. Reservation uses the atomic conditional UPDATE so
 a global usage cap ("first 20") can never be overshot by concurrent requests; the
 per-user cap is enforced in the same transaction with the promo row already locked by
 that UPDATE. Release returns a slot to the pool so an abandoned checkout never burns
-one permanently (§12.4).
+one permanently.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class PromoService:
         user_id: uuid.UUID,
         current_invoice_id: uuid.UUID | None = None,
     ) -> PromoValidation:
-        """Validate a promo against a base amount without reserving it (§12.2).
+        """Validate a promo against a base amount without reserving it.
 
         Raises:
             PromoNotFoundError / PromoInactiveError / PromoNotStartedError /
@@ -137,7 +137,7 @@ class PromoService:
         order_id: uuid.UUID,
         discount_amount: Decimal,
     ) -> None:
-        """Reserve a promo usage for an invoice (§12.3), inserting a RESERVED row.
+        """Reserve a promo usage for an invoice, inserting a RESERVED row.
 
         Must run inside the caller's transaction so a failed per-user check rolls back
         the atomic increment.
@@ -164,7 +164,7 @@ class PromoService:
         )
 
     async def consume(self, *, invoice_id: uuid.UUID) -> None:
-        """Mark an invoice's reservation CONSUMED on payment (§12.4)."""
+        """Mark an invoice's reservation CONSUMED on payment."""
         redemption = await self._promos.get_redemption_by_invoice(invoice_id)
         if redemption is None or redemption.status is not PromoRedemptionStatus.RESERVED:
             return
@@ -173,7 +173,7 @@ class PromoService:
         )
 
     async def release(self, *, invoice_id: uuid.UUID) -> None:
-        """Release an invoice's reservation, returning its slot to the pool (§12.4).
+        """Release an invoice's reservation, returning its slot to the pool.
 
         Idempotent: releasing an already-released or consumed reservation is a no-op.
         """

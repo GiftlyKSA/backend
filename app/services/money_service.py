@@ -1,4 +1,4 @@
-"""The money/ledger service — the only code that moves money (SPEC SECTION 10, 20).
+"""The money/ledger service — the only code that moves money.
 
 Every movement is a double-entry group: >= 2 legs sharing one ``correlation_id`` whose
 signed amounts sum to exactly 0.00, posted atomically. Wallets are locked FOR UPDATE in
@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import InsufficientFundsError
 from app.core.money import ZERO, quantize_money
+from app.models import Wallet
 from app.models.enums import TransactionStatus, TransactionType, WalletType
 from app.repositories.wallet_repository import WalletRepository
 
@@ -41,6 +42,35 @@ def _validate_legs(legs: list[Leg]) -> None:
     for leg in legs:
         if quantize_money(leg.amount) == ZERO:
             raise LedgerImbalanceError("A ledger leg amount must be non-zero.")
+
+
+def _validate_debits_and_consume_hold(
+    locked: dict[uuid.UUID, Wallet],
+    legs: list[Leg],
+    held_wallet_id: uuid.UUID | None,
+    held_amount: Decimal,
+) -> None:
+    """Protect unrelated reservations using the fresh locked wallet balances."""
+    debits: dict[uuid.UUID, Decimal] = {}
+    for leg in legs:
+        if leg.amount < ZERO:
+            debits[leg.wallet_id] = debits.get(leg.wallet_id, ZERO) - leg.amount
+    if held_amount < ZERO or (
+        held_amount > ZERO
+        and (held_wallet_id not in locked or debits.get(held_wallet_id, ZERO) != held_amount)
+    ):
+        raise LedgerImbalanceError("The reservation must match its wallet debit.")
+    for wallet_id, debit in debits.items():
+        wallet = locked[wallet_id]
+        own_hold = held_amount if wallet_id == held_wallet_id else ZERO
+        if own_hold > wallet.held_balance or (
+            wallet.user_id is not None and wallet.balance - debit < wallet.held_balance - own_hold
+        ):
+            raise InsufficientFundsError()
+    if held_amount > ZERO:
+        assert held_wallet_id is not None
+        wallet = locked[held_wallet_id]
+        wallet.held_balance = quantize_money(wallet.held_balance - held_amount)
 
 
 class LedgerImbalanceError(Exception):
@@ -95,7 +125,14 @@ class MoneyService:
         """Bind the service to a wallet repository (and its session)."""
         self._wallets = wallets
 
-    async def post_group(self, *, legs: list[Leg], correlation_id: uuid.UUID) -> bool:
+    async def post_group(
+        self,
+        *,
+        legs: list[Leg],
+        correlation_id: uuid.UUID,
+        held_wallet_id: uuid.UUID | None = None,
+        held_amount: Decimal = ZERO,
+    ) -> bool:
         """Post a balanced double-entry group atomically.
 
         Locks every involved wallet FOR UPDATE (ascending id), applies each leg to the
@@ -106,6 +143,8 @@ class MoneyService:
         Args:
             legs: Two or more legs whose signed amounts sum to 0.00.
             correlation_id: The shared id tying the legs into one movement.
+            held_wallet_id: Wallet whose operation-specific hold is consumed.
+            held_amount: That operation's reservation, consumed atomically with the debit.
 
         Returns:
             True if the group was posted, False if it was a detected replay (no-op).
@@ -125,6 +164,9 @@ class MoneyService:
         try:
             async with self._wallets.savepoint():
                 locked = await self._wallets.lock_wallets([leg.wallet_id for leg in legs])
+                if await self._any_key_exists(legs):
+                    return False
+                _validate_debits_and_consume_hold(locked, legs, held_wallet_id, held_amount)
                 for leg in legs:
                     wallet = locked[leg.wallet_id]
                     wallet.balance = quantize_money(wallet.balance + leg.amount)
@@ -574,9 +616,9 @@ class MoneyService:
                     description=f"Courier withdrawal {withdrawal_id}",
                 ),
             ],
+            held_wallet_id=courier_wallet_id,
+            held_amount=amount,
         )
-        if posted:
-            await self.release_hold(wallet_id=courier_wallet_id, amount=amount)
         return posted
 
     async def fund_escrow_for_invoice(
@@ -653,11 +695,12 @@ class MoneyService:
                 reference_intent_id=intent_id,
             )
         )
-        posted = await self.post_group(legs=legs, correlation_id=correlation)
-        # Release the reservation only on the first successful post (never on a replay).
-        if posted and was_held and wallet_amount > ZERO:
-            await self.release_hold(wallet_id=customer_wallet_id, amount=wallet_amount)
-        return posted
+        return await self.post_group(
+            legs=legs,
+            correlation_id=correlation,
+            held_wallet_id=customer_wallet_id if was_held else None,
+            held_amount=wallet_amount if was_held else ZERO,
+        )
 
     async def reconcile(self) -> ReconcileReport:
         """Assert the ledger invariants across every wallet and correlation group.

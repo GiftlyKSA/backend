@@ -1,4 +1,4 @@
-"""Public promo routes (SPEC SECTION 12.2).
+"""Public promo routes.
 
 Only the customer-facing preview lives here: validate a promo against the customer's
 own order and see the exact discount and resulting total. The customer invoice-promo

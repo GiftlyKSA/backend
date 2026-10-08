@@ -1383,7 +1383,7 @@
         "type": "object"
       },
       "OrderStatus": {
-        "description": "Order lifecycle status (see the state machine in SPEC SECTION 9).",
+        "description": "Order lifecycle status (see app/services/order_state.py).",
         "enum": [
           "NEW",
           "ASSIGNED",
@@ -2111,6 +2111,18 @@
         "additionalProperties": false,
         "description": "Send up to five images, one video, or one recorded voice note.",
         "properties": {
+          "client_message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Message Id"
+          },
           "storage_keys": {
             "items": {
               "maxLength": 512,
@@ -2138,6 +2150,18 @@
         "additionalProperties": false,
         "description": "Send a text message into a conversation.",
         "properties": {
+          "client_message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Message Id"
+          },
           "text": {
             "maxLength": 4000,
             "minLength": 1,
@@ -2201,6 +2225,30 @@
           "expires_in"
         ],
         "title": "SendOtpResponse",
+        "type": "object"
+      },
+      "SimulatePaymentRequest": {
+        "additionalProperties": false,
+        "description": "Development-only: simulate a simulated payment callback for a payment-link ID.",
+        "properties": {
+          "payment_link_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Payment Link Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "PAID",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payment_link_id"
+        ],
+        "title": "SimulatePaymentRequest",
         "type": "object"
       },
       "StatementTotals": {
@@ -3898,6 +3946,74 @@
         "summary": "Mark Read",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/dev/ping": {
+      "get": {
+        "description": "Confirm dev routes are registered (development only).",
+        "operationId": "dev_ping_api_dev_ping_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Dev Ping Api Dev Ping Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Development liveness marker",
+        "tags": [
+          "dev"
+        ]
+      }
+    },
+    "/api/dev/simulation/simulate": {
+      "post": {
+        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler \u2014 it never bypasses webhook processing.",
+        "operationId": "simulate_payment_api_dev_simulation_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Payment",
+        "tags": [
+          "dev"
         ]
       }
     },

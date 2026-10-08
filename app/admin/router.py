@@ -1,4 +1,4 @@
-"""Admin dashboard routes (SPEC SECTION 18.3).
+"""Admin dashboard routes.
 
 Server-rendered Jinja pages mounted at ``/v1/admin/admin``. Every route calls the admin
 services and never queries the DB directly. Reads are open to any authenticated

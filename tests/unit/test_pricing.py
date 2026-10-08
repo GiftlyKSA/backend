@@ -97,3 +97,29 @@ def test_allocation_always_sums_to_discount_with_awkward_split() -> None:
     result = calculate_invoice_totals(items, Decimal("0.00"), promo, CFG)
     total_alloc = sum((line.line_discount_amount for line in result.lines), Decimal("0.00"))
     assert total_alloc == Decimal("10.00")
+
+
+@pytest.mark.parametrize("courier_fee", [Decimal("0.00"), Decimal("0.01")])
+@pytest.mark.parametrize("fixed", [Decimal("0.01"), Decimal("0.10"), Decimal("999.00")])
+def test_tiny_components_have_bounded_exact_discount(courier_fee, fixed):
+    items = [PricingItem(str(n), Decimal("0.01"), 1, position=n + 1) for n in range(20)]
+    promo = PricingPromo(discount_type=PromoDiscountKind.FIXED, fixed_amount=fixed)
+    result = calculate_invoice_totals(items, courier_fee, promo, CFG)
+    shares = [line.line_discount_amount for line in result.lines]
+    assert all(Decimal("0.00") <= share <= Decimal("0.01") for share in shares)
+    assert Decimal("0.00") <= result.courier_fee_discount_amount <= courier_fee
+    assert sum(shares, result.courier_fee_discount_amount) == result.discount_amount
+    assert result.total_amount == sum(
+        (line.line_total_amount for line in result.lines),
+        courier_fee - result.courier_fee_discount_amount + result.service_fee_amount,
+    )
+    assert result == calculate_invoice_totals(items, courier_fee, promo, CFG)
+
+
+def test_twenty_tiny_items_half_discount_uses_first_ten_cent_ties():
+    items = [PricingItem(str(n), Decimal("0.01"), 1) for n in range(20)]
+    promo = PricingPromo(discount_type=PromoDiscountKind.PERCENT, percent_value=Decimal("50"))
+    result = calculate_invoice_totals(items, Decimal("0.00"), promo, CFG)
+    assert [line.line_discount_amount for line in result.lines] == (
+        [Decimal("0.01")] * 10 + [Decimal("0.00")] * 10
+    )

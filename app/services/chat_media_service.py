@@ -26,7 +26,7 @@ from app.repositories.media_repository import MediaRepository
 from app.services.chat_media_validation import (
     bounded_recording_file,
     media_policy,
-    verify_image,
+    verify_image_isolated,
     verify_recording_file,
 )
 from app.services.chat_service import ChatMessage, ChatService, attachment_dto
@@ -200,7 +200,7 @@ class ChatMediaService:
                 body = await self._storage.read_bounded_object(grant.key, max_bytes=grant.size)
                 if len(body) != grant.size:
                     raise BadRequestError("The uploaded file size does not match its upload grant.")
-                await asyncio.to_thread(verify_image, body, grant.mime)
+                await verify_image_isolated(body, grant.mime)
                 return grant
             async with bounded_recording_file(
                 self._storage, grant.key, max_bytes=grant.size
@@ -224,11 +224,22 @@ class ChatMediaService:
         actor_id: uuid.UUID,
         attachments: list[ValidatedAttachment],
         text: str,
+        client_message_id: uuid.UUID | None = None,
     ) -> ChatMessage:
         """Recheck grants and atomically save a message with all attachments."""
         keys = [attachment.key for attachment in attachments]
         if not 1 <= len(keys) <= 5 or len(keys) != len(set(keys)):
             raise BadRequestError("Provide one to five unique uploads.")
+        if client_message_id is not None:
+            replay = await self._chat.replay_message(
+                conversation_id=conversation_id,
+                sender_id=actor_id,
+                text=text,
+                client_message_id=client_message_id,
+                storage_keys=keys,
+            )
+            if replay is not None:
+                return replay
         kinds = {self._kind(attachment.mime) for attachment in attachments}
         if len(kinds) != 1 or "" in kinds or (kinds != {"IMAGE"} and len(keys) != 1):
             raise BadRequestError("Send up to five images, one video, or one voice note.")
@@ -237,6 +248,7 @@ class ChatMediaService:
             sender_id=actor_id,
             text=text,
             message_type=MessageType(self._kind(attachments[0].mime)),
+            client_message_id=client_message_id,
         )
         current_grants = await self._grants(keys, conversation_id, actor_id, for_update=True)
         for attachment, current in zip(attachments, current_grants, strict=True):

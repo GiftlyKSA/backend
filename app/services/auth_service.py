@@ -1,6 +1,6 @@
 """Authentication service: OTP -> JWT, registration, and refresh rotation.
 
-Implements SPEC SECTION 20.A. Access tokens are 30-minute JWTs; refresh tokens are
+Access tokens are 30-minute JWTs; refresh tokens are
 opaque 30-day tokens stored hashed in families with reuse detection. A new phone gets
 a short-lived registration token from verify-otp, not an access token. Logout
 revokes the account's access, refresh, and dashboard credentials on all devices.
@@ -238,11 +238,11 @@ class AuthService:
         return await self._issue_tokens(user.id, user.role.value)
 
     async def refresh(self, raw_refresh: str) -> TokenPair:
-        """Rotate a refresh token, revoking the family on reuse.
+        """Rotate a refresh token, signing out every device on detected reuse.
 
         Raises:
             UnauthorizedError: The token is unknown, expired, or already used/revoked
-                (which also revokes the whole family).
+                (which also invalidates account credentials on every device).
         """
         token_hash = sha256_hex(raw_refresh)
         user = await self._repo.lock_refresh_owner(token_hash)
@@ -253,10 +253,9 @@ class AuthService:
         if row is None or row.user_id != user.id:
             raise UnauthorizedError("Invalid refresh token.")
         if row.revoked_at is not None or row.used_at is not None:
-            # Reuse of a rotated/revoked token: the family is compromised. Commit the
-            # revoke explicitly so it survives the 401 (the request session would
-            # otherwise roll it back when the exception propagates).
-            await self._repo.revoke_family(row.family_id, now)
+            # Account-wide revocation also rejects minted access tokens and live sockets.
+            # Commit before the 401 so request cleanup cannot roll back the revocation.
+            await self._repo.invalidate_user_credentials(user.id, now)
             await self._session.commit()
             raise UnauthorizedError("Refresh token reuse detected; please sign in again.")
         if row.expires_at <= now:

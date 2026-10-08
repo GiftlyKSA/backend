@@ -1,4 +1,4 @@
-"""In-memory SMS double (SPEC SECTION 5.1 / 23).
+"""In-memory SMS double.
 
 Captures OTPs so tests and local development can read them without a real provider.
 In development the OTP is surfaced in the API response; in test it is captured here.

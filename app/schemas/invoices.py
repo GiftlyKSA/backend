@@ -1,4 +1,4 @@
-"""Pydantic contracts for the invoice and promo-preview endpoints (SPEC SECTION 11, 14).
+"""Pydantic contracts for the invoice and promo-preview endpoints.
 
 Money crosses the wire as decimal strings, never floats: a float is the single mistake
 that reintroduces binary rounding error. Amounts the client sends (unit price, courier

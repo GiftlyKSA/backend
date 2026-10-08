@@ -4,18 +4,17 @@ import asyncio
 import json
 import math
 import os
+import sys
 from collections.abc import AsyncIterator
 from contextlib import aclosing, asynccontextmanager, suppress
-from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TypeVar
 
-from PIL import Image, UnidentifiedImageError
-
 from app.core.config import Settings
 from app.core.exceptions import BadRequestError, MediaValidationUnavailableError
 from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, StorageClient
+from app.services.image_decoder import decode_image
 
 MEDIA_TYPES = {
     "IMAGE": {"image/jpeg": "jpg", "image/png": "png"},
@@ -56,21 +55,26 @@ def media_policy(settings: Settings, kind: str, mime: str, size: int) -> tuple[s
 def verify_image(body: bytes, mime: str) -> None:
     """Reject malformed images and decompression bombs without interpreting markup."""
     try:
-        with Image.open(BytesIO(body)) as image:
-            expected = "JPEG" if mime == "image/jpeg" else "PNG"
-            if image.format != expected or image.width * image.height > 20_000_000:
-                raise BadRequestError("Invalid image type or dimensions.")
-            image.verify()
-        with Image.open(BytesIO(body)) as image:
-            image.load()
-    except (
-        UnidentifiedImageError,
-        OSError,
-        ValueError,
-        SyntaxError,
-        Image.DecompressionBombError,
-    ) as exc:
+        decode_image(body, mime)
+    except ValueError as exc:
         raise BadRequestError("The image is malformed.") from exc
+
+
+async def verify_image_isolated(body: bytes, mime: str) -> None:
+    """Keep decoder admission until the bounded child process is terminated/reaped."""
+    directory = TemporaryDirectory(prefix="giftly-image-")
+    path = Path(directory.name) / "image"
+    try:
+        await _complete_task(asyncio.create_task(asyncio.to_thread(path.write_bytes, body)))
+        await _run(
+            sys.executable,
+            "-I",
+            str(Path(__file__).with_name("image_decoder.py")),
+            str(path),
+            mime,
+        )
+    finally:
+        await _complete_task(asyncio.create_task(asyncio.to_thread(directory.cleanup)))
 
 
 async def _complete_task(task: asyncio.Task[_TaskResult]) -> _TaskResult:
@@ -123,14 +127,22 @@ async def bounded_recording_file(
 async def _cleanup_process(
     process: asyncio.subprocess.Process, tasks: list[asyncio.Task[bytes]], waiter: asyncio.Task[int]
 ) -> None:
-    if process.returncode is None:
-        with suppress(ProcessLookupError):
-            process.kill()
-        await process.wait()
     for task in tasks:
         task.cancel()
     waiter.cancel()
     await asyncio.gather(*tasks, waiter, return_exceptions=True)
+    if process.returncode is None:
+        with suppress(ProcessLookupError):
+            process.kill()
+    await asyncio.gather(
+        _discard_output(process.stdout), _discard_output(process.stderr), process.wait()
+    )
+
+
+async def _discard_output(stream: asyncio.StreamReader | None) -> None:
+    if stream is not None:
+        while await stream.read(8192):
+            pass
 
 
 async def _read_output(stream: asyncio.StreamReader | None) -> bytes:
@@ -143,15 +155,35 @@ async def _read_output(stream: asyncio.StreamReader | None) -> bytes:
     return bytes(output)
 
 
-async def _run(*args: str) -> bytes:
-    try:
-        process = await asyncio.create_subprocess_exec(
+async def _spawn_process(*args: str) -> asyncio.subprocess.Process:
+    launch = asyncio.create_task(
+        asyncio.create_subprocess_exec(
             *args,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env={key: os.environ[key] for key in ("PATH", "SystemRoot") if key in os.environ},
         )
+    )
+    try:
+        return await asyncio.shield(launch)
+    except asyncio.CancelledError:
+        while not launch.done():
+            with suppress(asyncio.CancelledError):
+                await asyncio.shield(launch)
+        try:
+            process = launch.result()
+        except (OSError, NotImplementedError):
+            raise asyncio.CancelledError from None
+        await _complete_task(
+            asyncio.create_task(_cleanup_process(process, [], asyncio.create_task(process.wait())))
+        )
+        raise
+
+
+async def _run(*args: str) -> bytes:
+    try:
+        process = await _spawn_process(*args)
     except (OSError, NotImplementedError) as exc:
         raise MediaValidationUnavailableError() from exc
     tasks = [

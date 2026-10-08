@@ -1,7 +1,7 @@
 """Payment orchestration: top-ups, invoice payment, and the gateway webhook.
 
 There are exactly two reasons to call the gateway — a wallet top-up and an invoice
-remainder — both unified through ``payment_intents`` (ADR 0003). The webhook verifies
+remainder — both unified through ``payment_intents``. The webhook verifies
 the HMAC over the raw body, looks up the simulated checkout, and dispatches on
 ``purpose``. Settlement is idempotent at three layers: a Redis lock on the transaction
 payment-link ID, the intent's own status check, and the ledger's idempotency keys.

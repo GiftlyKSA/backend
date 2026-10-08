@@ -1,4 +1,4 @@
-"""Promo persistence used by the admin dashboard (SPEC SECTION 12, 18.3).
+"""Promo persistence used by the admin dashboard.
 
 Codes are always normalized (``strip().upper()``) before storage or lookup so a stray
 lowercase row cannot create a second, unreachable code that doubles a usage cap.
@@ -87,7 +87,7 @@ class PromoRepository:
         await self._session.flush()
 
     async def atomic_reserve(self, promo_id: uuid.UUID) -> int | None:
-        """Atomically claim one usage slot (SPEC SECTION 12.3).
+        """Atomically claim one usage slot.
 
         A single conditional UPDATE increments ``used_count`` only if the promo is
         active, in its window, and under its global cap — this is the whole point of
@@ -114,7 +114,7 @@ class PromoRepository:
         return int(row[0]) if row is not None else None
 
     async def atomic_release(self, promo_id: uuid.UUID) -> None:
-        """Atomically return one usage slot to the pool (SPEC SECTION 12.4)."""
+        """Atomically return one usage slot to the pool."""
         await self._session.execute(
             text(
                 "UPDATE promos SET used_count = used_count - 1 "

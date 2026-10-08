@@ -1,4 +1,4 @@
-"""Order routes (SPEC SECTION 19, 20.C).
+"""Order routes.
 
 Role and state authority are dependencies, not if-statements. The actor id comes from
 the JWT. A courier sees the exact delivery point only after the order is assigned.

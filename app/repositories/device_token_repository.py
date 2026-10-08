@@ -1,4 +1,4 @@
-"""Device-token persistence for push notifications (SPEC SECTION 5.1, 13).
+"""Device-token persistence for push notifications.
 
 A token is unique across users (``uq_device_tokens_token``): registering a token that
 already exists re-points it at the current user and refreshes ``last_seen_at``, so a
@@ -48,25 +48,61 @@ class DeviceTokenRepository:
         )
         await self._session.flush()
 
-    async def tokens_for_user(self, user_id: uuid.UUID) -> list[str]:
-        """Return all push tokens registered to a user."""
-        rows = await self._session.scalars(
-            select(DeviceToken.token).where(DeviceToken.user_id == user_id)
-        )
-        return list(rows)
-
-    async def tokens_for_city_couriers(self, city: str) -> list[str]:
-        """Return push tokens of ACTIVE, verified couriers based in a city."""
-        rows = await self._session.scalars(
-            select(DeviceToken.token)
-            .join(User, User.id == DeviceToken.user_id)
-            .join(CourierProfile, CourierProfile.user_id == User.id)
-            .where(
-                User.role == UserRole.COURIER,
-                User.status == UserStatus.ACTIVE,
-                CourierProfile.is_verified.is_(True),
-                CourierProfile.city_of_residence_id
-                == select(City.id).where(City.name == city).scalar_subquery(),
+    async def other_device_ids(
+        self,
+        *,
+        user_id: uuid.UUID,
+        token: str,
+        limit: int,
+    ) -> list[uuid.UUID]:
+        """Read a bounded set of occupied slots after the caller locks its user row."""
+        return list(
+            await self._session.scalars(
+                select(DeviceToken.id)
+                .where(DeviceToken.user_id == user_id, DeviceToken.token != token)
+                .limit(limit)
             )
         )
-        return list(rows)
+
+    async def tokens_for_user(self, user_id: uuid.UUID) -> list[str]:
+        """Return one bounded page of push tokens registered to a user."""
+        return [token for _, token in await self.token_page(user_id=user_id)]
+
+    async def tokens_for_city_couriers(self, city: str) -> list[str]:
+        """Return one bounded page of ACTIVE, verified city couriers' tokens."""
+        return [token for _, token in await self.token_page(city=city)]
+
+    async def token_page(
+        self,
+        *,
+        user_id: uuid.UUID | None = None,
+        city: str | None = None,
+        after: uuid.UUID | None = None,
+        limit: int = 500,
+    ) -> list[tuple[uuid.UUID, str]]:
+        """Page recipients with stable IDs, retaining courier eligibility in SQL."""
+        if (user_id is None) == (city is None):
+            raise ValueError("Exactly one recipient scope is required.")
+        query = select(DeviceToken.id, DeviceToken.token)
+        if user_id is not None:
+            query = query.where(DeviceToken.user_id == user_id)
+        else:
+            query = (
+                query.join(User, User.id == DeviceToken.user_id)
+                .join(
+                    CourierProfile,
+                    CourierProfile.user_id == User.id,
+                )
+                .where(
+                    User.role == UserRole.COURIER,
+                    User.status == UserStatus.ACTIVE,
+                    User.deleted_at.is_(None),
+                    CourierProfile.is_verified.is_(True),
+                    CourierProfile.city_of_residence_id
+                    == select(City.id).where(City.name == city).scalar_subquery(),
+                )
+            )
+        if after is not None:
+            query = query.where(DeviceToken.id > after)
+        result = await self._session.execute(query.order_by(DeviceToken.id).limit(min(limit, 500)))
+        return [(row.id, row.token) for row in result]

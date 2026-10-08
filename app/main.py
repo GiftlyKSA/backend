@@ -1,4 +1,4 @@
-"""FastAPI application factory (SPEC SECTION 3, 5, 17.2 A05).
+"""FastAPI application factory.
 
 Wires configuration, logging, middleware, security headers, CORS, the global
 exception handler, and routers. Docs are enabled only in development; CORS is
@@ -42,7 +42,7 @@ _SECURITY_HEADERS = {
 }
 
 
-# A restrictive CSP for the admin surface (SPEC SECTION 18.4): no inline scripts,
+# A restrictive CSP for the admin surface: no inline scripts,
 # no framing, self-only sources.
 _ADMIN_CSP = (
     "default-src 'self'; script-src 'self'; object-src 'none'; "
@@ -100,7 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.settings = settings
 
-    # Constructing clients at boot triggers the §5.2 interlock
+    # Constructing clients at boot triggers the production interlock
     # (raises on violation).
     app.state.clients = build_clients(settings)
 
@@ -383,7 +383,7 @@ def _install_security_headers(app: FastAPI) -> None:
         if request.url.path.startswith("/v1/admin/admin"):
             response.headers["Content-Security-Policy"] = _ADMIN_CSP
 
-        # Strip fingerprinting headers (SPEC SECTION 17.2 A05).
+        # Strip fingerprinting headers.
         for header in (
             "Server",
             "X-Powered-By",

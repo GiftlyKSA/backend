@@ -1,4 +1,4 @@
-"""CLI to rotate field-encryption keys (SPEC SECTION 17.1, 21).
+"""CLI to rotate field-encryption keys.
 
 Run after adding a new key version to ``FIELD_ENCRYPTION_KEYS`` and bumping
 ``FIELD_ENCRYPTION_KEY_VERSION``: this re-encrypts the mutable Restricted columns to the

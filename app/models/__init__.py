@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.tables import (
     AdminSession,
     AuditLog,
+    ChatLiveDelivery,
     ChatNotification,
     City,
     Conversation,
@@ -42,6 +43,7 @@ __all__ = [
     "AdminSession",
     "AuditLog",
     "Base",
+    "ChatLiveDelivery",
     "ChatNotification",
     "City",
     "Conversation",

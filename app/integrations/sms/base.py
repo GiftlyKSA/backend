@@ -1,4 +1,4 @@
-"""The SMS/OTP client contract (SPEC SECTION 5.1)."""
+"""The SMS/OTP client contract."""
 
 from __future__ import annotations
 

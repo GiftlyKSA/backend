@@ -1,4 +1,4 @@
-"""Development-only routes (SPEC SECTION 5.1, 19).
+"""Development-only routes.
 
 Registered ONLY when ENVIRONMENT=development (interlock layer 4). A test asserts
 these return 404 in production. The simulate route fires a correctly-signed webhook

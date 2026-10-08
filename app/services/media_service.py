@@ -1,4 +1,4 @@
-"""Media pre-sign and confirm (SPEC SECTION 16.1, 17.3, 20.C).
+"""Media pre-sign and confirm.
 
 The API never accepts bytes: it issues a pre-signed PUT URL with a SERVER-generated
 key, and the client uploads directly to S3. Confirm HEADs the object and verifies its

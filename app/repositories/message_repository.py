@@ -1,4 +1,4 @@
-"""Minimal message writer for system messages (SPEC SECTION 20.C).
+"""Minimal message writer for system messages.
 
 The full chat repository lands in Phase 11; the order flow only needs to append an
 encrypted SYSTEM message when an order is assigned. ``messages`` is append-only.

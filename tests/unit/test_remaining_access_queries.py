@@ -158,6 +158,8 @@ async def test_compact_chat_live_check_preserves_current_authorization(monkeypat
     repository = AsyncMock(return_value=None if change == "missing" else state)
     monkeypatch.setattr(ChatRepository, "get_live_state", repository, raising=False)
     websocket = SimpleNamespace(
+        headers={},
+        scope={"subprotocols": []},
         query_params={"token": token},
         app=SimpleNamespace(
             state=SimpleNamespace(

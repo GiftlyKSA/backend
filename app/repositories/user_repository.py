@@ -1,4 +1,4 @@
-"""User persistence used by the admin dashboard and auth (SPEC SECTION 10)."""
+"""User persistence used by the admin dashboard and auth."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Authentication routes (SPEC SECTION 19, 20.A).
+"""Authentication routes.
 
 These endpoints are public (in the PUBLIC_ROUTES sense): OTP request/verify, register,
 refresh, and logout. Business logic lives in the auth service; the router only parses,

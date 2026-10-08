@@ -1,4 +1,4 @@
-"""Media routes (SPEC SECTION 19).
+"""Media routes.
 
 Any authenticated user may request an upload URL and confirm it. The bytes never pass
 through the API — the client PUTs straight to S3 with the pre-signed URL.

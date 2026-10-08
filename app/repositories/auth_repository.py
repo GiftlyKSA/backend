@@ -1,4 +1,4 @@
-"""Persistence for registration and refresh tokens (SPEC SECTION 20.A, 17.2 A07)."""
+"""Persistence for registration and refresh tokens."""
 
 from __future__ import annotations
 

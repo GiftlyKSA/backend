@@ -1,4 +1,4 @@
-"""Pydantic contracts for the payment endpoints (SPEC SECTION 5.1, 19).
+"""Pydantic contracts for the payment endpoints.
 
 Money crosses the wire as decimal strings, never floats. Amounts the client sends
 (a top-up value) are parsed to Decimal; the gateway webhook payload is validated the

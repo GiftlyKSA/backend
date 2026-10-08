@@ -1,4 +1,4 @@
-"""Rating persistence (SPEC SECTION 20.I).
+"""Rating persistence.
 
 One rating per rater per order (``uq_ratings_order_rater``); a rater may never rate
 themselves (``chk_no_self_rating``). Ownership of the order is checked in the service.

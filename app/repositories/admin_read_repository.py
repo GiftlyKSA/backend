@@ -1,4 +1,4 @@
-"""Read-only aggregate queries for the admin dashboard (SPEC SECTION 18.3).
+"""Read-only aggregate queries for the admin dashboard.
 
 These back the overview and the list/detail pages. Kept in the repository layer so the
 admin service — and therefore the dashboard — never issues a raw query itself.

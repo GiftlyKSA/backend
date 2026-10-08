@@ -1,9 +1,9 @@
 """Application settings, loaded once at boot from environment variables only.
 
-There is no secrets manager (SPEC SECTION 6): every secret is an env var wrapped in
+There is no secrets manager: every secret is an env var wrapped in
 ``SecretStr`` so a stray repr prints ``**********``. The ``model_validator`` refuses
 to boot on any production safety violation, naming the offending variable. This is
-the first of the four §5.2 interlock layers.
+the first of the production interlock layers.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     # CORS
     CORS_ALLOWED_ORIGINS: str = ""
 
-    # Hardening (SPEC SECTION 17.2 A04): global request throttle and body-size guard.
+    # Hardening: global request throttle and body-size guard.
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = Field(default=60, ge=1)
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, ge=1)
@@ -171,7 +171,7 @@ class Settings(BaseSettings):
 
     @property
     def docs_enabled(self) -> bool:
-        """OpenAPI/docs are served only in development (SPEC SECTION 5.1)."""
+        """OpenAPI/docs are served only in development."""
         return self.ENVIRONMENT is Environment.DEVELOPMENT
 
     @property

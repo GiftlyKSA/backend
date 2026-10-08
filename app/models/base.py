@@ -1,9 +1,9 @@
-"""SQLAlchemy declarative base and shared column mixins (SPEC SECTION 10).
+"""SQLAlchemy declarative base and shared column mixins.
 
 Every table has a UUID ``id`` and ``created_at`` / ``updated_at`` TIMESTAMPTZ in
 UTC; both timestamps have database defaults.
 Soft-deletable tables add ``deleted_at``. ORM models carry no business logic beyond
-hybrid properties (SPEC SECTION 3).
+hybrid properties.
 """
 
 from __future__ import annotations

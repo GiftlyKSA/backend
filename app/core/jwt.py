@@ -1,4 +1,4 @@
-"""JWT encoding/decoding with a pinned algorithm (SPEC SECTION 17.2 A07).
+"""JWT encoding/decoding with a pinned algorithm.
 
 The expected algorithm is pinned from configuration and never read from the token's
 own header — this defeats ``alg: none`` and the RS256->HS256 confusion attack. Access

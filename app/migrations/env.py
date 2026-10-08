@@ -2,7 +2,7 @@
 
 The database URL is read from the application Settings so no secret lives in
 alembic.ini. Autogenerate compares against ``Base.metadata``; every generated
-revision is a DRAFT to be read line by line before committing (SPEC SECTION 4.8).
+revision is a DRAFT to be read line by line before committing.
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models import Order, User
+from app.models import CourierProfile, Order, User
 from app.models.enums import OrderStatus, UserRole
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
@@ -36,6 +36,14 @@ async def _order(db: AsyncSession, status: OrderStatus) -> tuple[User, User, Ord
     courier = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.COURIER)
     db.add_all([customer, courier])
     await db.flush()
+    db.add(
+        CourierProfile(
+            user_id=courier.id,
+            city=await city_by_name(db, "Jeddah"),
+            national_id_encrypted="test-ciphertext",
+            is_verified=True,
+        )
+    )
     order = Order(
         customer_id=customer.id,
         courier_id=courier.id,

@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for every Giftly table (SPEC SECTION 10, 13).
+"""SQLAlchemy ORM models for Giftly persistence.
 
 Models carry no business logic beyond hybrid properties. Money columns are
 ``Numeric`` (never float).
@@ -74,17 +74,12 @@ class City(UUIDPrimaryKeyMixin, Base):
 
 
 class RefreshToken(UUIDPrimaryKeyMixin, Base):
-    """A rotating refresh token, stored only as a SHA-256 hash (SPEC SECTION 17.2 A07).
+    """A rotating refresh token, stored only as a SHA-256 hash.
 
     Refresh tokens rotate on every use and belong to a ``family_id``. Presenting a
     token that has already been used (``used_at`` set) or revoked means the family is
-    compromised, so the whole family is revoked and re-auth is forced (reuse
-    detection). The raw token lives only in the client; the DB holds its hash.
-
-    Note:
-        This table is not in SPEC SECTION 10 — the spec mandates rotating refresh
-        tokens with reuse detection but does not define their storage. A dedicated
-        hashed table is the most explicit, auditable option (see DECISIONS.md).
+    compromised. Replay revokes account credentials and forces authentication.
+    The raw token lives only in the client; the DB holds its hash.
     """
 
     __tablename__ = "refresh_tokens"
@@ -332,8 +327,7 @@ class DeviceToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A customer's gift request, tied to a city and a delivery date <= 6 months out.
 
-    ``description`` is intentionally NOT encrypted: no healthcare data is in scope
-    (SPEC SECTION 1), so it is not Restricted.
+    ``description`` is stored as plain text and must be rendered as untrusted text.
     """
 
     __tablename__ = "orders"
@@ -520,7 +514,7 @@ class Promo(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A discount code. ``code`` is stored NORMALIZED (strip().upper()).
 
     ``used_count`` is a DENORMALIZED counter maintained only by the atomic
-    conditional UPDATE in SPEC SECTION 12.3; it counts RESERVED + CONSUMED.
+    conditional update; it counts RESERVED + CONSUMED.
     """
 
     __tablename__ = "promos"
@@ -597,7 +591,7 @@ class InvoicePromoOperation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A courier-authored, itemised, priced invoice for an order.
 
-    Every stored amount is the OUTPUT of the pricing engine (SPEC SECTION 11). The
+    Every stored amount is the output of the pricing engine. The
     DB CHECKs re-verify the arithmetic independently. Only one invoice per order may
     be DRAFT/ISSUED/PAID at a time (partial unique index).
     """
@@ -957,7 +951,7 @@ class WalletTopup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """The chat thread for an order. The preview is ENCRYPTED (SPEC SECTION 10)."""
+    """The chat thread for an order, with an encrypted preview."""
 
     __tablename__ = "conversations"
 
@@ -1010,6 +1004,7 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sender_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    client_message_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     message_type: Mapped[enums.MessageType] = mapped_column(
         _message_type, nullable=False, server_default=enums.MessageType.TEXT.value
     )
@@ -1018,6 +1013,9 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        UniqueConstraint(
+            "conversation_id", "sender_id", "client_message_id", name="uq_messages_client_send"
+        ),
         Index(
             "idx_messages_conversation_keyset",
             "conversation_id",
@@ -1051,6 +1049,31 @@ class ChatNotification(TimestampMixin, Base):
     __table_args__ = (
         Index(
             "idx_chat_notifications_pending",
+            "available_at",
+            "created_at",
+            postgresql_where=text("completed_at IS NULL AND failed_at IS NULL"),
+        ),
+    )
+
+
+class ChatLiveDelivery(TimestampMixin, Base):
+    """Durable live fanout intent storing only an encrypted message reference."""
+
+    __tablename__ = "chat_live_deliveries"
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index(
+            "idx_chat_live_deliveries_pending",
             "available_at",
             "created_at",
             postgresql_where=text("completed_at IS NULL AND failed_at IS NULL"),
@@ -1099,7 +1122,7 @@ class MessageAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Wallet(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A money account. ``available = balance - held_balance`` (SPEC SECTION 10)."""
+    """A money account. ``available = balance - held_balance``."""
 
     __tablename__ = "wallets"
 
@@ -1150,9 +1173,10 @@ class Wallet(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """APPEND-ONLY ledger entry — the only truth about money (SPEC SECTION 10).
+    """Ledger entry recording an authoritative money movement.
 
-    UPDATE and DELETE are forbidden by trigger; the single exception is the status
+    Normal updates and deletes are guarded; authorized admin maintenance can bypass them.
+    The permitted business update is the status
     transition PENDING -> SETTLED|REVERSED. Every movement writes >= 2 rows sharing
     one ``correlation_id`` whose signed amounts sum to zero.
     """

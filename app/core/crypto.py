@@ -1,4 +1,4 @@
-"""Field-level encryption for Restricted data (SPEC SECTION 17.1).
+"""Field-level encryption for Restricted data.
 
 AES-256-GCM (AEAD) with env-var key management and versioning. Implemented ONCE
 here; nothing elsewhere in the codebase may inline crypto. The Restricted fields

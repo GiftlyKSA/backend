@@ -1,7 +1,7 @@
-"""Domain exceptions and their stable error codes (SPEC SECTION 8.14-16).
+"""Domain exceptions and their stable error codes.
 
-Domain code raises these; the global handler maps them to the §8.16 error envelope.
-The ``code`` is a stable machine string documented in docs/conventions.md; the
+Domain code raises these; the global handler maps them to the domain error envelope.
+The ``code`` is a stable machine string documented in docs/api.md; the
 ``message`` is safe for end-user display. Clients never see stack traces or internals.
 """
 
@@ -169,7 +169,7 @@ class RateLimitedError(DomainError):
 
 
 class PromoError(ValidationDomainError):
-    """Base for promo validation failures (SPEC SECTION 12.2); all are 422."""
+    """Base for promo validation failures; all are 422."""
 
 
 class PromoNotFoundError(PromoError):

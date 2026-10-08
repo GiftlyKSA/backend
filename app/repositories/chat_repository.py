@@ -1,8 +1,8 @@
-"""Chat persistence: conversations and messages (SPEC SECTION 10, 20, ADR 0004).
+"""Chat persistence: conversations and encrypted messages.
 
 ``messages`` is append-only (a trigger forbids UPDATE/DELETE except is_read/read_at) and
 ``content_encrypted`` is AES-256-GCM. The inbox preview is stored ENCRYPTED in
-``conversations.last_message_preview_encrypted`` (ADR 0004), decrypted one row at a time.
+``conversations.last_message_preview_encrypted``, decrypted one row at a time.
 Ownership is enforced in the query — a conversation is returned only to its two members.
 """
 
@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models import (
+    ChatLiveDelivery,
     ChatNotification,
     Conversation,
     CourierProfile,
@@ -57,6 +58,11 @@ class ChatRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Bind the repository to a session."""
         self._session = session
+
+    @property
+    def session(self) -> AsyncSession:
+        """Expose the current transaction for leased postcommit fanout."""
+        return self._session
 
     async def get_live_state(
         self, conversation_id: uuid.UUID, actor_id: uuid.UUID
@@ -132,6 +138,23 @@ class ChatRepository:
             )
         return list(await self._session.scalars(query))
 
+    async def message_for_client_id(
+        self, conversation_id: uuid.UUID, sender_id: uuid.UUID, client_message_id: uuid.UUID
+    ) -> Message | None:
+        """Find one sender-scoped replay after the service locks the conversation."""
+        result: Message | None = await self._session.scalar(
+            select(Message).where(
+                Message.conversation_id == conversation_id,
+                Message.sender_id == sender_id,
+                Message.client_message_id == client_message_id,
+            )
+        )
+        return result
+
+    async def delivery_message(self, message_id: uuid.UUID) -> Message | None:
+        """Load ciphertext for a trusted durable delivery intent."""
+        return await self._session.get(Message, message_id)
+
     async def add_message(
         self,
         *,
@@ -141,6 +164,7 @@ class ChatRepository:
         preview_encrypted: str,
         sender_is_customer: bool,
         message_type: MessageType = MessageType.TEXT,
+        client_message_id: uuid.UUID | None = None,
     ) -> Message:
         """Append a message and update the conversation preview, timestamp, and unread.
 
@@ -152,9 +176,11 @@ class ChatRepository:
             sender_id=sender_id,
             message_type=message_type,
             content_encrypted=content_encrypted,
+            client_message_id=client_message_id,
         )
         self._session.add(message)
         await self._session.flush()
+        self._session.add(ChatLiveDelivery(message_id=message.id))
         self._session.add(
             ChatNotification(
                 message_id=message.id,

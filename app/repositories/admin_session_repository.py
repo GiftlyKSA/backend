@@ -1,4 +1,4 @@
-"""Admin dashboard session persistence (SPEC SECTION 18.2).
+"""Admin dashboard session persistence.
 
 Only the SHA-256 hash of the cookie value is stored — the raw token lives in the
 cookie, never the database. Sessions have a sliding TTL and an absolute cap.

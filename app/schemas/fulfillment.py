@@ -1,4 +1,4 @@
-"""Pydantic contracts for delivery, approval, disputes, and ratings (SPEC SECTION 20)."""
+"""Pydantic contracts for delivery, approval, disputes, and ratings."""
 
 from __future__ import annotations
 

@@ -4351,6 +4351,18 @@
             "maxLength": 4000,
             "minLength": 1,
             "title": "Text"
+          },
+          "client_message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Message Id"
           }
         },
         "additionalProperties": false,
@@ -5166,7 +5178,7 @@
           "REFUNDED"
         ],
         "title": "OrderStatus",
-        "description": "Order lifecycle status (see the state machine in SPEC SECTION 9)."
+        "description": "Order lifecycle status (see app/services/order_state.py)."
       },
       "ConversationResponse": {
         "properties": {
@@ -5547,6 +5559,18 @@
             "maxLength": 4000,
             "title": "Text",
             "default": ""
+          },
+          "client_message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Message Id"
           }
         },
         "additionalProperties": false,

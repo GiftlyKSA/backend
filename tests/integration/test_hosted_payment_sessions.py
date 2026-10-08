@@ -17,10 +17,11 @@ from app.models.enums import (
     PaymentPurpose,
     TransactionStatus,
     TransactionType,
+    WalletType,
 )
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.wallet_repository import WalletRepository
-from app.services.money_service import MoneyService
+from app.services.money_service import Leg, MoneyService
 from app.services.payment_service import build_payment_service
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -117,11 +118,14 @@ async def test_pending_invoice_rows_settle_in_place_and_consume_hold(
     customer, order, invoice = await _issued_invoice(db_session)
     wallets = WalletRepository(db_session)
     wallet = await wallets.get_by_user(customer.id)
-    await MoneyService(wallets).credit_wallet_reward(
-        user_wallet_id=wallet.id,
-        amount=Decimal("300.00"),
-        reason=TransactionType.GIVEAWAY,
-        operation_id=uuid4(),
+    assert wallet is not None
+    gateway_wallet = await wallets.get_system(WalletType.SYSTEM_GATEWAY)
+    await MoneyService(wallets).post_group(
+        correlation_id=uuid4(),
+        legs=[
+            Leg(wallet.id, Decimal("300.00"), TransactionType.TOPUP),
+            Leg(gateway_wallet.id, Decimal("-300.00"), TransactionType.TOPUP),
+        ],
     )
     client = gateway()
     service = build_payment_service(
@@ -248,14 +252,15 @@ async def test_database_rejects_two_open_attempts_for_same_order(db_session: Asy
         reference_invoice_id=invoice.id,
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
-    with pytest.raises(IntegrityError), db_session.begin_nested():
-        await repository.create_intent(
-            user_id=customer.id,
-            purpose=PaymentPurpose.ORDER_INVOICE,
-            amount=Decimal("100.00"),
-            reference_invoice_id=invoice.id,
-            expires_at=datetime.now(UTC) + timedelta(hours=1),
-        )
+    with pytest.raises(IntegrityError):
+        async with db_session.begin_nested():
+            await repository.create_intent(
+                user_id=customer.id,
+                purpose=PaymentPurpose.ORDER_INVOICE,
+                amount=Decimal("100.00"),
+                reference_invoice_id=invoice.id,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
     intent = await repository.get_open_intent_for_order(order.id)
     assert intent.status is PaymentIntentStatus.NEW
 

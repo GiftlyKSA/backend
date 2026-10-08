@@ -4,13 +4,14 @@ from uuid import uuid4
 
 import pytest
 from app.core.exceptions import NotFoundError
-from app.models import Invoice, Order, OrderMedia, Transaction, User
+from app.models import Invoice, Order, OrderMedia, Transaction, User, Wallet
 from app.models.enums import (
     InvoiceStatus,
     MediaType,
     TransactionStatus,
     TransactionType,
     UserRole,
+    WalletType,
 )
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.order_repository import OrderRepository
@@ -30,6 +31,7 @@ async def test_invoice_revision_pages_and_customer_draft_exclusion(db_session: A
         courier_id=courier.id,
         city=await city_by_name(db_session, "Riyadh"),
         delivery_date=date(2026, 10, 7),
+        created_at=datetime(2026, 10, 1, tzinfo=UTC),
     )
     db_session.add(order)
     await db_session.flush()
@@ -66,6 +68,8 @@ async def test_invoice_revision_pages_and_customer_draft_exclusion(db_session: A
 async def test_empty_and_status_separated_statement_aggregate(db_session: AsyncSession):
     user = User(phone=f"+96650{uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
     db_session.add(user)
+    await db_session.flush()
+    db_session.add(Wallet(user_id=user.id, type=WalletType.CUSTOMER))
     await db_session.flush()
     repo = WalletRepository(db_session)
     wallet = await repo.get_by_user(user.id)
@@ -105,6 +109,7 @@ async def test_order_media_equal_timestamp_pages_and_foreign_cursor(db_session: 
         customer_id=user.id,
         city=await city_by_name(db_session, "Riyadh"),
         delivery_date=date(2026, 10, 7),
+        created_at=datetime(2026, 10, 1, tzinfo=UTC),
     )
     db_session.add(order)
     await db_session.flush()

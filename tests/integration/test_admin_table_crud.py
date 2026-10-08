@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from app.core.audit_context import set_audit_actor
 from app.core.exceptions import ConflictError, ForbiddenError
 from app.models import (
     AdminSession,
@@ -47,6 +48,7 @@ async def admin_service(db_session):
 
 async def test_every_table_has_a_form_and_generic_crud_is_audited(db_session):
     service, auth = await admin_service(db_session)
+    await set_audit_actor(db_session, category="ADMIN", actor_user_id=auth["admin_id"])
     for name in Base.metadata.tables:
         form = await service.form(name)
         assert form.table_name == name and form.fields
@@ -67,12 +69,17 @@ async def test_every_table_has_a_form_and_generic_crud_is_audited(db_session):
     form = await service.form("featured_gifts", gift)
     assert next(field.value for field in form.fields if field.name == "title") == "Updated gift"
     await service.delete("featured_gifts", gift, revision=form.revision, **auth)
-    assert (
-        await db_session.scalar(
-            select(func.count()).select_from(AuditLog).where(AuditLog.entity_id == gift)
-        )
-        == 3
-    )
+    audits = list(await db_session.scalars(select(AuditLog).where(AuditLog.entity_id == gift)))
+    assert sorted(audit.action for audit in audits) == [
+        "ADMIN_TABLE_CREATE",
+        "ADMIN_TABLE_DELETE",
+        "ADMIN_TABLE_UPDATE",
+        "CREATE",
+        "DELETE",
+        "UPDATE",
+    ]
+    assert all(audit.actor_user_id == auth["admin_id"] for audit in audits)
+    assert all(audit.entity_type == "featured_gifts" for audit in audits)
 
 
 async def test_browser_cursors_survive_deleted_anchor_and_duplicate_timestamps(db_session):

@@ -1,4 +1,4 @@
-"""The single place integration clients are constructed (SPEC SECTION 5.2).
+"""The single place integration clients are constructed.
 
 Layer 2 of the production interlock: ``build_clients`` is the ONLY place a client
 is built, and it raises at boot if ENVIRONMENT=production would select any fake.

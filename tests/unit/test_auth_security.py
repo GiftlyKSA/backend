@@ -110,6 +110,8 @@ async def test_banned_customer_cannot_open_chat_socket():
     session = AsyncMock()
     factory = Mock(return_value=session)
     websocket = SimpleNamespace(
+        headers={},
+        scope={"subprotocols": []},
         query_params={"token": token},
         app=SimpleNamespace(
             state=SimpleNamespace(

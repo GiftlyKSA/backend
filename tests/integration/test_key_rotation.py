@@ -12,6 +12,7 @@ from app.core.crypto import blob_version, build_aad, build_cipher
 from app.models import Conversation, CourierProfile, Order, User, Wallet, Withdrawal
 from app.models.enums import OrderStatus, UserRole, WalletType, WithdrawalStatus
 from app.services.key_rotation_service import KeyRotationService
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -33,6 +34,10 @@ def _settings_two_keys() -> Settings:
 
 
 async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> None:
+    for table in ("courier_profiles", "conversations", "withdrawals"):
+        await db_session.execute(
+            text(f"CREATE TEMP TABLE {table} (LIKE public.{table} INCLUDING ALL) ON COMMIT DROP")
+        )
     settings = _settings_two_keys()
     keys = settings.encryption_keys()
     v1_cipher = build_cipher(keys, 1)  # write everything under the OLD version
@@ -96,12 +101,10 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
     assert blob_version(conv.last_message_preview_encrypted) == 1
     assert blob_version(withdrawal.iban_encrypted) == 1
 
-    # Rotation is global; the shared test DB has other committed rows too, so assert our
-    # rows were counted (>= 1) rather than an exact total.
     report = await KeyRotationService(session=db_session, settings=settings, batch_size=1).rotate()
-    assert report.courier_national_id >= 1
-    assert report.conversation_preview >= 1
-    assert report.withdrawal_iban >= 1
+    assert report.courier_national_id == 1
+    assert report.conversation_preview == 1
+    assert report.withdrawal_iban == 1
 
     # Now under version 2, and still decrypt to the same plaintext under the active cipher.
     active = build_cipher(keys, 2)

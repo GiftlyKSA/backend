@@ -1,4 +1,4 @@
-"""Invoice-paid receipt sweeper (SPEC SECTION 5.3, 21).
+"""Invoice-paid receipt sweeper.
 
 Drains the ``idx_invoices_receipt_pending`` set (PAID invoices with no receipt yet),
 sending each customer their one receipt. The sweeper is the delivery mechanism, so a

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from app.models import ChatNotification, Message
 from app.repositories.chat_notification_repository import ChatNotificationRepository
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.test_chat_service import _conversation, _service
@@ -30,7 +31,12 @@ async def test_chat_message_and_intent_rollback_together(db_session: AsyncSessio
             assert intent.recipient_id == courier.id
             raise RuntimeError("abort send")
     assert await db_session.get(Message, message_id) is None
-    assert await db_session.get(ChatNotification, message_id) is None
+    assert (
+        await db_session.scalar(
+            select(ChatNotification.message_id).where(ChatNotification.message_id == message_id)
+        )
+        is None
+    )
 
 
 async def test_expired_delivery_is_reclaimed_and_old_worker_cannot_complete(
@@ -42,7 +48,11 @@ async def test_expired_delivery_is_reclaimed_and_old_worker_cannot_complete(
         sender_id=customer.id,
         text="test",
     )
-    now = datetime.now(UTC)
+    intent = await db_session.get(ChatNotification, uuid.UUID(dto.id))
+    assert intent is not None
+    now = datetime(2000, 1, 1, tzinfo=UTC)
+    intent.available_at = now
+    await db_session.flush()
     repository = ChatNotificationRepository(db_session)
     claims = (await repository.claim_pending(now=now, limit=1, lease_seconds=60)).claims
     assert len(claims) == 1
