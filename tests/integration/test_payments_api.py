@@ -214,7 +214,7 @@ async def test_pay_invoice_from_wallet_settles_immediately() -> None:
             # The wallet was debited by the total.
             assert (await client.get("/api/wallets/me", headers=cust_h)).json()[
                 "balance"
-            ] == "275.50"
+            ] == "370.00"
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

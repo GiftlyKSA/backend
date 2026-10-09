@@ -11,12 +11,13 @@ import os
 import secrets as _secrets
 from datetime import date, timedelta
 from io import BytesIO
+from uuid import UUID
 
 import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
 from app.main import create_app
-from app.models import CourierProfile, User
+from app.models import ChatNotification, CourierProfile, User
 from app.models.enums import UserStatus
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
@@ -346,8 +347,7 @@ def _verify_courier_sync(client: TestClient, app: object, phone: str) -> None:
 def test_websocket_send_persists_notifies_and_guards() -> None:
     """WS sends behave like REST sends (audit LOG-1/LOG-3/SEC-4).
 
-    A JSON frame is persisted and fires a text-free push to the recipient; a non-JSON
-    frame and an oversized frame are dropped without persisting anything.
+    A JSON frame persists durable push work; invalid and oversized frames never persist.
     """
     settings = _settings()
     engine = build_engine(settings)
@@ -409,17 +409,28 @@ def test_websocket_send_persists_notifies_and_guards() -> None:
         token = courier["access_token"]
         with client.websocket_connect(f"/api/ws/conversations/{conv_id}?token={token}") as ws:
             ws.send_text("not json at all")  # rejected: WS frames must be JSON
+            assert ws.receive_json()["error"]["code"] == "VALIDATION_ERROR"
             ws.send_text(_json.dumps({"text": "x" * 5000}))  # dropped: over the frame cap
             ws.send_text(_json.dumps({"text": "hello from the socket"}))
             event = ws.receive_json()  # our message echoes back via pub/sub
             assert event["content"] == "hello from the socket"
 
-        # Exactly one message persisted, and the push carries NO message text.
+        # Exactly one message and its durable push intent persisted.
         msgs = client.get(f"/api/conversations/{conv_id}/messages", headers=cust_h).json()["items"]
         contents = [m["content"] for m in msgs]
         # The accept-flow system message plus OUR one message; the guarded frames never landed.
         assert contents.count("hello from the socket") == 1
         assert "not json at all" not in contents
         assert all(len(c) <= 4096 for c in contents)
-        assert len(push.sent) == pushes_before + 1
-        assert "hello" not in push.sent[-1].body
+        assert len(push.sent) == pushes_before
+        customer_id = UUID(client.get("/api/users/me", headers=cust_h).json()["id"])
+
+        async def check_push_intent() -> None:
+            async with app.state.session_factory() as session:
+                notification = await session.get(ChatNotification, UUID(event["id"]))
+                assert notification is not None
+                assert notification.recipient_id == customer_id
+                assert notification.completed_at is None
+
+        assert client.portal is not None
+        client.portal.call(check_push_intent)

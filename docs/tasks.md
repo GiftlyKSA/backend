@@ -1,6 +1,6 @@
 # Giftly outstanding task tracker
 
-**Created / last updated:** 2026-10-08 · **Source:** [codebase review](codebase_review.md).
+**Created:** 2026-10-08 · **Last updated:** 2026-10-09 · **Source:** [codebase review](codebase_review.md).
 
 Fresh outstanding work only. Completed review fixes are recorded in the review, not repeated as open tasks. Scores are urgency estimates, not CVSS. Implementation and deployment are separate.
 
@@ -9,13 +9,13 @@ Fresh outstanding work only. Completed review fixes are recorded in the review, 
 | ID | Task | Short description | Status | Urgency | Created | Note / completion requirement |
 | --- | --- | --- | --- | --- | --- | --- |
 | SEC-19 | Public testing-secret rejection | Reject published placeholder keys in production. | Deferred by user | High 7 | 2026-10-04 | Explicitly excluded from this fix request; do not silently implement. Protect real deployment secrets operationally. |
-| OPS-01 | Full service and deployment verification | Run PostgreSQL/Redis CI, native media decoding, scheduler and Python3.13 image checks. | Needs validation | Medium 5 | 2026-10-04 | Focused native PostgreSQL checks passed; broad service suite has unavailable Redis and legacy fixture/contract failures. Preserve meaningful assertions and reach the 85% CI coverage gate. |
-| SQL-01 | Representative capacity measurement | Measure growing histories, pool waits, p95/p99 and decoder RSS/CPU under real workloads. | Partially verified | Medium 5 | 2026-10-04 | Synthetic plans/query counts and index write costs recorded; no production-capacity claim. |
-| PERF-09 | Audit archive and retention | Define protected archive, retention and restoration before bounded archival. | Policy needed | Medium 5 | 2026-10-04 | No automatic deletion; metadata writes and outbox recipient growth require monitoring. |
-| SEC-15 | Ingress credential redaction | Verify query/header/subprotocol redaction with fake-token probes. | Needs validation | Medium 5 | 2026-10-04 | Chat now supports safer header/protocol transport; legacy query compatibility remains. |
-| SEC-20 | Remote dependency alert disposition | Reconcile GitHub alerts with exact current lockfile and deployed image. | Authorized security-maintainer validation needed | Medium 5 | 2026-10-04 | Earlier dated complete-graph scan was clear; unavailable alert metadata is not zero alerts. |
-| INT-01 | Live vendor integration | Verify SMS/email/push and Dhamen authentication, retries and callback semantics. | External validation | Medium 5 | 2026-10-04 | No real-provider success claimed; do not enable production payments based on mocks. |
-| PAY-DEPLOY | Published payment contract rollout | Resolve valid provider configuration and verify new public payment-session routes. | Operational approval / deployment verification pending | High | 2026-10-08 | Last recorded startup blocker: missing DHAMEN_APP_ID; old image healthy/new route404. Do not silently change provider. |
+| OPS-01 | Remote CI and deployment verification | Verify Linux image/CI, worker processes and public rollout. | Local service checks complete; remote verification blocked | Medium 5 | 2026-10-04 | Python3.13/PostgreSQL16/Redis7/native FFmpeg full suite: 1,241 passed, zero skips, 89.35% coverage. Hooks/review passed. GitHub dispatch returned 401; user declined CranL sandbox. Linux image and public rollout remain unverified. |
+| SQL-01 | Representative capacity measurement | Measure growing histories, pool waits, p95/p99 and decoder RSS/CPU under real workloads. | Partially verified | Medium 5 | 2026-10-04 | Repeated 17 synthetic plans and an 80-subscription/800-request Redis pool probe passed on 2026-10-09. Warmed Redis p95 2.477 ms / p99 2.741 ms; not deployed API capacity. |
+| PERF-09 | Audit growth monitoring | Monitor metadata and recipient-snapshot growth. | Archival excluded for dev by user | Medium 5 | 2026-10-04 | No archive, retention purge or automatic deletion is planned for this development server. Revisit capacity and retention before production. |
+| SEC-15 | Ingress credential redaction | Verify query/header/subprotocol redaction with fake-token probes. | Excluded from current work by user | Medium 5 | 2026-10-04 | Chat supports safer header/protocol transport; legacy query compatibility remains. |
+| SEC-20 | Remote dependency alert disposition | Reconcile GitHub alerts with exact current lockfile and deployed image. | Excluded from current work by user | Medium 5 | 2026-10-04 | Earlier dated complete-graph scan was clear; unavailable alert metadata is not zero alerts. |
+| INT-01 | Live vendor integration | Verify SMS/email/push and Dhamen authentication, retries and callback semantics. | Excluded from current work by user | Medium 5 | 2026-10-04 | No real-provider success claimed; do not enable production payments based on mocks. |
+| PAY-DEPLOY | Published payment contract rollout | Resolve valid provider configuration and verify new public payment-session routes. | Operational approval / deployment verification pending | High | 2026-10-08 | Latest build succeeded but CranL remains deploying; readiness200/public OpenAPI still old on 2026-10-09. Runtime logs not_ready; prior DHAMEN_APP_ID blocker is historical evidence. Provider changes await approval. |
 | UI-CHAT | Optional retry-safe chat wiring | Reuse a UUID for retries, handle explicit validation/conflict frames, deduplicate messages. | Mobile integration pending | Medium | 2026-10-08 | Existing callers remain compatible; chat-only handoff and generated mobile OpenAPI define the contract. |
 | UI-INVOICE | Final item price rollout | Remove obsolete VAT input/display in the mobile app. | Mobile verification pending | High | 2026-10-08 | Backend final item prices include no separately added/returned VAT; service/courier fees remain. |
 
@@ -39,3 +39,7 @@ These are separate proposal-first work, not defects resolved by the current revi
 ## Usage checkpoint — 2026-10-08
 
 At 90% five-hour usage, verified review fixes and this outstanding-work tracker are published to master. Full unit checks, hooks, scoped native PostgreSQL tests and independent review passed; final offline aggregate passed 983 tests with 258 service/native skips; complete PostgreSQL/Redis CI remains outstanding. No Docker or production changes ran. SEC-19 remains excluded by the user.
+
+## Verification follow-up — 2026-10-09
+
+Local service verification supersedes the unavailable-service checkpoint: all 1,241 tests passed on Python3.13 with PostgreSQL16, Redis7 and native media decoding, no skips and 89.35% coverage. Test fixture/contract repairs preserve exact financial and access-control assertions. No new API, migration, mobile change, archival, Docker execution or production data change was introduced. Public rollout and authenticated remote CI remain distinct outstanding gates.

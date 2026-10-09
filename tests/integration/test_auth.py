@@ -19,7 +19,7 @@ import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
 from app.main import create_app
-from app.models import CourierProfile, RefreshToken, User, Wallet
+from app.models import AuditLog, CourierProfile, RefreshToken, User, Wallet
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 
@@ -61,6 +61,7 @@ async def _cleanup(factory: object, phones: list[str]) -> None:
             user = await session.scalar(select(User).where(User.phone == phone))
             if user is None:
                 continue
+            await session.execute(delete(AuditLog).where(AuditLog.actor_user_id == user.id))
             await session.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
             await session.execute(delete(CourierProfile).where(CourierProfile.user_id == user.id))
             await session.execute(delete(Wallet).where(Wallet.user_id == user.id))
@@ -82,6 +83,7 @@ async def test_auth_full_flow_and_negatives() -> None:
     customer_phone = _new_phone()
     courier_phone = _new_phone()
     fresh_phone = _new_phone()
+    customer_email = f"nora-{uuid.uuid4().hex}@example.com"
     app = create_app(settings)
     transport = ASGITransport(app=app)
     try:
@@ -100,11 +102,11 @@ async def test_auth_full_flow_and_negatives() -> None:
             patched = await client.patch(
                 "/api/users/me",
                 headers=auth_header,
-                json={"full_name": "Nora Updated", "email": "nora@example.com"},
+                json={"full_name": "Nora Updated", "email": customer_email},
             )
             assert patched.status_code == 200
             assert patched.json()["full_name"] == "Nora Updated"
-            assert patched.json()["email"] == "nora@example.com"
+            assert patched.json()["email"] == customer_email
 
             # --- No token / bad token is 401 ---
             assert (await client.get("/api/users/me")).status_code == 401

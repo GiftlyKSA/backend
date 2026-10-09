@@ -299,8 +299,13 @@ async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_a
                 json={"courier_city": "Riyadh", "courier_bio": "Gift specialist."},
             )
             assert patched.status_code == 200, patched.text
+            async with factory() as session:  # type: ignore[operator]
+                stored_profile = await session.get(CourierProfile, user.id)
+                assert stored_profile is not None
+                city_id = str(stored_profile.city_of_residence_id)
             assert patched.json()["courier_profile"] == {
                 "city_of_residence": "Riyadh",
+                "city_of_residence_id": city_id,
                 "bio": "Gift specialist.",
                 "verification_status": "ACTIVE",
                 "rejection_reason": None,

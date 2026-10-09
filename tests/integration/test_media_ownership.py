@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.core.config import Environment
+from app.core.config import Environment, Settings
 from app.core.db import build_engine, build_session_factory
 from app.core.exceptions import BadRequestError, ConflictError
 from app.integrations.storage.fake import FakeStorageClient
@@ -21,6 +21,13 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+
+
+def _settings() -> Settings:
+    overrides: dict[str, object] = {}
+    if os.environ.get("DATABASE_URL"):
+        overrides["DATABASE_URL"] = os.environ["DATABASE_URL"]
+    return make_test_settings(**overrides)
 
 
 class _PausingMediaRepository(MediaRepository):
@@ -140,7 +147,7 @@ async def test_outstanding_upload_count_and_bytes(db_session: AsyncSession) -> N
 
 
 async def test_cleanup_preserves_attached() -> None:
-    settings = make_test_settings()
+    settings = _settings()
     engine = build_engine(settings)
     factory = build_session_factory(engine)
     storage = FakeStorageClient(Environment.TEST)
@@ -199,7 +206,7 @@ async def test_cleanup_retries_delete_failure() -> None:
                 raise RuntimeError("temporary storage error")
             await super().delete_object(storage_key)
 
-    settings = make_test_settings()
+    settings = _settings()
     engine = build_engine(settings)
     factory = build_session_factory(engine)
     storage = FailingStorage()
@@ -250,10 +257,7 @@ async def test_cleanup_retries_delete_failure() -> None:
 
 async def test_opposite_key_orders_finish_without_deadlock() -> None:
     """Two independent sessions claim the same keys in opposing client order."""
-    overrides: dict[str, object] = {}
-    if os.environ.get("DATABASE_URL"):
-        overrides["DATABASE_URL"] = os.environ["DATABASE_URL"]
-    settings = make_test_settings(**overrides)
+    settings = _settings()
     engine = build_engine(settings)
     factory = build_session_factory(engine)
     try:

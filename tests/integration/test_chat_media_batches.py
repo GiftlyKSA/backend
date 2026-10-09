@@ -92,4 +92,11 @@ async def test_partial_claim_rolls_back_all_grants_and_message(db_session, monke
         )
         == 0
     )
-    assert await db_session.scalar(select(func.count()).select_from(MessageAttachment)) == 0
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(MessageAttachment)
+            .where(MessageAttachment.storage_key.in_(keys))
+        )
+        == 0
+    )

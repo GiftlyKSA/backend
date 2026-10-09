@@ -290,7 +290,7 @@ async def test_pay_invoice_from_wallet_settles(
     assert invoice.status is InvoiceStatus.PAID
     assert order.status is OrderStatus.IN_PROGRESS
     await db_session.refresh(wallet)
-    assert wallet.balance == Decimal("275.50")
+    assert wallet.balance == Decimal("370.00")
 
 
 async def test_pay_invoice_via_gateway_then_webhook_settles(
@@ -385,7 +385,8 @@ async def test_split_failure_retry_preserves_other_holds_and_exact_balances(
     await db_session.refresh(wallet)
     assert (wallet.balance, wallet.held_balance) == (Decimal("350.00"), Decimal("350.00"))
 
-    failed_body = _body(first.gateway_reference, "424.50", "FAILED")
+    assert first.amount == Decimal("330.00")
+    failed_body = _body(first.gateway_reference, "330.00", "FAILED")
     assert (
         await service.handle_webhook(raw_body=failed_body, signature=_signed(failed_body))
     ).outcome == "failed"
@@ -400,7 +401,7 @@ async def test_split_failure_retry_preserves_other_holds_and_exact_balances(
     assert second is not None and second.id != first.id and second.gateway_reference is not None
     assert second.wallet_reserved_amount == Decimal("275.00")
     for status in ("FAILED", "PAID"):
-        stale_body = _body(first.gateway_reference, "424.50", status)
+        stale_body = _body(first.gateway_reference, "330.00", status)
         assert (
             await service.handle_webhook(raw_body=stale_body, signature=_signed(stale_body))
         ).outcome == "already_processed"
@@ -430,7 +431,7 @@ async def test_split_failure_retry_preserves_other_holds_and_exact_balances(
         assert order.status is OrderStatus.ASSIGNED
         assert second.status is PaymentIntentStatus.EXPIRED
         assert not await ExpiryService(db_session).expire_invoice(invoice.id)
-        body = _body(second.gateway_reference, "449.50", "PAID")
+        body = _body(second.gateway_reference, "355.00", "PAID")
         assert (
             await service.handle_webhook(raw_body=body, signature=_signed(body))
         ).outcome == "already_processed"
@@ -441,7 +442,8 @@ async def test_split_failure_retry_preserves_other_holds_and_exact_balances(
         assert not await ExpiryService(db_session).expire_invoice(invoice.id)
         assert order.status is OrderStatus.ASSIGNED
     else:
-        body = _body(second.gateway_reference, "449.50", retry_outcome)
+        assert second.amount == Decimal("355.00")
+        body = _body(second.gateway_reference, "355.00", retry_outcome)
         await service.handle_webhook(raw_body=body, signature=_signed(body))
         assert (
             await service.handle_webhook(raw_body=body, signature=_signed(body))

@@ -5,9 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from app.core.config import Environment, Settings
 from app.integrations.push.fake import FakePushClient
 from app.models import (
+    City,
     CourierProfile,
     DeviceToken,
     OrderNotification,
@@ -18,16 +20,34 @@ from app.models.enums import DeviceOs, UserRole, UserStatus
 from app.repositories.order_notification_repository import OrderNotificationRepository
 from app.repositories.order_repository import OrderRepository
 from app.services.order_notification_service import send_pending_order_notifications
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
 from tests.integration.conftest import city_by_name
 
 
+@pytest.fixture
+async def notification_city(db_session: AsyncSession) -> City:
+    now = datetime.now(UTC)
+    await db_session.execute(
+        update(OrderNotification)
+        .where(OrderNotification.completed_at.is_(None), OrderNotification.available_at <= now)
+        .values(available_at=now + timedelta(days=1))
+    )
+    suffix = uuid.uuid4().hex
+    city = City(name=f"Push test {suffix}", name_ar="Test", shortcut=suffix[:16])
+    db_session.add(city)
+    await db_session.flush()
+    return city
+
+
 async def test_order_push_waits_for_commit_and_uses_outbox(
-    db_session: AsyncSession, db_connection: AsyncConnection, test_settings: Settings
+    db_session: AsyncSession,
+    db_connection: AsyncConnection,
+    test_settings: Settings,
+    notification_city: City,
 ) -> None:
-    city = await city_by_name(db_session, "Jeddah")
+    city = notification_city
     customer = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
     courier = User(
         phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}",
@@ -92,8 +112,9 @@ async def test_rolled_back_order_has_no_outbox_row(db_session: AsyncSession) -> 
 
 async def test_snapshot_pages_exclude_new_revoked_and_reassigned_tokens(
     db_session: AsyncSession,
+    notification_city: City,
 ) -> None:
-    city = await city_by_name(db_session, "Jeddah")
+    city = notification_city
     customer = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
     courier = User(
         phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}",
@@ -127,6 +148,7 @@ async def test_snapshot_pages_exclude_new_revoked_and_reassigned_tokens(
     await db_session.commit()
     repo = OrderNotificationRepository(db_session)
     first_claim = (await repo.claim_pending(now=datetime.now(UTC), limit=1, lease_seconds=60))[0]
+    assert first_claim.order_id == order.id
     await db_session.commit()
     first_page = await repo.token_page(order_id=order.id, city_id=city.id, after=None, limit=2)
     assert [token_id for token_id, _token in first_page] == [tokens[0].id, tokens[1].id]
@@ -147,6 +169,7 @@ async def test_snapshot_pages_exclude_new_revoked_and_reassigned_tokens(
     )
     await db_session.commit()
     second_claim = (await repo.claim_pending(now=datetime.now(UTC), limit=1, lease_seconds=60))[0]
+    assert second_claim.order_id == order.id
     await db_session.commit()
     second_page = await repo.token_page(
         order_id=order.id, city_id=city.id, after=second_claim.cursor_token_id, limit=2
