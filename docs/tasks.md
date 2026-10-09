@@ -76,3 +76,10 @@ Production dependency audit found multidict6.7.1; minimally patched to6.9.1 and 
 is clear. The final patched dependency suite also passed1262tests/89.09%coverage; publication remains separate.
 Public runtime currently serves the older contract; rollout remains PAY-DEPLOY/OPS-01.
 No new mobile features were invented for pending product decisions.
+
+
+Publication2026-10-09: source release `41b074a21112ce32e0a78d0a2d6f636bfc1aa2c9` pushed to master and remote SHA
+verified. Final native suite1262passed/zero skips/89.09%coverage; both hook stages,
+strict mypy and locked production dependency audit passed. Independent review blocker
+resolved. Post-push public OpenAPI still lacks client_message_id, payment-session and
+operation-recovery paths; anonymous path probes still routing404. Deployment unverified.

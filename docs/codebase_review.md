@@ -179,3 +179,10 @@ The initial broad PostgreSQL run finished with **1,140 passed, 49 skipped and 47
 - SEC-15, SEC-20 and INT-01 validation are explicitly excluded from this work. PERF-09 archival is excluded for this development server. Accepted SEC-16/SEC-17 and deferred SEC-19 remain unchanged.
 
 Previous body-size/rate-limit/access-cursor/media-lock/recipient-snapshot/profile/identity/doc-cleanup fixes remain in source. VAT is fully removed; item prices are final, service/courier fees remain. Encrypted identity numbers are retained per policy; fingerprints and duplicate checks are removed. User-approved admin CRUD risks are not silently reversed.
+
+
+Publication2026-10-09: source release `41b074a21112ce32e0a78d0a2d6f636bfc1aa2c9` pushed to master and remote SHA
+verified. Final native suite1262passed/zero skips/89.09%coverage; both hook stages,
+strict mypy and locked production dependency audit passed. Independent review blocker
+resolved. Post-push public OpenAPI still lacks client_message_id, payment-session and
+operation-recovery paths; anonymous path probes still routing404. Deployment unverified.
