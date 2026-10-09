@@ -9,7 +9,9 @@ class PushClient(ABC):
     """Sends push notifications to a user's devices."""
 
     @abstractmethod
-    async def send_push(self, tokens: list[str], title: str, body: str) -> None:
+    async def send_push(
+        self, tokens: list[str], title: str, body: str, *, data: dict[str, str] | None = None
+    ) -> None:
         """Send a push to ``tokens``.
 
         Note:

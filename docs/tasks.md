@@ -15,7 +15,7 @@ Fresh outstanding work only. Completed review fixes are recorded in the review, 
 | SEC-15 | Ingress credential redaction | Verify query/header/subprotocol redaction with fake-token probes. | Excluded from current work by user | Medium 5 | 2026-10-04 | Chat supports safer header/protocol transport; legacy query compatibility remains. |
 | SEC-20 | Remote dependency alert disposition | Reconcile GitHub alerts with exact current lockfile and deployed image. | Excluded from current work by user | Medium 5 | 2026-10-04 | Earlier dated complete-graph scan was clear; unavailable alert metadata is not zero alerts. |
 | INT-01 | Live vendor integration | Verify SMS/email/push and Dhamen authentication, retries and callback semantics. | Excluded from current work by user | Medium 5 | 2026-10-04 | No real-provider success claimed; do not enable production payments based on mocks. |
-| PAY-DEPLOY | Published payment contract rollout | Resolve valid provider configuration and verify new public payment-session routes. | Operational approval / deployment verification pending | High | 2026-10-08 | Latest build succeeded but CranL remains deploying; readiness200/public OpenAPI still old on 2026-10-09. Runtime logs not_ready; prior DHAMEN_APP_ID blocker is historical evidence. Provider changes await approval. |
+| PAY-DEPLOY | Published payment contract rollout | Resolve valid provider configuration and verify new public payment-session routes. | Operational approval / deployment verification pending | High | 2026-10-08 | CranL statusdone on2026-10-09 but public OpenAPI lacks released retry/payment/recovery contracts. Routing404 probes confirm older public surface. Prior DHAMEN_APP_ID blocker is historical, not current diagnosis; provider changes still await approval. |
 | UI-CHAT | Optional retry-safe chat wiring | Reuse a UUID for retries, handle explicit validation/conflict frames, deduplicate messages. | Mobile integration pending | Medium | 2026-10-08 | Existing callers remain compatible; chat-only handoff and generated mobile OpenAPI define the contract. |
 | UI-INVOICE | Final item price rollout | Remove obsolete VAT input/display in the mobile app. | Mobile verification pending | High | 2026-10-08 | Backend final item prices include no separately added/returned VAT; service/courier fees remain. |
 
@@ -43,3 +43,36 @@ At 90% five-hour usage, verified review fixes and this outstanding-work tracker 
 ## Verification follow-up — 2026-10-09
 
 Local service verification supersedes the unavailable-service checkpoint: all 1,241 tests passed on Python3.13 with PostgreSQL16, Redis7 and native media decoding, no skips and 89.35% coverage. Test fixture/contract repairs preserve exact financial and access-control assertions. No new API, migration, mobile change, archival, Docker execution or production data change was introduced. Public rollout and authenticated remote CI remain distinct outstanding gates.
+
+## Approved backend completion — 2026-10-09
+
+Goal: close verified mobile gaps without duplicate endpoints or changing mobile code.
+Architecture: reuse released services, PostgreSQL transactions and owned recovery;
+use existing bounded media decoder and private storage boundaries.
+Execution: inline, with test-first changes and final independent review.
+
+- [x] Add safe ORDER_AVAILABLE/order_id push metadata and full outgoing UTF-8 frame limit.
+- [x] Add optional UUID operation keys for order/occasion writes and top-ups; 24-hour
+  retention, encrypted results, atomic claims, owned recovery and explicit unknown outcomes.
+- [x] Add original MOV/HEIC/HEIF support with genuine decoding, MIME/container checks,
+  existing CPU/memory/time/file quotas and a reviewed migration for media constraints.
+- [x] Reverify existing chat/auth/device/claim/financial safeguards; keep approved device transfer.
+- [x] Generate both OpenAPI references; update api/documentation/review/tasks together.
+- [x] Run hooks, focused and full service tests where available; verify deployment separately.
+
+Constraints: no Docker, live-user writes or unapproved provider activation; retain
+unrelated primary edits. No speculative product capabilities. Missing operation records
+are not proof a write never executed. No tokens, request bodies or URLs in diagnostics.
+Rollback: restore prior image after resolving pending writes; media downgrade must refuse
+new formats rather than relabel/delete historical files.
+
+
+### Completion verification
+
+Approved source tasks are implemented. Independent review blocker was reproduced/fixed;
+native full suite1262passed/no skips/89.09%coverage. Both migration rollbacks and safe
+refusal guards verified using disposable databases; no Docker/production data changes.
+Production dependency audit found multidict6.7.1; minimally patched to6.9.1 and audit
+is clear. The final patched dependency suite also passed1262tests/89.09%coverage; publication remains separate.
+Public runtime currently serves the older contract; rollout remains PAY-DEPLOY/OPS-01.
+No new mobile features were invented for pending product decisions.

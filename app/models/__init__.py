@@ -38,8 +38,10 @@ from app.models.tables import (
     WalletTopup,
     Withdrawal,
 )
+from app.models.write_operation import WriteOperation
 
 __all__ = [
+    "WriteOperation",
     "AdminSession",
     "AuditLog",
     "Base",

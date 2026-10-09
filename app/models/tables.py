@@ -246,7 +246,8 @@ class MediaUpload(UUIDPrimaryKeyMixin, Base):
             name="chk_media_purpose",
         ),
         CheckConstraint(
-            "content_type IN ('image/jpeg','image/png','video/mp4','video/webm',"
+            "content_type IN ('image/jpeg','image/png','image/heic','image/heif',"
+            "'video/mp4','video/webm','video/quicktime',"
             "'audio/mp4','audio/mpeg','audio/ogg','audio/webm','audio/wav','audio/aac')",
             name="chk_media_content_type",
         ),
@@ -1099,14 +1100,16 @@ class MessageAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "content_type IN ('image/jpeg','image/png','video/mp4','video/webm',"
+            "content_type IN ('image/jpeg','image/png','image/heic','image/heif',"
+            "'video/mp4','video/webm','video/quicktime',"
             "'audio/mp4','audio/mpeg','audio/ogg','audio/webm','audio/wav','audio/aac')",
             name="chk_message_attachments_content_type",
         ),
         CheckConstraint(
-            "byte_size > 0 AND ((content_type IN ('video/mp4','video/webm') "
+            "byte_size > 0 AND ((content_type IN ('video/mp4','video/webm','video/quicktime') "
             "AND byte_size <= 125829120) "
-            "OR (content_type NOT IN ('video/mp4','video/webm') AND byte_size <= 10485760))",
+            "OR (content_type NOT IN ('video/mp4','video/webm','video/quicktime') "
+            "AND byte_size <= 10485760))",
             name="chk_message_attachments_byte_size",
         ),
         CheckConstraint(

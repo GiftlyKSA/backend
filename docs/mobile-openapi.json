@@ -449,7 +449,26 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ]
       }
     },
     "/api/wallets/withdrawals": {
@@ -698,7 +717,7 @@
           "orders"
         ],
         "summary": "Create Order",
-        "description": "Create a NEW gift-request order.",
+        "description": "Create a NEW order; an optional UUID key safely replays this write for 24 hours.",
         "operationId": "create_order_api_orders_post",
         "requestBody": {
           "required": true,
@@ -731,7 +750,26 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ]
       },
       "get": {
         "tags": [
@@ -1975,7 +2013,26 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ]
       },
       "get": {
         "tags": [
@@ -2129,13 +2186,30 @@
         "operationId": "update_occasion_api_occasions__occasion_id__patch",
         "parameters": [
           {
-            "in": "path",
             "name": "occasion_id",
+            "in": "path",
             "required": true,
             "schema": {
+              "type": "string",
               "format": "uuid",
-              "title": "Occasion Id",
-              "type": "string"
+              "title": "Occasion Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -2996,6 +3070,65 @@
           "payments"
         ]
       }
+    },
+    "/api/operations/{operation_key}": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Get Operation",
+        "description": "Recover a retained owned result; absence does not prove a request never executed.",
+        "operationId": "get_operation_api_operations__operation_key__get",
+        "parameters": [
+          {
+            "name": "operation_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Operation Key"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "order.create",
+                "occasion.create",
+                "occasion.update",
+                "wallet.topup"
+              ],
+              "type": "string",
+              "title": "Operation"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3218,7 +3351,7 @@
             "type": "array",
             "maxItems": 3,
             "title": "Request Media Keys",
-            "description": "Confirmed request-photo keys (0–3)."
+            "description": "Confirmed request-photo keys (0\u20133)."
           }
         },
         "additionalProperties": false,
@@ -4661,7 +4794,9 @@
             "type": "string",
             "enum": [
               "image/jpeg",
-              "image/png"
+              "image/png",
+              "image/heic",
+              "image/heif"
             ],
             "title": "Content Type",
             "description": "The image MIME type; pinned into the pre-signed URL."
@@ -6021,6 +6156,82 @@
         ],
         "title": "PaymentSessionResponse",
         "type": "object"
+      },
+      "JsonValue": {},
+      "OperationResponse": {
+        "properties": {
+          "operation_key": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Operation Key"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "order.create",
+              "occasion.create",
+              "occasion.update",
+              "wallet.topup"
+            ],
+            "title": "Operation"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "COMPLETED",
+              "OUTCOME_UNKNOWN"
+            ],
+            "title": "Status"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_key",
+          "operation",
+          "status",
+          "resource_id",
+          "result",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "OperationResponse",
+        "description": "An owned committed snapshot or an explicitly unresolved operation."
       }
     }
   }

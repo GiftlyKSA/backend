@@ -483,7 +483,9 @@ async def _pump_pubsub_to_socket(
         if event.get("type") == "message":
             await _require_live_authorization(websocket, conversation_id)
             data = event["data"]
-            await websocket.send_text(data.decode() if isinstance(data, bytes) else str(data))
+            await _send_socket_frame(
+                websocket, data.decode() if isinstance(data, bytes) else str(data)
+            )
 
 
 async def _pump_socket_to_chat(
@@ -521,10 +523,11 @@ async def _pump_socket_to_chat(
         await _require_live_authorization(websocket, conversation_id)
         body = _extract_send_request(raw)
         if body is None:
-            await websocket.send_text(
+            await _send_socket_frame(
+                websocket,
                 json.dumps(
                     {"error": {"code": "VALIDATION_ERROR", "message": "Invalid chat message."}}
-                )
+                ),
             )
             continue
         async with factory() as session:
@@ -541,8 +544,8 @@ async def _pump_socket_to_chat(
             except ConflictError as exc:
                 await session.rollback()
                 await _require_live_authorization(websocket, conversation_id)
-                await websocket.send_text(
-                    json.dumps({"error": {"code": exc.code, "message": exc.message}})
+                await _send_socket_frame(
+                    websocket, json.dumps({"error": {"code": exc.code, "message": exc.message}})
                 )
                 continue
             # Commit before any external side effect or live event can expose the row.
@@ -550,7 +553,7 @@ async def _pump_socket_to_chat(
             delivered = await _deliver_chat_message(service, dto)
             if not delivered:
                 await _require_live_authorization(websocket, conversation_id)
-                await websocket.send_text(_message(dto).model_dump_json())
+                await _send_socket_frame(websocket, _message(dto).model_dump_json())
 
 
 def _extract_send_request(raw: str) -> SendMessageRequest | None:
@@ -653,3 +656,11 @@ def _parse_cursor(cursor: str | None) -> tuple[datetime, uuid.UUID] | None:
         return timestamp, uuid.UUID(id_raw)
     except ValueError as exc:
         raise BadRequestError("Invalid conversation pagination cursor.") from exc
+
+
+async def _send_socket_frame(websocket: WebSocket, payload: str) -> None:
+    """Bound the complete encoded frame; committed messages remain available by REST."""
+    if len(payload.encode("utf-8")) > websocket.app.state.settings.WS_MAX_OUTGOING_FRAME_BYTES:
+        await websocket.close(code=1009)
+        raise WebSocketDisconnect(code=1009)
+    await websocket.send_text(payload)

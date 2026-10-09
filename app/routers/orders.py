@@ -9,13 +9,14 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
+from pydantic import JsonValue, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_context import mark_request_transaction
 from app.core.db import emit_committed_audit_events
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_auth, require_role
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import ConflictError, UnauthorizedError
 from app.core.money import money_str
 from app.models import Dispute
 from app.models.enums import OrderStatus, UserRole
@@ -24,6 +25,7 @@ from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.media_repository import MediaRepository
 from app.repositories.message_repository import MessageWriter
+from app.repositories.operation_repository import OperationRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
@@ -45,6 +47,7 @@ from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.fulfillment_service import DeliveryInput, FulfillmentService
 from app.services.media_service import MediaService
 from app.services.money_service import MoneyService
+from app.services.operation_service import OperationService
 from app.services.order_realtime_service import publish_order_change
 from app.services.order_service import NewOrderInput, OrderService, OrderView
 from app.services.rating_service import RatingService
@@ -167,9 +170,28 @@ async def create_order(
     db: DbDep,
     body: CreateOrderRequest,
     actor: Annotated[Actor, Depends(_Customer)],
+    idempotency_key: Annotated[uuid.UUID | None, Header(alias="Idempotency-Key")] = None,
 ) -> OrderDetail:
-    """Create a NEW gift-request order."""
-    media = await _prepare_media(request, db, actor, body.request_media_keys, "ORDER_REQUEST")
+    """Create a NEW order; an optional UUID key safely replays this write for 24 hours."""
+    operations = OperationService(OperationRepository(db), get_settings(request))
+    payload = TypeAdapter(dict[str, JsonValue]).validate_python(body.model_dump(mode="json"))
+    if idempotency_key is not None:
+        existing = await operations.find(actor.id, "order.create", idempotency_key, payload)
+        if existing is not None:
+            return OrderDetail.model_validate_json(operations.result(existing))
+    try:
+        media = await _prepare_media(request, db, actor, body.request_media_keys, "ORDER_REQUEST")
+    except ConflictError:
+        if idempotency_key is not None:
+            existing = await operations.find(actor.id, "order.create", idempotency_key, payload)
+            if existing is not None:
+                return OrderDetail.model_validate_json(operations.result(existing))
+        raise
+    operation = None
+    if idempotency_key is not None:
+        operation = await operations.begin(actor.id, "order.create", idempotency_key, payload)
+        if operation.result_encrypted is not None:
+            return OrderDetail.model_validate_json(operations.result(operation))
     service = _service(request, db, media=media)
     order = await service.create_order(
         customer_id=actor.id,
@@ -184,7 +206,10 @@ async def create_order(
     view = await service.view_existing_order_for_actor(
         order=order, actor_id=actor.id, role=actor.role
     )
-    return _detail(view)
+    response = _detail(view)
+    if operation is not None:
+        await operations.finish(operation, response, order.id)
+    return response
 
 
 @router.get("", response_model=OrderListResponse)

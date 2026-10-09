@@ -48,7 +48,12 @@ async def _deliver_claim(
             )
         if page:
             await asyncio.wait_for(
-                push.send_push([token for _, token in page], _TITLE, _BODY),
+                push.send_push(
+                    [token for _, token in page],
+                    _TITLE,
+                    _BODY,
+                    data={"type": "ORDER_AVAILABLE", "order_id": str(claim.order_id)},
+                ),
                 timeout=_PUSH_TIMEOUT_SECONDS,
             )
         async with factory() as session:

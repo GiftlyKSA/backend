@@ -43,7 +43,7 @@ Updated 2026-10-04. This is maintained API documentation, not an implementation 
 
 [Project documentation](documentation.md) · [Current review](codebase_review.md) · [Tasks](tasks.md)
 
-The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 61 supported
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 62 supported
 mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
@@ -327,7 +327,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Screens:** Create order `/request`; Delivery `/delivery/[id]`.
 - **Who / authorization:** Authenticated customer or courier; bearer access token.
 - **Path, query, headers:** None.
-- **Request body:** `UploadUrlRequest` — `purpose: string [ORDER_REQUEST, DELIVERY_PROOF]`; `content_type: string [image/jpeg, image/png]`; `byte_size: integer`
+- **Request body:** `UploadUrlRequest` — `purpose: string [ORDER_REQUEST, DELIVERY_PROOF]`; `content_type: string [image/jpeg, image/png, image/heic, image/heif]`; `byte_size: integer`
 - **Response:** HTTP 201; `UploadUrlResponse` — `upload_url: string`; `storage_key: string`; `expires_in: integer`
 - **Before:** Choose image, purpose, MIME type, and exact byte size.
 - **Then / dependent API:** Direct signed PUT, then `POST /api/media/confirm`.
@@ -1071,9 +1071,9 @@ POST /api/wallets/topup retains request amount:string and original response
 payment_intent_id, amount, payment_url, adding status:string and session_reused:boolean.
 MIN_TOPUP_AMOUNT/MAX_TOPUP_AMOUNT remain authoritative. Same-amount active hosted
 attempts are reused under a payer lock; different amounts conflict until closure.
-No Idempotency-Key header is implemented here. Development auto simulation returns
-PAID with payment_url=null. Do not automatically repeat timed-out development top-ups:
-hosted recovery excludes simulated attempts and development credit is not external money.
+An optional UUID Idempotency-Key now provides 24-hour exact-input replay, including
+development credit. See write recovery below. Development auto simulation returns
+PAID with payment_url=null; simulated credit is not externally funded money.
 
 POST /api/invoices/{invoice_id}/pay remains customer-only; omitted body preserves
 use_wallet=true, or send {"use_wallet":false}. This is a strict boolean; client amounts,
@@ -1097,3 +1097,113 @@ covers status, issue/payment dates, amounts, line content and template version: 
 force immediate regeneration and hits do not extend TTL. Redis failure falls back to
 rendering; larger PDFs are served uncached. HTTP remains private,no-store so response
 caches cannot bypass authorization or freshness.
+
+## Approved mobile completion — 2026-10-09
+
+Source contracts below require release/migrations and separate deployment verification.
+They do not establish that the configured public backend already supports them.
+
+### Retry-safe writes and owned recovery
+
+| Method / operation | Roles | Request and unchanged success response |
+| --- | --- | --- |
+| POST `/api/orders` / `order.create` | Customer | Existing CreateOrderRequest → 201 OrderDetail. |
+| POST `/api/occasions` / `occasion.create` | Customer | Existing CreateOccasionRequest → 201 OccasionResponse. |
+| PATCH `/api/occasions/{occasion_id}` / `occasion.update` | Customer owner | Existing UpdateOccasionRequest → 200 OccasionResponse; path UUID participates in key identity. |
+| POST `/api/wallets/topup` / `wallet.topup` | Eligible customer/courier | `{"amount":"100.00"}` → 201 TopupResponse, including existing status/session_reused. |
+
+All four accept optional `Idempotency-Key: <UUID>`; omitted keys preserve old behavior.
+Generate and persist one random UUID before submission, then reuse it with identical
+input after response loss. Scope is authenticated account + operation + UUID. Do not
+reuse for a new action or another occasion. List order remains significant. Top-up
+amounts normalize to two-place decimal strings. Same key/different input → 409
+CONFLICT. Malformed UUID → 422 with the existing detail[] schema-validation response. Existing permissions and business
+validation remain in force. Replay returns the original response snapshot, not current
+order/payment state; fetch existing detail/session endpoints for current state.
+
+PostgreSQL unique claims serialize concurrent retries. Resource changes and encrypted
+result snapshots commit together. Media preflight remains outside the mutation
+transaction. Completed results remain recoverable for 24 hours from creation; a
+bounded hourly job removes expired completed snapshots. Never reuse an expired key:
+the guarantee does not extend after retention/purge. Unresolved external attempts
+are retained beyond this window so expiry cannot authorize a second charge.
+
+GET `/api/operations/{operation_key}?operation=order.create|occasion.create|occasion.update|wallet.topup`
+requires the same account's bearer token and current eligibility; couriers can recover
+only wallet.topup. No request body, no pagination or caching; Cache-Control private,
+no-store. Current resource ownership is rechecked; deleted/reassigned resources 404.
+
+Response fields: operation_key:UUID, operation:enum above, status:COMPLETED or
+OUTCOME_UNKNOWN, resource_id:UUID|null, result:object|null, created_at:UTC datetime,
+expires_at:UTC datetime. COMPLETED means the original operation response committed,
+not that an external payment succeeded. Its result is exactly the corresponding
+OrderDetail, OccasionResponse or TopupResponse. OUTCOME_UNKNOWN has result=null and
+may expose the owned payment-intent UUID; resolve it through existing payment-session
+reads/refresh before deciding whether any replacement is safe.
+
+Example:
+```json
+{"operation_key":"8dc024d8-0e52-43ea-a36f-49838bd2fe0f","operation":"wallet.topup","status":"COMPLETED","resource_id":"aeb8151e-38a5-4c86-aedb-7a5a430c7c6d","result":{"payment_intent_id":"aeb8151e-38a5-4c86-aedb-7a5a430c7c6d","amount":"100.00","payment_url":null,"status":"PAID","session_reused":false},"created_at":"2026-10-09T09:00:00Z","expires_at":"2026-10-10T09:00:00Z"}
+```
+
+503 OPERATION_PENDING on write replay means an existing committed attempt is
+unresolved: recover it, do not create a fresh key. This error does not promise a
+Retry-After delay; do not busy-loop. 404 recovery means no accessible retained result,
+not proof that the write never executed. Within retention, retry the same key/input;
+after expiry or an unresolved financial outcome, inspect owned resources/support.
+Domain error envelope remains error:{code,message,request_id}; schema validation422
+retains detail[] (do not expect a domain error code). 401 invalid session,
+403 role/eligibility, 400 invalid business input, 409 conflicts, 422 schema errors,
+429 RATE_LIMITED (honor Retry-After), dependency failures 503. Existing payment-session
+refresh/cancel/review rules remain authoritative. No new payment-session endpoint.
+
+### Original private media formats
+
+Chat grants retain POST `/api/conversations/{conversation_id}/media-upload-urls`,
+media submission and authorized attachment reads. Load GET `/api/chat/media-limits`
+for exact configured limits. Images: JPEG, PNG, HEIC, HEIF (image/jpeg, image/png,
+image/heic, image/heif); videos: MP4, WebM, original MOV (video/quicktime); voice
+recordings: existing audio/mp4, audio/mpeg, audio/ogg, audio/webm, audio/wav, audio/aac.
+Never rename/relabel original files. Send the original MIME, exact bytes and issued
+key. HEIF must contain one primary image, at most 20 million pixels; auxiliary/depth
+images and thumbnails are not decoded. MOV currently requires a first ftyp atom with QuickTime major brand qt; legacy
+QuickTime files without it are rejected400. Native validation uses one HEIF decoding
+thread, subprocess timeouts and bounded admission. Video retains 1080p pixel bounds,
+120 MiB / 120 seconds; images 10 MiB; voice 10 MiB / 120 seconds. Config can lower caps.
+Send at most five images or one video/voice note per message. Unsupported/malformed,
+misdeclared or oversized bytes fail400; unavailable validation fails503.
+
+General order-request/delivery-proof grants also accept HEIC/HEIF through existing
+POST `/api/media/upload-urls` and `/api/media/confirm`, MAX_UPLOAD_BYTES and strict
+server-generated keys. HEIF is fully decoded before confirmation/attachment. Original
+private bytes are preserved; device display/thumbnail conversion is the client's job.
+Ownership, confirmed-grant claims and expiring signed reads are unchanged; no public
+caching or storage-key-as-public-URL. Historical attachments remain accessible.
+
+### Live delivery and device switching
+
+Keep WebSockets and existing optional client_message_id UUID retry identity for
+TEXT/media. Prefer Authorization bearer header or supported subprotocol transport;
+never put credentials in diagnostics. Outgoing complete serialized chat frames are
+capped by WS_MAX_OUTGOING_FRAME_BYTES (32768 by default), measured in UTF-8 bytes;
+oversized frames close1009. Recover committed messages with existing paginated REST
+history; deduplicate by server message ID. Inbound WS_MAX_FRAME_BYTES remains4096.
+
+New-order push adapter includes data:{"type":"ORDER_AVAILABLE","order_id":"<UUID>"}.
+Open the existing authorized order/radar flow; push metadata does not grant ownership.
+Actual vendor/device forwarding is unverified and excluded from this task.
+Device-token registration deliberately transfers the same shared-device token to the
+current authenticated account; deletion remains scoped to its current owner. No
+blanket foreign-token409. Existing ten-device quota and logout/refresh rules remain.
+
+### Remaining product capabilities
+
+The existing calendar CRUD/date filters, order claim/realtime, chat history/media,
+invoice list/history/PDF, wallet statements and hosted payment recovery are reused.
+Occasion reminder delivery/annual recurrence, independent courier appointments,
+ledger-based earnings/targets, notification inbox, avatar change, phone change and
+customer deletion/courier termination remain pending product/security decisions;
+stored preferences or schema fields are not functional mobile endpoints. No new
+support operation is promised. Approved future recovery is at most14 days with an
+explicit deadline, support coordination for returning funds/data and detailed email;
+active liabilities and retention rules remain undecided, so do not advertise it yet.

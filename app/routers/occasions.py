@@ -3,11 +3,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from pydantic import JsonValue, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import Actor, get_db, require_role
+from app.core.deps import Actor, get_db, get_settings, require_role
 from app.models.enums import UserRole
+from app.repositories.operation_repository import OperationRepository
 from app.repositories.planning_repository import PlanningRepository
 from app.schemas.date_range import DateRange, date_range
 from app.schemas.occasions import (
@@ -17,6 +19,7 @@ from app.schemas.occasions import (
     UpdateOccasionRequest,
 )
 from app.services.occasion_service import OccasionService
+from app.services.operation_service import OperationService
 
 router = APIRouter(prefix="/api/occasions", tags=["occasions"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -29,11 +32,25 @@ def _service(db: AsyncSession) -> OccasionService:
 
 @router.post("", response_model=OccasionResponse, status_code=201)
 async def create_occasion(
-    body: CreateOccasionRequest, db: DbDep, actor: CustomerDep
+    body: CreateOccasionRequest,
+    db: DbDep,
+    actor: CustomerDep,
+    request: Request,
+    idempotency_key: Annotated[UUID | None, Header(alias="Idempotency-Key")] = None,
 ) -> OccasionResponse:
     """Save a special date; automatic reminders and annual recurrence are not available."""
+    operations = OperationService(OperationRepository(db), get_settings(request))
+    operation = None
+    if idempotency_key is not None:
+        payload = TypeAdapter(dict[str, JsonValue]).validate_python(body.model_dump(mode="json"))
+        operation = await operations.begin(actor.id, "occasion.create", idempotency_key, payload)
+        if operation.result_encrypted is not None:
+            return OccasionResponse.model_validate_json(operations.result(operation))
     occasion = await _service(db).create(actor.id, **body.model_dump())
-    return OccasionResponse.model_validate(occasion)
+    response = OccasionResponse.model_validate(occasion)
+    if operation is not None:
+        await operations.finish(operation, response, occasion.id)
+    return response
 
 
 @router.get("", response_model=OccasionPage)
@@ -65,11 +82,31 @@ async def get_occasion(occasion_id: UUID, db: DbDep, actor: CustomerDep) -> Occa
 
 @router.patch("/{occasion_id}", response_model=OccasionResponse)
 async def update_occasion(
-    occasion_id: UUID, body: UpdateOccasionRequest, db: DbDep, actor: CustomerDep
+    occasion_id: UUID,
+    body: UpdateOccasionRequest,
+    db: DbDep,
+    actor: CustomerDep,
+    request: Request,
+    idempotency_key: Annotated[UUID | None, Header(alias="Idempotency-Key")] = None,
 ) -> OccasionResponse:
     """Update supplied fields on a customer-owned date."""
+    operations = OperationService(OperationRepository(db), get_settings(request))
+    operation = None
+    if idempotency_key is not None:
+        payload = TypeAdapter(dict[str, JsonValue]).validate_python(
+            {
+                "occasion_id": str(occasion_id),
+                "body": body.model_dump(mode="json", exclude_unset=True),
+            }
+        )
+        operation = await operations.begin(actor.id, "occasion.update", idempotency_key, payload)
+        if operation.result_encrypted is not None:
+            return OccasionResponse.model_validate_json(operations.result(operation))
     occasion = await _service(db).update(actor.id, occasion_id, **body.model_dump())
-    return OccasionResponse.model_validate(occasion)
+    response = OccasionResponse.model_validate(occasion)
+    if operation is not None:
+        await operations.finish(operation, response, occasion.id)
+    return response
 
 
 @router.delete("/{occasion_id}", status_code=204)

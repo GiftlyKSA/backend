@@ -145,6 +145,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(cities.router)
+    from app.routers import operations
+
+    app.include_router(operations.router)
     app.include_router(occasions.router)
     app.include_router(users.router)
     app.include_router(wallets.router)

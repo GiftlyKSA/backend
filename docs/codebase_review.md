@@ -8,6 +8,44 @@
 
 Security comes first, followed by application/SQL efficiency, memory/CPU use and maintainable scalability. Scores are priority estimates, not CVSS: High 7–10, Medium 4–6, Low 1–3. Implementation, local verification, publication and deployment are separate states. This review does not certify that the system has no vulnerabilities.
 
+
+## Approved mobile completion review — 2026-10-09
+
+Scope: current diff against7a71cdf, not a new whole-codebase security certification.
+An independent reviewer inspected claims/commit boundaries, ownership, original-media
+decoding, migrations, frame bounds and contracts; its one blocking order/media retry
+race was reproduced, fixed and rechecked. Existing accepted/excluded risks remain.
+
+| ID / category | Severity / score | Trigger and impact if unresolved | Minimal fix / system impact | Status / verification |
+| --- | --- | --- | --- | --- |
+| REL-15 / Reliability and financial integrity | High7 | Lost order/occasion/top-up responses could cause duplicate writes; simulated top-ups had no stable replay key. | Optional owned UUID keys, atomic unique claims, encrypted24-hour response snapshots and private recovery; no changes for omitted keys. Unresolved external outcomes remain protected. | Fixed: operation_service.py, operation_repository.py, operations.py and existing write routes; concurrent six-session and authenticated replay/ownership/conflict tests pass. Hosted checkpoint failure retains intent linkage and suppresses repeated provider creation. |
+| SEC-21 / Resource bounds | Medium5 | Full outgoing chat JSON was not capped; UTF-8 and metadata can exceed text-character limits. | Cap complete encoded frames using WS_MAX_OUTGOING_FRAME_BYTES; close1009 and recover committed history via REST. | Fixed: routers/chat.py; exact UTF-8 boundary tests pass. Existing input cap/auth/lifecycle remain. |
+| REL-16 / Mobile routing | Medium4 | New-order push lacked order UUID, preventing deterministic order navigation. | Reference-only ORDER_AVAILABLE/order_id metadata through provider/fake interfaces. | Fixed in source: order_notification_service.py and integrations/push; durable delivery metadata test passes. Live provider forwarding remains excluded/unverified. |
+| API-03 / Compatibility | Medium4 | Original MOV/HEIC/HEIF were rejected; relabelling would violate MIME validation. | Genuine HEIF decoding and QuickTime checks, private original bytes, existing caps; migrations extend constraints safely. | Fixed supported subset: first MOV ftyp/qt atom, single HEIF primary image; real MOV/HEIF, spoofing, oversized duration and native decoder tests pass. Older MOV atom layouts remain an explicit limitation. |
+| SEC-22 / Dependency security | Medium5 | Locked multidict6.7.1 is affected by CVE-2026-104874: selected C-extension set-view operations leak references and may exhaust memory. Exploitability through Giftly was not confirmed. | Upgrade only this transitive dependency to patched6.9.1; retain lockfile and rerun checks. | Fixed: uv.lock. Upstream advisory verified2026-10-09; complete locked production graph audit passes with no known findings. This is not GitHub alert reconciliation or native-library security certification. |
+
+SEC-22 source: [upstream advisory](https://github.com/aio-libs/multidict/security/advisories/GHSA-54p9-h82j-f925).
+HEIF dependency/interface: [official Pillow plugin documentation](https://pillow-heif.readthedocs.io/en/stable/reference/HeifImagePlugin.html).
+
+Verification: Python3.13.7, disposable PostgreSQL16/Redis7, native FFmpeg and HEIF.
+Full suite1262passed, zero skips,89.09%coverage; commit/push gates and strict mypy pass.
+Migrations27/28 upgrade, downgrade to26 and re-upgrade pass in a separate disposable
+database; rollback correctly refuses unresolved operations and retained original media.
+No Docker, production database write, live vendor call or mobile repository edit ran.
+The final identical suite after the dependency patch also passed1262tests/89.09%coverage.
+
+Operational limitations: Linux packaged decoder execution, runtime capacity and live
+provider delivery remain separate gates. Completed snapshots expire after24hours;
+unresolved payment claims are retained until operational resolution and need age/count
+monitoring. Admin can modify financial/audit/recovery records under the accepted CRUD
+policy; this release does not make that policy immutable or certify zero vulnerabilities.
+
+Public probe2026-10-09: CranL statusdone, OpenAPI200; text chat lacks client_message_id;
+payment-session and operation-recovery paths absent. Anonymous probes to those paths
+return routing404 detail:"Not Found", rather than auth401. This confirms an older public
+contract, not which source commit is deployed. Authenticated live mutation verification
+was not attempted without isolated authorized accounts. Deployment unverified.
+
 ## Global priority index
 
 | Priority | Finding | Category | Severity | Current disposition |
@@ -15,6 +53,11 @@ Security comes first, followed by application/SQL efficiency, memory/CPU use and
 | Policy | SEC-16 | Financial integrity | High 9/10 | Accepted: unrestricted authenticated admin financial CRUD retained |
 | Policy | SEC-17 | Audit integrity | High 9/10 | Accepted: unrestricted authenticated admin audit CRUD retained |
 | Excluded | SEC-19 | Secret configuration | High 7/10 | Deferred by explicit user instruction; public test-secret rejection not implemented |
+| P1 | REL-15 | Retry integrity | High7/10 | Fixed locally; publication/deployment tracked separately |
+| P2 | SEC-22 | Dependency security | Medium5/10 | Patched multidict6.9.1; local graph audit clear |
+| P2 | SEC-21 | Resource bounds | Medium5/10 | Complete outgoing UTF-8 frame cap |
+| P2 | REL-16 | Push routing | Medium4/10 | Reference metadata added; vendor delivery unverified |
+| P2 | API-03 | Original media | Medium4/10 | Supported subset decoded safely |
 | P1 | FIN-01 | Discount allocation | High 7/10 | Fixed; exact cent allocation and bounded shares |
 | P1 | FIN-02 | Wallet reservations | High 7/10 | Fixed; freshly locked funds and unrelated holds preserved |
 | P2 | SEC-18 | Authentication | Medium 6/10 | Fixed; refresh replay commits account-wide credential revocation |

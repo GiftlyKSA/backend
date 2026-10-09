@@ -33,6 +33,7 @@ for _module in (
     "gateway_reconciliation",
     "media_cleanup",
     "order_notifications",
+    "operations",
     "receipts",
     "reconciliation",
 ):

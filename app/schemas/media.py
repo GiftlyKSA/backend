@@ -14,7 +14,7 @@ class UploadUrlRequest(BaseModel):
     purpose: Literal["ORDER_REQUEST", "DELIVERY_PROOF"] = Field(
         ..., description="What the media is for; determines the key prefix."
     )
-    content_type: Literal["image/jpeg", "image/png"] = Field(
+    content_type: Literal["image/jpeg", "image/png", "image/heic", "image/heif"] = Field(
         ..., description="The image MIME type; pinned into the pre-signed URL."
     )
     byte_size: int = Field(..., gt=0, description="Declared size in bytes; must be within the cap.")

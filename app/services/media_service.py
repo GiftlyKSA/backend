@@ -8,6 +8,7 @@ Keys are validated against a strict allow-list (no ``../``, no absolute paths).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from collections.abc import Awaitable, Callable
@@ -18,8 +19,10 @@ from app.core.exceptions import BadRequestError, ConflictError
 from app.integrations.storage.base import ObjectHead, StorageClient
 from app.models import MediaUpload
 from app.repositories.media_repository import MediaRepository
+from app.services.chat_media_validation import MEDIA_TYPES, verify_image_isolated
 
-ALLOWED_IMAGE_TYPES = frozenset({"image/jpeg", "image/png"})
+ALLOWED_IMAGE_TYPES = frozenset(MEDIA_TYPES["IMAGE"])
+_image_slots = asyncio.Semaphore(2)
 _UPLOAD_TTL_SECONDS = 300
 MAX_OUTSTANDING_UPLOADS = 20
 MAX_OUTSTANDING_BYTES = 50 * 1024 * 1024
@@ -27,8 +30,8 @@ _PREFIX_BY_PURPOSE = {
     "ORDER_REQUEST": "orders/pending",
     "DELIVERY_PROOF": "orders/proof",
 }
-# A safe key: only the known prefixes, a uuid, and a .jpg/.png suffix — nothing else.
-_KEY_RE = re.compile(r"^(orders/pending|orders/proof)/[0-9a-f-]{36}\.(jpg|png)$")
+# A safe key: only the known prefixes, a uuid, and a supported image suffix — nothing else.
+_KEY_RE = re.compile(r"^(orders/pending|orders/proof)/[0-9a-f-]{36}\.(jpg|png|heic|heif)$")
 
 
 @dataclass(frozen=True)
@@ -72,11 +75,11 @@ class MediaService:
         if prefix is None:
             raise BadRequestError("Unknown media purpose.")
         if content_type not in ALLOWED_IMAGE_TYPES:
-            raise BadRequestError("Only JPEG or PNG images are allowed.")
+            raise BadRequestError("Only JPEG, PNG, HEIC or HEIF images are allowed.")
         if not 0 < byte_size <= self._settings.MAX_UPLOAD_BYTES:
             raise BadRequestError("The file is too large.")
 
-        ext = "jpg" if content_type == "image/jpeg" else "png"
+        ext = MEDIA_TYPES["IMAGE"][content_type]
         storage_key = f"{prefix}/{uuid.uuid4()}.{ext}"
         if release_reads is not None:
             await release_reads()
@@ -202,6 +205,23 @@ class MediaService:
             raise BadRequestError("The uploaded file size does not match the upload request.")
         if head.content_type != grant.content_type or head.content_type not in ALLOWED_IMAGE_TYPES:
             raise BadRequestError("The uploaded file is not a permitted image.")
+        if grant.content_type in {"image/heic", "image/heif"}:
+            try:
+                async with asyncio.timeout(25):
+                    async with _image_slots:
+                        body = await self._storage.read_bounded_object(
+                            storage_key, max_bytes=grant.byte_size
+                        )
+                        if len(body) != grant.byte_size:
+                            raise BadRequestError(
+                                "The uploaded file size does not match its upload grant."
+                            )
+                        await verify_image_isolated(body, grant.content_type)
+            except TimeoutError as exc:
+                from app.core.exceptions import MediaValidationUnavailableError
+
+                raise MediaValidationUnavailableError() from exc
+            return head
         if not await self._storage.verify_image_magic_bytes(storage_key, grant.content_type):
             raise BadRequestError("The uploaded file is not a valid image.")
         return head

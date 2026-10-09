@@ -17,8 +17,8 @@ from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, StorageClien
 from app.services.image_decoder import decode_image
 
 MEDIA_TYPES = {
-    "IMAGE": {"image/jpeg": "jpg", "image/png": "png"},
-    "VIDEO": {"video/mp4": "mp4", "video/webm": "webm"},
+    "IMAGE": {"image/jpeg": "jpg", "image/png": "png", "image/heic": "heic", "image/heif": "heif"},
+    "VIDEO": {"video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov"},
     "VOICE": {
         "audio/mp4": "m4a",
         "audio/mpeg": "mp3",
@@ -214,6 +214,7 @@ def probe_duration(output: bytes, kind: str, mime: str, maximum: int) -> float |
         duration = float(declared_duration) if declared_duration is not None else None
         expected = {
             "video/mp4": "mov",
+            "video/quicktime": "mov",
             "video/webm": "webm",
             "audio/mp4": "mov",
             "audio/mpeg": "mp3",
@@ -258,6 +259,11 @@ async def verify_recording(body: bytes, *, kind: str, mime: str, maximum: int) -
 
 async def verify_recording_file(path: Path, *, kind: str, mime: str, maximum: int) -> float:
     """Probe and fully decode a private local file with network protocols disabled."""
+    if mime in {"video/quicktime", "video/mp4"}:
+        header = await asyncio.to_thread(_recording_header, path)
+        quicktime = header[4:8] == b"ftyp" and header[8:12] == b"qt  "
+        if (mime == "video/quicktime" and not quicktime) or (mime == "video/mp4" and quicktime):
+            raise BadRequestError("The recording container does not match its declared MIME type.")
     output = await _run(
         "ffprobe",
         "-max_alloc",
@@ -317,3 +323,8 @@ async def verify_recording_file(path: Path, *, kind: str, mime: str, maximum: in
     if not times or not 0 < max(times) <= maximum:
         raise BadRequestError("The recording exceeds the duration limit.")
     return max(max(times), duration or 0)
+
+
+def _recording_header(path: Path) -> bytes:
+    with path.open("rb") as recording:
+        return recording.read(32)

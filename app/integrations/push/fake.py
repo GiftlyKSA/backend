@@ -16,6 +16,7 @@ class RecordedPush:
     tokens: list[str]
     title: str
     body: str
+    data: dict[str, str] | None = None
 
 
 class FakePushClient(PushClient):
@@ -26,6 +27,10 @@ class FakePushClient(PushClient):
         forbid_in_production(environment, type(self).__name__)
         self.sent: list[RecordedPush] = []
 
-    async def send_push(self, tokens: list[str], title: str, body: str) -> None:
+    async def send_push(
+        self, tokens: list[str], title: str, body: str, *, data: dict[str, str] | None = None
+    ) -> None:
         """Record the push instead of dispatching it."""
-        self.sent.append(RecordedPush(list(tokens), title, body))
+        self.sent.append(
+            RecordedPush(list(tokens), title, body, dict(data) if data is not None else None)
+        )

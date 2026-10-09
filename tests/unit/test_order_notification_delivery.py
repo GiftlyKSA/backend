@@ -68,12 +68,16 @@ class _Push:
         self.factory = factory
         self.fail = fail
         self.sent: list[str] = []
+        self.data: dict[str, str] | None = None
 
-    async def send_push(self, tokens: list[str], _title: str, _body: str) -> None:
+    async def send_push(
+        self, tokens: list[str], _title: str, _body: str, *, data: dict[str, str] | None = None
+    ) -> None:
         assert self.factory.open_sessions == 0
         if self.fail:
             raise RuntimeError("provider failed")
         self.sent.extend(tokens)
+        self.data = data
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -100,5 +104,6 @@ async def test_notification_page_commits_claim_before_push_and_retries_failure(
     else:
         assert processed == 1
         assert push.sent == ["courier-token"]
+        assert push.data == {"type": "ORDER_AVAILABLE", "order_id": str(claim.order_id)}
         assert repo.advanced == (token_id, True)
         assert factory.commits == 2

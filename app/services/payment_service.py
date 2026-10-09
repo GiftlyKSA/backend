@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -162,7 +163,13 @@ class PaymentService:
     def _expiry(self) -> datetime:
         return self._now() + timedelta(hours=self._settings.PAYMENT_EXPIRY_HOURS)
 
-    async def create_topup(self, *, user_id: uuid.UUID, amount: Decimal) -> TopupResult:
+    async def create_topup(
+        self,
+        *,
+        user_id: uuid.UUID,
+        amount: Decimal,
+        on_intent: Callable[[uuid.UUID], Awaitable[None]] | None = None,
+    ) -> TopupResult:
         """Start a wallet top-up: create the intent and a simulated payment link.
 
         Raises:
@@ -181,7 +188,9 @@ class PaymentService:
             raise NotFoundError("Wallet not found.")
 
         if self._uses_hosted:
-            reusable = await self._existing_topup(user_id=user_id, amount=amount)
+            reusable = await self._existing_topup(
+                user_id=user_id, amount=amount, on_intent=on_intent
+            )
             if reusable is not None:
                 return reusable
 
@@ -193,6 +202,8 @@ class PaymentService:
             expires_at=self._expiry(),
             use_wallet=False,
         )
+        if on_intent is not None:
+            await on_intent(intent.id)
         await self._payments.create_topup(
             user_id=user_id, wallet_id=wallet.id, payment_intent_id=intent.id, amount=amount
         )
@@ -221,7 +232,13 @@ class PaymentService:
             )
         return TopupResult(intent_id=intent.id, amount=amount, payment_url=checkout.payment_url)
 
-    async def _existing_topup(self, *, user_id: uuid.UUID, amount: Decimal) -> TopupResult | None:
+    async def _existing_topup(
+        self,
+        *,
+        user_id: uuid.UUID,
+        amount: Decimal,
+        on_intent: Callable[[uuid.UUID], Awaitable[None]] | None = None,
+    ) -> TopupResult | None:
         """Reuse a stable top-up and retain creation serialization after remote closure."""
         await self._payments.lock_topup_owner(user_id)
         existing = await self._payments.get_topup_for_actor(user_id, open_only=True)
@@ -229,6 +246,8 @@ class PaymentService:
             return None
         if existing.amount != amount:
             raise ConflictError("Cancel the existing top-up before changing its amount.")
+        if on_intent is not None:
+            await on_intent(existing.id)
         reusable = await self._hosted.reuse_or_close(existing)
         if reusable is not None:
             paid = reusable.status is PaymentIntentStatus.PAID

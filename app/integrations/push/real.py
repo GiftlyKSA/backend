@@ -20,12 +20,19 @@ class RealPushClient(PushClient):
         """Close the pooled HTTP client (wired to app shutdown)."""
         await self._client.aclose()
 
-    async def send_push(self, tokens: list[str], title: str, body: str) -> None:
+    async def send_push(
+        self, tokens: list[str], title: str, body: str, *, data: dict[str, str] | None = None
+    ) -> None:
         """Send the push; the body never contains Restricted data."""
         # VENDOR CONTRACT — refine against the Supabase Edge Function contract.
         response = await self._client.post(
             f"{self._url}/functions/v1/push",
-            json={"tokens": tokens, "title": title, "body": body},
+            json={
+                "tokens": tokens,
+                "title": title,
+                "body": body,
+                **({"data": data} if data else {}),
+            },
             headers={"Authorization": f"Bearer {self._service_key}"},
         )
         response.raise_for_status()

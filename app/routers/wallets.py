@@ -19,6 +19,7 @@ from app.models import Withdrawal
 from app.models.enums import UserRole
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.courier_repository import CourierRepository
+from app.repositories.operation_repository import OperationRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.repositories.withdrawal_repository import WithdrawalRepository
@@ -34,6 +35,7 @@ from app.schemas.wallets import (
 )
 from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.money_service import MoneyService
+from app.services.operation_service import OperationService
 from app.services.payment_service import build_payment_service
 from app.services.reporting_dates import reporting_bounds
 from app.services.wallet_statement_service import WalletStatementService
@@ -112,6 +114,7 @@ async def start_topup(
     db: DbDep,
     body: TopupRequest,
     actor: Annotated[Actor, Depends(_eligible_customer_or_courier)],
+    idempotency_key: Annotated[uuid.UUID | None, Header(alias="Idempotency-Key")] = None,
 ) -> TopupResponse:
     """Start a wallet top-up and return the gateway payment URL."""
     service = build_payment_service(
@@ -120,14 +123,37 @@ async def start_topup(
         redis=get_redis(request),
         settings=get_settings(request),
     )
-    result = await service.create_topup(user_id=actor.id, amount=parse_money(body.amount))
-    return TopupResponse(
+    operations = OperationService(OperationRepository(db), get_settings(request))
+    operation = None
+    if idempotency_key is not None:
+        operation = await operations.begin(
+            actor.id,
+            "wallet.topup",
+            idempotency_key,
+            {"amount": money_str(parse_money(body.amount))},
+        )
+        if operation.result_encrypted is not None:
+            return TopupResponse.model_validate_json(operations.result(operation))
+
+    async def bind_intent(intent_id: uuid.UUID) -> None:
+        if operation is not None:
+            await operations.bind(operation, intent_id)
+
+    result = await service.create_topup(
+        user_id=actor.id,
+        amount=parse_money(body.amount),
+        on_intent=bind_intent if operation is not None else None,
+    )
+    response = TopupResponse(
         payment_intent_id=str(result.intent_id),
         amount=money_str(result.amount),
         payment_url=result.payment_url,
         status=result.status,
         session_reused=result.session_reused,
     )
+    if operation is not None:
+        await operations.finish(operation, response, result.intent_id)
+    return response
 
 
 @router.post("/withdrawals", response_model=WithdrawalResponse, status_code=201)

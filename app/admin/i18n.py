@@ -15,6 +15,11 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Write Operations": "عمليات الكتابة",
+    "Operation": "العملية",
+    "Operation Key": "مفتاح العملية",
+    "Request Hash": "بصمة الطلب",
+    "Resource Id": "معرّف المورد",
     "Database backup": "نسخة احتياطية لقاعدة البيانات",
     "Export format": "صيغة التصدير",
     "Encrypted SQL": "ملف SQL مشفر",

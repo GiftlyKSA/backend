@@ -26,6 +26,7 @@ dependencies = [
     "aioboto3>=13",
     "python-multipart>=0.0.20",
     "reportlab>=4.4,<5",
+    "pillow-heif==1.8.0",
 ]
 
 [project.optional-dependencies]

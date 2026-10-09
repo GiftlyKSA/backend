@@ -966,3 +966,17 @@ Rollback requires stopping the updated services and deploying the prior applicat
 ### Local verification follow-up — 2026-10-09
 
 The complete local suite passed on Python3.13.7, disposable PostgreSQL16.15, Redis7.0.15 and native FFmpeg/ffprobe: 1,241 passed, zero skips and 89.35% coverage. Both hook stages and independent review passed. Repeated query plans and bounded Redis-pool measurements are recorded in [the review](codebase_review.md). No Docker or production database changes ran. Linux image/remote CI and public rollout remain unverified; the latest successful build still serves the older public contract. The user excluded audit archival for this development server, vendor validation, ingress-log validation and dependency-alert reconciliation. See [the tracker](tasks.md) for remaining work.
+
+
+### Mobile reliability completion (2026-10-09)
+
+Migrations0027/0028 add encrypted account-scoped 24-hour write recovery and extend
+original media constraints; existing callers remain compatible. Rollout applies
+migrations once before API workers. Downgrade refuses retained/unresolved operations
+or original-format media rather than destroying protection/history. Preserve the
+versioned encryption keyring for retained snapshots. The scheduler runs a bounded
+1000-record completed-operation purge hourly; unresolved payment operations require
+operational resolution and are never automatically discarded. Monitor their age/count.
+See api.md and generated OpenAPI for exact mobile contracts. HEIF decoding uses locked
+pillow-heif1.8.0; Linux image/native-library execution and live vendor delivery require
+separate deployment proof. No external checkout success is inferred from mocks.

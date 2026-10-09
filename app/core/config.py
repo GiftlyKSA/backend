@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     WS_RATE_LIMIT_MAX_MESSAGES: int = 30
     WS_RATE_LIMIT_WINDOW_SECONDS: int = 60
     WS_MAX_FRAME_BYTES: int = 4096
+    WS_MAX_OUTGOING_FRAME_BYTES: int = Field(default=32768, ge=1, le=131072)
 
     # Dedicated OTP HMAC key (audit SEC-3); optional — see OtpService for the fallback.
     OTP_HMAC_KEY: SecretStr | None = None

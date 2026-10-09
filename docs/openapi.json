@@ -1031,6 +1031,7 @@
         "title": "InvoiceSummary",
         "type": "object"
       },
+      "JsonValue": {},
       "MessagePage": {
         "description": "A keyset page of messages (newest first).",
         "properties": {
@@ -1180,6 +1181,81 @@
           "updated_at"
         ],
         "title": "OccasionResponse",
+        "type": "object"
+      },
+      "OperationResponse": {
+        "description": "An owned committed snapshot or an explicitly unresolved operation.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "order.create",
+              "occasion.create",
+              "occasion.update",
+              "wallet.topup"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "operation_key": {
+            "format": "uuid",
+            "title": "Operation Key",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "enum": [
+              "COMPLETED",
+              "OUTCOME_UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_key",
+          "operation",
+          "status",
+          "resource_id",
+          "result",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "OperationResponse",
         "type": "object"
       },
       "OrderDetail": {
@@ -2576,7 +2652,9 @@
             "description": "The image MIME type; pinned into the pre-signed URL.",
             "enum": [
               "image/jpeg",
-              "image/png"
+              "image/png",
+              "image/heic",
+              "image/heif"
             ],
             "title": "Content Type",
             "type": "string"
@@ -4711,6 +4789,25 @@
       "post": {
         "description": "Save a special date; automatic reminders and annual recurrence are not available.",
         "operationId": "create_occasion_api_occasions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4840,6 +4937,23 @@
               "title": "Occasion Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -4877,6 +4991,65 @@
         "summary": "Update Occasion",
         "tags": [
           "occasions"
+        ]
+      }
+    },
+    "/api/operations/{operation_key}": {
+      "get": {
+        "description": "Recover a retained owned result; absence does not prove a request never executed.",
+        "operationId": "get_operation_api_operations__operation_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "order.create",
+                "occasion.create",
+                "occasion.update",
+                "wallet.topup"
+              ],
+              "title": "Operation",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operation",
+        "tags": [
+          "operations"
         ]
       }
     },
@@ -4997,8 +5170,27 @@
         ]
       },
       "post": {
-        "description": "Create a NEW gift-request order.",
+        "description": "Create a NEW order; an optional UUID key safely replays this write for 24 hours.",
         "operationId": "create_order_api_orders_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6309,6 +6501,25 @@
       "post": {
         "description": "Start a wallet top-up and return the gateway payment URL.",
         "operationId": "start_topup_api_wallets_topup_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
