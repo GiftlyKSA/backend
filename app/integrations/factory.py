@@ -109,6 +109,8 @@ def build_payment_client(settings: Settings) -> PaymentClient:
     if settings.payment_provider == "disabled":
         return DisabledPaymentClient()
     if settings.payment_provider == "dhamen":
+        if settings.dhamen_should_fall_back_to_fake:
+            return FakePaymentClient(settings.ENVIRONMENT)
         return DhamenPaymentClient(
             base_url=settings.dhamen_base_url,
             app_id=_required_secret(settings.DHAMEN_APP_ID, "DHAMEN_APP_ID"),

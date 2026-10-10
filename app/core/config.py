@@ -221,13 +221,33 @@ class Settings(BaseSettings):
             host.strip().lower() for host in self.DHAMEN_CHECKOUT_HOSTS.split(",") if host.strip()
         )
 
+    @property
+    def dhamen_should_fall_back_to_fake(self) -> bool:
+        """Use simulated payments in development when Dhamen settings are incomplete."""
+        credentials = (self.DHAMEN_APP_ID, self.DHAMEN_APP_KEY, self.DHAMEN_CLIENT_ID)
+        configured = (
+            all(value is not None and value.get_secret_value().strip() for value in credentials)
+            and bool(self.DHAMEN_RETURN_URL and self.DHAMEN_RETURN_URL.strip())
+            and bool(self.DHAMEN_WEBHOOK_URL and self.DHAMEN_WEBHOOK_URL.strip())
+            and bool(self.dhamen_checkout_hosts)
+        )
+        return (
+            self.ENVIRONMENT is Environment.DEVELOPMENT
+            and self.payment_provider == "dhamen"
+            and not configured
+        )
+
     def _validate_payments(self) -> None:
         if self.payment_provider == "simulated" and self.is_production:
             raise ValueError("Production must not select simulated payments.")
-        if self.payment_provider != "dhamen":
-            return
+        if self.payment_provider == "dhamen":
+            self._validate_dhamen()
+
+    def _validate_dhamen(self) -> None:
         if self.is_production:
             raise ValueError("Production Dhamen payments remain disabled pending verification.")
+        if self.dhamen_should_fall_back_to_fake:
+            return
         if self.is_production != (self.DHAMEN_ENVIRONMENT == "production"):
             raise ValueError(
                 "Dhamen testing/production mode must match the application environment."
