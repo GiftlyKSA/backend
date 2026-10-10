@@ -1,6 +1,6 @@
 # Giftly outstanding task tracker
 
-**Created:** 2026-10-08 · **Last updated:** 2026-10-09 · **Source:** [codebase review](codebase_review.md).
+**Created:** 2026-10-08 · **Last updated:** 2026-10-10 · **Source:** [codebase review](codebase_review.md).
 
 Fresh outstanding work only. Completed review fixes are recorded in the review, not repeated as open tasks. Scores are urgency estimates, not CVSS. Implementation and deployment are separate.
 
@@ -9,13 +9,12 @@ Fresh outstanding work only. Completed review fixes are recorded in the review, 
 | ID | Task | Short description | Status | Urgency | Created | Note / completion requirement |
 | --- | --- | --- | --- | --- | --- | --- |
 | SEC-19 | Public testing-secret rejection | Reject published placeholder keys in production. | Deferred by user | High 7 | 2026-10-04 | Explicitly excluded from this fix request; do not silently implement. Protect real deployment secrets operationally. |
-| OPS-01 | Remote CI and deployment verification | Verify Linux image/CI, worker processes and public rollout. | Local service checks complete; remote verification blocked | Medium 5 | 2026-10-04 | Python3.13/PostgreSQL16/Redis7/native FFmpeg full suite: 1,241 passed, zero skips, 89.35% coverage. Hooks/review passed. GitHub dispatch returned 401; user declined CranL sandbox. Linux image and public rollout remain unverified. |
+| OPS-01 | Remaining CI and worker verification | Verify authenticated remote CI and background worker/scheduler operation. | Public API rollout verified; remaining operational checks pending | Medium 5 | 2026-10-04 | On 2026-10-10, CranL deployment succeeded, three API workers started, database/Redis readiness returned 200 and released chat/payment/recovery contracts were public. Previous full native suite passed 1,262 tests with 89.09% coverage. Authenticated Linux CI and background task delivery remain unverified. |
 | SQL-01 | Representative capacity measurement | Measure growing histories, pool waits, p95/p99 and decoder RSS/CPU under real workloads. | Partially verified | Medium 5 | 2026-10-04 | Repeated 17 synthetic plans and an 80-subscription/800-request Redis pool probe passed on 2026-10-09. Warmed Redis p95 2.477 ms / p99 2.741 ms; not deployed API capacity. |
 | PERF-09 | Audit growth monitoring | Monitor metadata and recipient-snapshot growth. | Archival excluded for dev by user | Medium 5 | 2026-10-04 | No archive, retention purge or automatic deletion is planned for this development server. Revisit capacity and retention before production. |
 | SEC-15 | Ingress credential redaction | Verify query/header/subprotocol redaction with fake-token probes. | Excluded from current work by user | Medium 5 | 2026-10-04 | Chat supports safer header/protocol transport; legacy query compatibility remains. |
 | SEC-20 | Remote dependency alert disposition | Reconcile GitHub alerts with exact current lockfile and deployed image. | Excluded from current work by user | Medium 5 | 2026-10-04 | Earlier dated complete-graph scan was clear; unavailable alert metadata is not zero alerts. |
 | INT-01 | Live vendor integration | Verify SMS/email/push and Dhamen authentication, retries and callback semantics. | Excluded from current work by user | Medium 5 | 2026-10-04 | No real-provider success claimed; do not enable production payments based on mocks. |
-| PAY-DEPLOY | Published payment contract rollout | Resolve valid provider configuration and verify new public payment-session routes. | Operational approval / deployment verification pending | High | 2026-10-08 | CranL statusdone on2026-10-09 but public OpenAPI lacks released retry/payment/recovery contracts. Routing404 probes confirm older public surface. Prior DHAMEN_APP_ID blocker is historical, not current diagnosis; provider changes still await approval. |
 | UI-CHAT | Optional retry-safe chat wiring | Reuse a UUID for retries, handle explicit validation/conflict frames, deduplicate messages. | Mobile integration pending | Medium | 2026-10-08 | Existing callers remain compatible; chat-only handoff and generated mobile OpenAPI define the contract. |
 | UI-INVOICE | Final item price rollout | Remove obsolete VAT input/display in the mobile app. | Mobile verification pending | High | 2026-10-08 | Backend final item prices include no separately added/returned VAT; service/courier fees remain. |
 
@@ -83,3 +82,14 @@ verified. Final native suite1262passed/zero skips/89.09%coverage; both hook stag
 strict mypy and locked production dependency audit passed. Independent review blocker
 resolved. Post-push public OpenAPI still lacks client_message_id, payment-session and
 operation-recovery paths; anonymous path probes still routing404. Deployment unverified.
+
+## Deployment recovery — 2026-10-10
+
+PAY-DEPLOY is complete for the published API surface. Migration0024 correctly refused
+existing tax-bearing history. After explicit user approval and a durable 35-table backup,
+the development public schema was reset and migrations recreated it through0028.
+Twenty active cities and three system wallets were seeded; users/orders/invoices were
+empty. CranL deployment `2crdz_YXU-6SCIvQarIwY` succeeded. Public health/readiness
+returned200; OpenAPI exposes retry recovery, payment sessions and client_message_id.
+Live vendor delivery, authenticated mobile flows and background worker/scheduler
+verification remain separate tasks. No application code or migration guard was changed.

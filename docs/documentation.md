@@ -342,6 +342,14 @@ records rather than rewriting payments or ledger history. Apply to a clean dispo
 pre-production database first; back up any existing development data before migration.
 If the guard fails, explicitly reconcile or reset disposable data in a separately
 approved operation. No live database cleanup is performed by this release.
+On 2026-10-10, this guard blocked the development app because two old invoices
+contained VAT, including one marked paid. Recovery used an explicitly approved
+public-schema reset after a durable backup, followed by migration to0028 and public
+readiness/contract checks. This was a one-off development recovery, not an automatic
+startup cleanup. Never reset real financial data to bypass the guard. A rollback of
+this reset requires recreating the backed-up schema revision and restoring its rows;
+restoring old VAT-bearing data also restores the need for financial reconciliation.
+
 Downgrade restores zero-valued tax fields, enum options and the empty system tax wallet
 without inventing charges. Old mobile clients must
 stop sending `tax_rate` before invoice creation against the new strict schema.

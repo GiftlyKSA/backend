@@ -186,3 +186,20 @@ verified. Final native suite1262passed/zero skips/89.09%coverage; both hook stag
 strict mypy and locked production dependency audit passed. Independent review blocker
 resolved. Post-push public OpenAPI still lacks client_message_id, payment-session and
 operation-recovery paths; anonymous path probes still routing404. Deployment unverified.
+
+## Deployment recovery evidence — 2026-10-10
+
+The earlier public-rollout failure is resolved. Latest runtime logs identified the
+intentional0024 guard: two VAT-bearing invoices, one paid, prevented schema upgrade
+and server startup. No safeguard was removed. The user explicitly approved resetting
+this development database after a durable backup (35 tables,178 rows; seven-day
+retention). Only its public schema was reset; unrelated local edits were preserved.
+
+Alembic now reports0028_original_media_formats. Read-only verification found zero
+users/orders/invoices,20 active cities and3 system wallets. Deployment
+`2crdz_YXU-6SCIvQarIwY` succeeded; three API workers completed startup. Public
+/api/health and /api/health/ready returned200 with PostgreSQL/Redis ready. Public
+OpenAPI exposes owned operation recovery, payment sessions and chat retry IDs.
+The inspected latest startup log window contained no errors. This verifies API
+rollout, not vendor delivery, background workers, authenticated financial actions
+or a new complete security audit. No application code changed in this recovery.
