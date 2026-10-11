@@ -1,6 +1,6 @@
 # Giftly task tracker
 
-**Created:**2026-10-11 · **Updated:**2026-10-11.
+**Created:**2026-10-11 · **Updated:**2026-10-12.
 Source: codebase_review.md. Status distinguishes source, publication, deployment and
 external/mobile verification. Scores indicate urgency, not CVSS.
 
@@ -15,7 +15,7 @@ external/mobile verification. Scores indicate urgency, not CVSS.
 | MOB-09 | Phone change | Current-phone reauth,new-number verification and credential revocation | Implemented; release verification underway | High8 | 2026-10-07 | Scoped60secondOTP; single-use300secondproof; fresh login required |
 | MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker deployment pending | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
 | MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Implemented; release verification underway | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
-| OPS-01 | Isolated worker | Separate CranL app,single scheduler,two concurrent tasks | Runtime verified locally; deployment pending | High7 | 2026-10-04 | Same region/shared DBRedis,independent CPU/memory; one replica |
+| OPS-01 | Isolated worker | Separate worker/scheduler Dockerfiles,single scheduler,two concurrent tasks | Split runtime verified locally; deployment pending | High7 | 2026-10-04 | Same region/shared DBRedis,independent CPU/memory; one replica |
 | UI-01 | Mobile integration | Wire published capabilities using exact contracts and chat handoff | Mobile work pending | High7 | 2026-10-11 | No mobile code changed; capability-gate until public deployment verified |
 
 ## Deferred, accepted or externally unverified
@@ -41,3 +41,7 @@ and independent reviews passed. Ruff lint/format,mypy260modules and both hook st
 passed before final staging. Additive migration0029..0032 roundtrips/refusal guards were
 tested on isolated databases. Publication/deployment will be updated after verification.
 No Docker,live-user writes,mobile repository edits or real vendor calls were performed.
+
+2026-10-12: Dockerfile.worker and Dockerfile.scheduler split consumer/scheduler,retain health/migration gates and legacy combined compatibility. CI now builds all three images. Docker/PaaS execution not claimed.
+
+Split-image verification2026-10-12: full nativePG/Redis suite1,399passed,no skips,89.53%coverage; lint/format,mypy260modules and both hook stages pass. CI builds configured but not executed locally. No mobile contract change.

@@ -1051,3 +1051,31 @@ Local regression tests use disposable PostgreSQL16,Redis7 and native media binar
 not Docker or shared production data. The checked-in query-plan harness uses only
 session-local temporary tables. External vendor acceptance, production capacity,
 authenticated remote CI and mobile integration are separate verification gates.
+
+## Separate worker and scheduler images — 2026-10-12
+
+Use Dockerfile for API,Dockerfile.worker for queued jobs,Dockerfile.scheduler for
+scheduling. Build context is the repository root for every image. Each uses the same
+pinned multi-stage Python/uv build,non-root user and locked runtime dependencies.
+No credentials are included in the image. Inject existing validated runtime settings,
+including shared DATABASE_URL,REDIS_URL,encryption and selected integration settings;
+worker/scheduler images default ADMIN_DASHBOARD_ENABLED=false,PROCESS_ROLE=worker.
+The explicit component command takes precedence over the legacy combined role default.
+
+Both service images expose only GET /api/health on port3000. Health requires the selected
+child process to remain running; it does not prove queue progress or provider delivery.
+Worker limits remain one consumer process,two concurrent tasks,two prefetched messages;
+scale worker instances only within the shared PostgreSQL/Redis budget. Scheduler must
+stay at exactly one replica; avoid rolling overlap by stopping the old scheduler first.
+Stop the previous combined runtime/cron scheduling before enabling the new scheduler.
+Otherwise the same task may be enqueued more than once despite application deduplication.
+
+All images retain the migration-before-service failure gate. A shared database advisory
+lock serializes migrations across simultaneous app starts; Gunicorn/Taskiq child workers
+do not run their own migration. Deploy compatible versions together.
+Rollback these deployment-only changes by stopping separate apps before restarting the
+prior combined worker/scheduler image. No schema or mobile API contract changed.
+
+CI builds and checks all three images,including non-root execution and packaged decoder
+verification. Docker was not started locally; image/runtime execution remains a CI or
+authorized PaaS verification step.

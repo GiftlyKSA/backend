@@ -66,9 +66,19 @@ migration service; API/worker/scheduler wait for it and skip duplicate inherited
 migration entrypoints. See the project documentation before changing deployment commands.
 Do not run Docker on the user's machine for agent verification.
 
-For an isolated PaaS worker app, set PROCESS_ROLE=worker in the same Docker image.
-It runs one scheduler and a consumer limited to two concurrent jobs; keep one replica.
-Only /api/health is exposed. API instances retain PROCESS_ROLE=api (default).
+For separate PaaS applications, select these Dockerfiles with repository-root build context:
+
+| App | Dockerfile | Runtime |
+| --- | --- | --- |
+| API | Dockerfile | Three Gunicorn workers |
+| Background worker | Dockerfile.worker | One consumer, at most two concurrent jobs |
+| Scheduler | Dockerfile.scheduler | One scheduler; exactly one replica |
+
+Worker/scheduler expose only /api/health on port3000 and use the shared database/Redis
+configuration with the admin dashboard disabled. Keep the same released version across
+all three apps. Before starting the separate scheduler, stop any old combined scheduler
+or duplicate cron triggers. The original PROCESS_ROLE=worker combined runtime remains
+compatible, but do not run it alongside the new scheduler.
 See docs/documentation.md for connection budgets, configuration and rollback.
 
 Run workers and one scheduler per deployment after migrations:

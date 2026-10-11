@@ -125,15 +125,18 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: [Dockerfile, Dockerfile.worker, Dockerfile.scheduler]
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose services
         run: docker compose config --quiet
       - name: Build the deployment image
-        run: docker build -t giftly:ci .
+        run: docker build -f ${{ matrix.dockerfile }} -t giftly:ci .
       - name: Assert the image runs as non-root
         run: |
-          uid=$(docker run --rm giftly:ci id -u)
+          uid=$(docker run --rm --entrypoint id giftly:ci -u)
           test "$uid" != "0"
       - name: Verify the packaged recording decoder
         run: |
@@ -172,7 +175,7 @@ jobs:
           # so we diff its history out and check what remains. Pull the base first so
           # `docker history python:3.13-slim` works even under buildkit (which does not
           # populate the classic image store for the FROM image).
-          base_image=$(sed -n 's/^FROM \(.*\) AS builder$/\1/p' Dockerfile)
+          base_image=$(sed -n 's/^FROM \(.*\) AS builder$/\1/p' ${{ matrix.dockerfile }})
           docker pull "$base_image" >/dev/null
           comm -23 \
             <(docker history --no-trunc --format '{{.CreatedBy}}' giftly:ci | sort -u) \

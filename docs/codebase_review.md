@@ -276,3 +276,16 @@ OpenAPI exposes owned operation recovery, payment sessions and chat retry IDs.
 The inspected latest startup log window contained no errors. This verifies API
 rollout, not vendor delivery, background workers, authenticated financial actions
 or a new complete security audit. No application code changed in this recovery.
+
+## Split-image follow-up — 2026-10-12
+
+Dockerfile.worker and Dockerfile.scheduler select only their respective Taskiq component.
+Reviewed explicit-command precedence,selected-child liveness,signal cleanup,non-root
+build/dependency pins,migration failure gate and scheduler singleton requirements.
+Legacy combined default and API behavior remain compatible. Regression tests cover
+both separated roles and combined shutdown. Full nativePG/Redis suite1,399passed,
+no skips,89.53%coverage; Ruff,strictmypy260modules and both hook stages pass.
+CI matrix builds/checks all three images; container/PaaS startup still needs execution
+there because Docker was not run locally. No API/schema/mobile changes or new confirmed
+security defect. Stop old scheduling before enabling separate scheduler; this requires
+deployment coordination to avoid overlap,not a client change.

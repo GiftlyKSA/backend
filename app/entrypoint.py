@@ -32,7 +32,7 @@ def main() -> None:
         "--timeout",
         os.getenv("GUNICORN_TIMEOUT", "80"),
     ]
-    if get_settings().PROCESS_ROLE == "worker":
+    if get_settings().PROCESS_ROLE == "worker" and command[0] == "gunicorn":
         command = [sys.executable, "-m", "app.workers.runtime"]
     os.execvp(command[0], command)  # noqa: S606, S607 - deployment command, no shell
 

@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import signal
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
+from typing import Literal, cast
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 _logger = logging.getLogger(__name__)
+Component = Literal["combined", "worker", "scheduler"]
 
 
-def worker_commands() -> tuple[list[str], list[str]]:
+def worker_commands(component: Component = "combined") -> tuple[list[str], ...]:
     """Use one consumer process, two tasks and two prefetched messages."""
-    return (
+    commands = (
         [
             sys.executable,
             "-m",
@@ -38,15 +41,24 @@ def worker_commands() -> tuple[list[str], list[str]]:
         ],
         [sys.executable, "-m", "taskiq", "scheduler", "app.workers.scheduler:scheduler"],
     )
+    if component == "worker":
+        return (commands[0],)
+    if component == "scheduler":
+        return (commands[1],)
+    return commands
 
 
-def health_app(processes: list[asyncio.subprocess.Process]) -> FastAPI:
+def health_app(
+    processes: list[asyncio.subprocess.Process], *, expected_processes: int = 2
+) -> FastAPI:
     """Expose liveness only, with no business routes or diagnostic details."""
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 
     @app.get("/api/health")
     async def health() -> JSONResponse:
-        healthy = len(processes) == 2 and all(process.returncode is None for process in processes)
+        healthy = len(processes) == expected_processes and all(
+            process.returncode is None for process in processes
+        )
         return JSONResponse(
             {"status": "ok" if healthy else "unavailable"},
             status_code=200 if healthy else 503,
@@ -86,7 +98,7 @@ def _server_exit_status(serving: asyncio.Task[None]) -> int:
     return 1
 
 
-async def run() -> int:
+async def run(component: Component = "combined") -> int:
     """Stop and reap every child on a signal, service failure or startup failure."""
     processes: list[asyncio.subprocess.Process] = []
     waits: list[asyncio.Task[None] | asyncio.Task[int] | asyncio.Task[bool]] = []
@@ -104,11 +116,12 @@ async def run() -> int:
     for number in previous_handlers:
         signal.signal(number, request_stop)
     try:
-        for command in worker_commands():
+        commands = worker_commands(component)
+        for command in commands:
             processes.append(await asyncio.create_subprocess_exec(*command))
         server = _ManagedServer(
             uvicorn.Config(
-                health_app(processes),
+                health_app(processes, expected_processes=len(commands)),
                 host="0.0.0.0",  # noqa: S104 - dedicated PaaS liveness listener
                 port=3000,
                 access_log=False,
@@ -142,7 +155,12 @@ async def run() -> int:
 def main() -> None:
     """Start the isolated worker after the entrypoint migration gate."""
     logging.basicConfig(level=logging.INFO)
-    raise SystemExit(asyncio.run(run()))
+    parser = argparse.ArgumentParser(description="Run Giftly background services.")
+    parser.add_argument(
+        "--component", choices=("combined", "worker", "scheduler"), default="combined"
+    )
+    arguments = parser.parse_args()
+    raise SystemExit(asyncio.run(run(cast(Component, arguments.component))))
 
 
 if __name__ == "__main__":
