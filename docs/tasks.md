@@ -10,12 +10,12 @@ external/mobile verification. Scores indicate urgency, not CVSS.
 | --- | --- | --- | --- | --- | --- | --- |
 | MOB-05 | Courier reports | Settled payout including reimbursement, charts/comparison and optimistic targets | Implemented; release verification underway | High7 | 2026-10-07 | Riyadh/Sunday weeks, maximum366days; no unsupported financial switch |
 | MOB-06 | Inbox and timeline | Owned paginated notifications/read actions and actual order transitions | Implemented; release verification underway | High7 | 2026-10-07 | Older orders explicitly incomplete; foreign access denied |
-| MOB-07 | Occasion reminders | Opt-in one-off09:00Riyadh reminder and bounded durable push retries | Implemented; worker deployment pending | Medium5 | 2026-10-07 | Annual recurrence deferred; live vendor delivery unverified |
+| MOB-07 | Occasion reminders | Opt-in one-off09:00Riyadh reminder and bounded durable push retries | Implemented; worker running, vendor delivery unverified | Medium5 | 2026-10-07 | Annual recurrence deferred; live vendor delivery unverified |
 | MOB-08 | Courier avatar | Existing private upload/confirm plus attach/remove/profile read | Implemented; release verification underway | Medium5 | 2026-10-07 | Customers excluded; owned decodedJPEG/PNG only |
 | MOB-09 | Phone change | Current-phone reauth,new-number verification and credential revocation | Implemented; release verification underway | High8 | 2026-10-07 | Scoped60secondOTP; single-use300secondproof; fresh login required |
-| MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker deployment pending | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
+| MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker running, vendor delivery unverified | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
 | MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Implemented; release verification underway | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
-| OPS-01 | Isolated worker | Separate worker/scheduler Dockerfiles,single scheduler,two concurrent tasks | Split runtime verified locally; deployment pending | High7 | 2026-10-04 | Same region/shared DBRedis,independent CPU/memory; one replica |
+| OPS-01 | Isolated worker | Separate worker/scheduler Dockerfiles,single scheduler,two concurrent tasks | Deployed; health and queue execution verified | High7 | 2026-10-04 | Riyadh/shared DBRedis; independent apps; keep one scheduler |
 | UI-01 | Mobile integration | Wire published capabilities using exact contracts and chat handoff | Mobile work pending | High7 | 2026-10-11 | No mobile code changed; capability-gate until public deployment verified |
 
 ## Deferred, accepted or externally unverified
@@ -49,3 +49,11 @@ Split-image verification2026-10-12: full nativePG/Redis suite1,399passed,no skip
 2026-10-12: API PROCESS_ROLE worker fallback removed; only explicit separate image commands launch queued/scheduled services. No API startup/task consumer/cron loop. Existing platform cron removal/deployment verification remains operational.
 
 API-only follow-up2026-10-12: source regression/full1,399tests89.44%coverage and hooks pass; CranL backend cron inventory is empty. Separate worker/scheduler deployment remains pending; backend performs no automatic queue consumption or scheduling.
+
+## CranL deployment verification - 2026-10-12
+
+OPS-01 is deployed in Riyadh: separate worker/scheduler health checks passed and logs
+confirmed queued job execution. The initial worker environment mismatch was resolved
+by restarting after its build. Both apps retain development mode and shared API
+DB/Redis settings. Live vendor delivery and sustained capacity remain unverified.
+See documentation.md for app URLs, overrides and singleton scheduler requirements.

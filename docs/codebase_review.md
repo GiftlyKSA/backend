@@ -304,3 +304,13 @@ CranL list_cron_jobs for the identified backend production app returned jobs:[] 
 deployment remains unverified/pending,not inferred from published Dockerfiles.
 Full nativePG/Redis tests1,399passed,no skips,89.44%coverage; lint/format,mypy and hooks pass.
 No schema/mobile contract change,Docker execution or live-user data write.
+
+## CranL deployment evidence - 2026-10-12
+
+Separate Riyadh worker/scheduler apps built source6468baa and returned healthy200.
+Both reject mobile /api/orders with404. Scheduler startup and worker execution of
+occasion/account-email/chat/order jobs were observed. Worker startup initially lacked
+creation-time settings; applying its saved runtime environment after build resolved it.
+Secrets were transferred only after explicit approval, without display/file storage.
+Existing development/provider modes were preserved. Vendor delivery, sustained capacity
+and replica/rolling-update configuration remain unverified; no new source change.

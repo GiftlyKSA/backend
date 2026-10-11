@@ -1095,3 +1095,29 @@ maintenance work that processes durable PostgreSQL outboxes.
 Bounded WebSocket receive/publish/auth checks,media validation,PDF generation and request
 cleanup remain request processing,not cron/queued jobs. Database migration remains the
 deployment startup gate required earlier; it is not a recurring scheduled job.
+
+## CranL background deployment - 2026-10-12
+
+Giftly project now has two separate apps in riyadh-1, using GiftlyKSA/backend master
+and repository-root build context:
+
+| App | Dockerfile | Health URL |
+| --- | --- | --- |
+| giftly-worker | Dockerfile.worker | https://giftly-worker-wirveo.cranl.net/api/health |
+| giftly-scheduler | Dockerfile.scheduler | https://giftly-scheduler-uliejz.cranl.net/api/health |
+
+Both returned 200 with status ok; both reject /api/orders with 404. Logs confirm the
+scheduler started and the worker consumed occasion, account-email, chat and order jobs
+from the shared queue. This proves process/queue execution, not real vendor delivery.
+The worker initially started without required settings from its creation-time environment;
+a restart after its build applied the saved runtime settings and resolved startup.
+
+With explicit user approval, existing API runtime settings were transferred without
+printing secrets or saving them to files. ENVIRONMENT remains development, matching the
+API; provider selection and payment safeguards were preserved. Both apps override
+ADMIN_DASHBOARD_ENABLED=false, DEBUG=false, LOG_LEVEL=INFO, DB_POOL_SIZE=2 and
+DB_MAX_OVERFLOW=0. They share the API database, Redis and encryption settings; do not
+regenerate shared encryption keys. Admin credentials and API process settings were not
+copied. Keep exactly one scheduler replica and do not duplicate its schedules in app
+cron jobs. Backend app cron inventory was empty. Sustained capacity, external vendor
+delivery and replica/rolling-update configuration remain separate operational checks.
