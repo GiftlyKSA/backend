@@ -45,3 +45,7 @@ No Docker,live-user writes,mobile repository edits or real vendor calls were per
 2026-10-12: Dockerfile.worker and Dockerfile.scheduler split consumer/scheduler,retain health/migration gates and legacy combined compatibility. CI now builds all three images. Docker/PaaS execution not claimed.
 
 Split-image verification2026-10-12: full nativePG/Redis suite1,399passed,no skips,89.53%coverage; lint/format,mypy260modules and both hook stages pass. CI builds configured but not executed locally. No mobile contract change.
+
+2026-10-12: API PROCESS_ROLE worker fallback removed; only explicit separate image commands launch queued/scheduled services. No API startup/task consumer/cron loop. Existing platform cron removal/deployment verification remains operational.
+
+API-only follow-up2026-10-12: source regression/full1,399tests89.44%coverage and hooks pass; CranL backend cron inventory is empty. Separate worker/scheduler deployment remains pending; backend performs no automatic queue consumption or scheduling.

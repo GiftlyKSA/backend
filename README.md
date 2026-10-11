@@ -77,8 +77,9 @@ For separate PaaS applications, select these Dockerfiles with repository-root bu
 Worker/scheduler expose only /api/health on port3000 and use the shared database/Redis
 configuration with the admin dashboard disabled. Keep the same released version across
 all three apps. Before starting the separate scheduler, stop any old combined scheduler
-or duplicate cron triggers. The original PROCESS_ROLE=worker combined runtime remains
-compatible, but do not run it alongside the new scheduler.
+or duplicate cron triggers. The API image never switches to a worker based on an environment setting.
+PROCESS_ROLE is obsolete and can be removed from existing app settings.
+Only the separate worker/scheduler images start background services.
 See docs/documentation.md for connection budgets, configuration and rollback.
 
 Run workers and one scheduler per deployment after migrations:

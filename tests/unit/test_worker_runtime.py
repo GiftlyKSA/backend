@@ -143,14 +143,13 @@ async def test_single_component_health_requires_one_running_child():
 
 
 @pytest.mark.parametrize("component", ["worker", "scheduler"])
-def test_explicit_runtime_command_survives_worker_role(monkeypatch, component):
+def test_explicit_background_command_starts_after_migration(monkeypatch, component):
     from app import entrypoint
 
     migrated = Mock()
     started = Mock()
     command = ["python", "-m", "app.workers.runtime", "--component", component]
     monkeypatch.setattr(entrypoint, "upgrade_database", migrated)
-    monkeypatch.setattr(entrypoint, "get_settings", lambda: Mock(PROCESS_ROLE="worker"))
     monkeypatch.setattr(entrypoint.sys, "argv", ["entrypoint", *command])
     monkeypatch.setattr(entrypoint.os, "execvp", started)
     entrypoint.main()
@@ -158,15 +157,15 @@ def test_explicit_runtime_command_survives_worker_role(monkeypatch, component):
     started.assert_called_once_with(command[0], command)
 
 
-def test_default_worker_role_still_starts_combined_runtime(monkeypatch):
-    import sys
-
+def test_default_api_entrypoint_ignores_legacy_worker_role(monkeypatch):
     from app import entrypoint
 
     monkeypatch.setattr(entrypoint, "upgrade_database", Mock())
-    monkeypatch.setattr(entrypoint, "get_settings", lambda: Mock(PROCESS_ROLE="worker"))
+    monkeypatch.setenv("PROCESS_ROLE", "worker")
     monkeypatch.setattr(entrypoint.sys, "argv", ["entrypoint"])
     started = Mock()
     monkeypatch.setattr(entrypoint.os, "execvp", started)
     entrypoint.main()
-    started.assert_called_once_with(sys.executable, [sys.executable, "-m", "app.workers.runtime"])
+    assert started.call_args.args[0] == "gunicorn"
+    assert started.call_args.args[1][1] == "app.main:create_app()"
+    assert "app.workers.runtime" not in started.call_args.args[1]

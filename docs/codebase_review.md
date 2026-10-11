@@ -289,3 +289,18 @@ CI matrix builds/checks all three images; container/PaaS startup still needs exe
 there because Docker was not run locally. No API/schema/mobile changes or new confirmed
 security defect. Stop old scheduling before enabling separate scheduler; this requires
 deployment coordination to avoid overlap,not a client change.
+
+## API-only startup — 2026-10-12
+
+Removed the PROCESS_ROLE fallback that could turn the default API image into the combined
+worker/scheduler runtime. Removed the unused setting/environment template entries.
+Separate Dockerfile.worker/scheduler still select explicit component commands after the
+migration gate. FastAPI lifecycle has no recurring-job loop or queue consumer; async
+WebSocket/request validation/PDF/cleanup tasks remain request processing.
+The regression test reproduced the former worker switch and now confirms Gunicorn
+starts even with a legacy PROCESS_ROLE=worker environment value.
+CranL list_cron_jobs for the identified backend production app returned jobs:[] on
+2026-10-12; no platform cron modification was necessary. Separate worker/scheduler app
+deployment remains unverified/pending,not inferred from published Dockerfiles.
+Full nativePG/Redis tests1,399passed,no skips,89.44%coverage; lint/format,mypy and hooks pass.
+No schema/mobile contract change,Docker execution or live-user data write.

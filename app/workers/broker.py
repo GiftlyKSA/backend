@@ -1,8 +1,8 @@
 """TaskIQ broker wired to the Redis broker.
 
-Background tasks (push, SMS, the invoice-paid receipt, reconciliation) are declared
-against this broker so an HTTP handler never waits on a slow integration. Tasks are
-added as each phase lands; the broker itself is the shared entry point.
+The separate scheduler publishes scheduled jobs to Redis; separate consumers execute
+them. API services persist durable pending work without starting this broker's consumers
+or scheduler. Request-specific SMS verification remains part of the authenticated flow.
 """
 
 from __future__ import annotations

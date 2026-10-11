@@ -1008,10 +1008,11 @@ Customer-only literal order-description prefix/exactUUID search reuses existing 
 ### Separate CranL worker app
 
 Use the same master repository/Dockerfile in a separate app in the API/database region.
-Set PROCESS_ROLE=worker, ADMIN_DASHBOARD_ENABLED=false, DB_POOL_SIZE=2,
+Select Dockerfile.worker and Dockerfile.scheduler for separate apps. Set
+ADMIN_DASHBOARD_ENABLED=false, DB_POOL_SIZE=2,
 DB_MAX_OVERFLOW=0; inject the required shared database,Redis,encryption and selected
 provider configuration via the protected runtime environment. Do not copy secrets into
-source or logs. API keeps PROCESS_ROLE=api, three Gunicorn workers and80second timeout.
+source or logs. API keeps three Gunicorn workers and80second timeout.
 
 Entrypoint runs the existing globally locked migration gate once before spawning
 services. Worker runtime starts one Taskiq consumer process with at most two concurrent
@@ -1059,8 +1060,8 @@ scheduling. Build context is the repository root for every image. Each uses the 
 pinned multi-stage Python/uv build,non-root user and locked runtime dependencies.
 No credentials are included in the image. Inject existing validated runtime settings,
 including shared DATABASE_URL,REDIS_URL,encryption and selected integration settings;
-worker/scheduler images default ADMIN_DASHBOARD_ENABLED=false,PROCESS_ROLE=worker.
-The explicit component command takes precedence over the legacy combined role default.
+worker/scheduler images default ADMIN_DASHBOARD_ENABLED=false.
+Dockerfile commands select their component; PROCESS_ROLE is obsolete and ignored.
 
 Both service images expose only GET /api/health on port3000. Health requires the selected
 child process to remain running; it does not prove queue progress or provider delivery.
@@ -1079,3 +1080,18 @@ prior combined worker/scheduler image. No schema or mobile API contract changed.
 CI builds and checks all three images,including non-root execution and packaged decoder
 verification. Docker was not started locally; image/runtime execution remains a CI or
 authorized PaaS verification step.
+
+### Strict API/background separation — 2026-10-12
+
+The API entrypoint no longer changes its default service based on PROCESS_ROLE.
+Dockerfile starts only HTTP/WebSocket Gunicorn workers; neither FastAPI startup nor
+request services start a Taskiq consumer,scheduler or cron loop. Remove PROCESS_ROLE
+from runtime settings. Dockerfile.worker and Dockerfile.scheduler use explicit commands
+to start separate components in separate apps. Remove any scheduled jobs from the API
+app and configure only the separate scheduler; code changes cannot delete platform cron
+configuration. Existing standalone queue consumers wait on Redis; the scheduler enqueues
+maintenance work that processes durable PostgreSQL outboxes.
+
+Bounded WebSocket receive/publish/auth checks,media validation,PDF generation and request
+cleanup remain request processing,not cron/queued jobs. Database migration remains the
+deployment startup gate required earlier; it is not a recurring scheduled job.
