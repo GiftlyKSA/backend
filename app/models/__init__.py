@@ -1,6 +1,15 @@
 """Giftly ORM models package — re-exports the declarative Base and all tables."""
 
+from app.models.account_change import AccountChangeChallenge, AccountRequest, AccountRequestEmail
 from app.models.base import Base
+from app.models.courier_avatar import CourierAvatar
+from app.models.courier_report_settings import CourierReportSettings
+from app.models.notification_models import (
+    InboxNotification,
+    OccasionReminder,
+    OrderTimelineEvent,
+    OrderTimelineOrigin,
+)
 from app.models.tables import (
     AdminSession,
     AuditLog,
@@ -41,6 +50,15 @@ from app.models.tables import (
 from app.models.write_operation import WriteOperation
 
 __all__ = [
+    "CourierAvatar",
+    "CourierReportSettings",
+    "InboxNotification",
+    "OccasionReminder",
+    "OrderTimelineEvent",
+    "OrderTimelineOrigin",
+    "AccountChangeChallenge",
+    "AccountRequest",
+    "AccountRequestEmail",
     "WriteOperation",
     "AdminSession",
     "AuditLog",

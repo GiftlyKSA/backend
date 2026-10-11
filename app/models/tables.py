@@ -242,7 +242,7 @@ class MediaUpload(UUIDPrimaryKeyMixin, Base):
             postgresql_where=text("attached_at IS NULL"),
         ),
         CheckConstraint(
-            "purpose IN ('ORDER_REQUEST', 'DELIVERY_PROOF', 'CHAT_ATTACHMENT')",
+            "purpose IN ('ORDER_REQUEST', 'DELIVERY_PROOF', 'CHAT_ATTACHMENT', 'COURIER_AVATAR')",
             name="chk_media_purpose",
         ),
         CheckConstraint(
@@ -292,11 +292,18 @@ class Occasion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reminder_days_before: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default=text("7")
     )
+    reminder_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    reminder_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
     featured_gift_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("featured_gifts.id", ondelete="SET NULL"), nullable=True
     )
 
     __table_args__ = (
+        CheckConstraint("reminder_version > 0", name="chk_occasions_reminder_version"),
         CheckConstraint(
             "reminder_days_before BETWEEN 0 AND 365",
             name="chk_occasions_reminder_days",
@@ -370,6 +377,11 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cancelled_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
+        Index(
+            "idx_orders_customer_description_prefix",
+            "customer_id",
+            text("left(lower(description),100) text_pattern_ops"),
+        ),
         CheckConstraint(
             "delivery_date >= (created_at AT TIME ZONE 'UTC')::date "
             "AND delivery_date <= (created_at AT TIME ZONE 'UTC')::date + 180",

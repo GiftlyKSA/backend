@@ -1,5 +1,78 @@
 # Giftly codebase review
 
+**Current release review:**2026-10-11. Previous dated evidence follows below.
+Inspected new service/repository/router/schema/migration/worker boundaries and shared
+auth,OTP,media,ledger,admin metadata and contracts. Scores are severity/impact estimates,
+not CVSS. Tests and review reduce risk; they do not certify absence of vulnerabilities.
+
+## Global priority and current disposition
+
+| ID | Category | Severity /10 | Status | Evidence and impact | Minimal fix / expected impact | Verification |
+| --- | --- | --- | --- | --- | --- | --- |
+| SEC-23 | Security/authentication | High7 | Fixed | Recovery wrong-OTP attempt response/count and actor-based send quotas differed for matching accounts; could disclose recoverable status | Apply same OTP attempts and phone-hash recovery quota before account lookup; preserve purpose/version/ownership fencing | Reproduced old401x6 versus401x5+429; uniform behavior tests and independent review |
+| REL-17 | Reliability/scalability | High7 | Fixed | API-only deployment had no separate durable-job runner; reminders/recovery/email processing could remain pending | Dedicated worker runtime,one consumer/two concurrent tasks and one scheduler,separate app resources | Four runtime regression tests; real worker deployment tracked separately |
+| REL-18 | Reliability/shutdown | High7 | Fixed | Uvicorn signal re-raise could terminate supervisor before reaping children; health-server failure could exit successfully | Supervisor owns signals; reap children; unexpected server exit returns failure | SIGTERM/health-failure tests and independent rereview |
+| DATA-01 | Migration/data integrity | High7 | Fixed | Account downgrade could remove restored request history or active proofs | Lock tables and refuse any request/email history or usable OTP/proof before downgrade | Four populated refusal cases and empty roundtrip on nativePG |
+| PERF-14 | SQL/performance | Medium5 | Implemented/measured | Prefix search without suitable index scans a heavy owner's50krows | Composite owner/lower-left100 text_pattern_ops index; bound prefix and use existing cursor/status/date filters |100ktemp rows: auto17.467->0.030ms,custom18.328->0.028ms; forced generic18.753ms unchanged |
+| SEC-24 | Media/access control | Medium6 | Fixed | Avatar storage pointer alone would not prove ownership,confirmation,purpose or valid image | Existing owned grants plus decodedJPEG/PNG,pointer locking,recheck auth after external validation,no-store signed profiles | Seven nativePG/avatar cases plus forged-header/unit tests |
+| API-04 | Quality/validation | Low3 | Fixed | NUL search input could reach PostgreSQL and become an internal error | Reject NUL at service boundary with422; keep literal wildcard escaping | Regression plus ownership/status/date/cursor SQL tests |
+| QUAL-04 | Readability/localization | Low2 | Fixed | New admin tables/fields lacked Arabic labels; stale delayed email claimed account still disabled | Explicit Arabic labels; email describes past submission and conditional current review | All metadata translation test,email tests |
+| TEST-01 | Test determinism | Low2 | Fixed | Financial-notification test relied on unordered SELECT scan order | Assert exact count/status membership; retain dedicated chronological cursor checks |13notification integration tests |
+
+## Security and financial integrity
+
+New operations deny foreign access and derive owner from authentication. Financial
+reports aggregate signed SETTLED ESCROW_RELEASE entries,including reimbursement,using
+Decimal; pending/reversed movements never masquerade as earnings. Single-use hashed
+proofs bind actor,purpose,auth_version and expiry; phone/account changes revoke sessions
+and device registrations. Public restoration uses uniform challenges and cannot restore
+after administrative role/status/version changes. No access token is issued by recovery.
+Provider I/O occurs outside locked phone-change transactions; failures remain safe.
+Private responses are no-store; signed avatar URLs are short-lived and authenticated.
+Admin secrets/hashes remain redacted. Accepted SEC-16/17 High9 risks remain: authorized
+admin may alter financial/audit/security-related state under user policy. No immutability
+change was made. SEC-19 production-default rejection remains explicitly excluded.
+
+## Performance, SQL and resource use
+
+No new unbounded mobile collection read or confirmed O(n²) loop was found in reviewed
+paths. List serializers use bounded indexed queries; report SQL count is independent of
+ledger size(two queries in measured report path). Inbox list uses three SELECTs at both
+one and25items. Jobs deliberately process bounded claims with per-item transactions
+for retry/isolation; these are not hidden relationship lazy loads. No extra cache was
+introduced without measured benefit,especially for fresh financial/auth state.
+Search index cost:5,931,008bytes(~5.7MiB) on100k synthetic rows; median1000insert time
+7.400->16.293ms. Seven repeats/custom,generic,automatic plans and rollback-isolated write
+measurement are reproducible with tests/order_search_plans.py. Forced generic prefix
+plans may still owner-scan; current automatic planner chose the selective custom plan.
+These are laptop query measurements,not production latency/capacity guarantees.
+
+## Scalability and operational limits
+
+Worker/API CPU and memory are isolated by separate applications; PostgreSQL/Redis remain
+shared and need total connection budgeting. Consumer concurrency2/prefetch2; scheduler
+must remain single-instance. Child liveness is not queue-progress/vendor-delivery proof.
+Notifications capture actual committed changes; older timeline history is explicitly
+incomplete. Durable occurrence/email deduplication,retry leases and attempt caps limit
+retries,but provider/edit races may cause duplicate/stale external notifications.
+Client should reload authorized state and deduplicate IDs. Real vendor delivery is
+excluded/unverified. Account completion/legal retention and real capacity remain open
+policy/operational tasks; administrative review prevents automatic irreversible action.
+Remote authenticated Linux CI,ingress redaction and remote dependency-alert disposition
+are not inferred from local checks.
+
+## Verification and release status
+
+Disposable native PostgreSQL16/Redis7/media full suite:1,391passed,zero skips,89.42%coverage. One upstream Starlette test-client deprecation warning remains.
+Ruff lint/format and strictmypy260sourcefiles passed; both hook stages passed before final
+staging.0029..0032 upgrade/downgrade/refusal checks and ownership/concurrency/OTP tests
+passed. Independent reviews found and confirmed fixes above. New source publication
+and API/worker deployment remain pending until separately recorded. No Docker or live
+user-data writes were used. Existing deployment/reset evidence below predates this release.
+
+---
+
+
 **Reviewed:** 2026-10-08 · **Scope:** remaining confirmed findings and combined changes against `4a10919`.
 
 **Verification follow-up:** 2026-10-09 against released `955b412`. This follow-up checks service tests, native decoding, query plans, Redis pools and public rollout; it is not a new whole-codebase security certification.

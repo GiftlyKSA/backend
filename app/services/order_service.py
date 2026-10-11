@@ -246,8 +246,17 @@ class OrderService:
         before_id: uuid.UUID | None,
         from_date: date | None = None,
         to_date: date | None = None,
+        search: str | None = None,
     ) -> list[OrderView]:
         """List owned orders and batch-assemble actor-specific response state."""
+        if search is not None:
+            search = search.strip()
+            if not 1 <= len(search) <= 100 or "\x00" in search:
+                raise ValidationDomainError(
+                    "Search must contain 1 to 100 characters without null bytes."
+                )
+            if role is not UserRole.CUSTOMER:
+                raise ForbiddenError("Order search is available only to customers.")
         if role is UserRole.CUSTOMER:
             orders = await self._orders.list_for_customer(
                 actor_id,
@@ -256,6 +265,7 @@ class OrderService:
                 before_id=before_id,
                 from_date=from_date,
                 to_date=to_date,
+                **({"search": search} if search is not None else {}),
             )
         elif role is UserRole.COURIER:
             await self.require_active_verified_courier(actor_id)

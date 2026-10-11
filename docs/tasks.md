@@ -1,95 +1,43 @@
-# Giftly outstanding task tracker
+# Giftly task tracker
 
-**Created:** 2026-10-08 · **Last updated:** 2026-10-10 · **Source:** [codebase review](codebase_review.md).
+**Created:**2026-10-11 · **Updated:**2026-10-11.
+Source: codebase_review.md. Status distinguishes source, publication, deployment and
+external/mobile verification. Scores indicate urgency, not CVSS.
 
-Fresh outstanding work only. Completed review fixes are recorded in the review, not repeated as open tasks. Scores are urgency estimates, not CVSS. Implementation and deployment are separate.
+## Current release
 
-## Current review and release work
-
-| ID | Task | Short description | Status | Urgency | Created | Note / completion requirement |
+| ID | Task | Description | Status | Urgency | Created | Note |
 | --- | --- | --- | --- | --- | --- | --- |
-| SEC-19 | Public testing-secret rejection | Reject published placeholder keys in production. | Deferred by user | High 7 | 2026-10-04 | Explicitly excluded from this fix request; do not silently implement. Protect real deployment secrets operationally. |
-| OPS-01 | Remaining CI and worker verification | Verify authenticated remote CI and background worker/scheduler operation. | Public API rollout verified; remaining operational checks pending | Medium 5 | 2026-10-04 | On 2026-10-10, CranL deployment succeeded, three API workers started, database/Redis readiness returned 200 and released chat/payment/recovery contracts were public. Previous full native suite passed 1,262 tests with 89.09% coverage. Authenticated Linux CI and background task delivery remain unverified. |
-| SQL-01 | Representative capacity measurement | Measure growing histories, pool waits, p95/p99 and decoder RSS/CPU under real workloads. | Partially verified | Medium 5 | 2026-10-04 | Repeated 17 synthetic plans and an 80-subscription/800-request Redis pool probe passed on 2026-10-09. Warmed Redis p95 2.477 ms / p99 2.741 ms; not deployed API capacity. |
-| PERF-09 | Audit growth monitoring | Monitor metadata and recipient-snapshot growth. | Archival excluded for dev by user | Medium 5 | 2026-10-04 | No archive, retention purge or automatic deletion is planned for this development server. Revisit capacity and retention before production. |
-| SEC-15 | Ingress credential redaction | Verify query/header/subprotocol redaction with fake-token probes. | Excluded from current work by user | Medium 5 | 2026-10-04 | Chat supports safer header/protocol transport; legacy query compatibility remains. |
-| SEC-20 | Remote dependency alert disposition | Reconcile GitHub alerts with exact current lockfile and deployed image. | Excluded from current work by user | Medium 5 | 2026-10-04 | Earlier dated complete-graph scan was clear; unavailable alert metadata is not zero alerts. |
-| INT-01 | Live vendor integration | Verify SMS/email/push and Dhamen authentication, retries and callback semantics. | Excluded from current work by user | Medium 5 | 2026-10-04 | No real-provider success claimed; do not enable production payments based on mocks. |
-| UI-CHAT | Optional retry-safe chat wiring | Reuse a UUID for retries, handle explicit validation/conflict frames, deduplicate messages. | Mobile integration pending | Medium | 2026-10-08 | Existing callers remain compatible; chat-only handoff and generated mobile OpenAPI define the contract. |
-| UI-INVOICE | Final item price rollout | Remove obsolete VAT input/display in the mobile app. | Mobile verification pending | High | 2026-10-08 | Backend final item prices include no separately added/returned VAT; service/courier fees remain. |
+| MOB-05 | Courier reports | Settled payout including reimbursement, charts/comparison and optimistic targets | Implemented; release verification underway | High7 | 2026-10-07 | Riyadh/Sunday weeks, maximum366days; no unsupported financial switch |
+| MOB-06 | Inbox and timeline | Owned paginated notifications/read actions and actual order transitions | Implemented; release verification underway | High7 | 2026-10-07 | Older orders explicitly incomplete; foreign access denied |
+| MOB-07 | Occasion reminders | Opt-in one-off09:00Riyadh reminder and bounded durable push retries | Implemented; worker deployment pending | Medium5 | 2026-10-07 | Annual recurrence deferred; live vendor delivery unverified |
+| MOB-08 | Courier avatar | Existing private upload/confirm plus attach/remove/profile read | Implemented; release verification underway | Medium5 | 2026-10-07 | Customers excluded; owned decodedJPEG/PNG only |
+| MOB-09 | Phone change | Current-phone reauth,new-number verification and credential revocation | Implemented; release verification underway | High8 | 2026-10-07 | Scoped60secondOTP; single-use300secondproof; fresh login required |
+| MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker deployment pending | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
+| MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Implemented; release verification underway | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
+| OPS-01 | Isolated worker | Separate CranL app,single scheduler,two concurrent tasks | Runtime verified locally; deployment pending | High7 | 2026-10-04 | Same region/shared DBRedis,independent CPU/memory; one replica |
+| UI-01 | Mobile integration | Wire published capabilities using exact contracts and chat handoff | Mobile work pending | High7 | 2026-10-11 | No mobile code changed; capability-gate until public deployment verified |
 
-SEC-16/SEC-17 remain accepted High 9 risks under the explicit unrestricted admin CRUD decision, not newly authorized implementation tasks. No automatic financial-history or audit immutability change is planned.
+## Deferred, accepted or externally unverified
 
-## Existing screen capabilities awaiting product decisions
+| ID | Task | Description | Status | Urgency | Created | Note |
+| --- | --- | --- | --- | --- | --- | --- |
+| OPS-02 | Remote Linux CI | Verify authenticated CI,image and production workload behavior | Unverified | Medium5 | 2026-10-11 | Local tests do not prove remote capacity |
+| SQL-01 | Capacity and memory | Measure API p95/p99,pool waits,queue lag,decoder CPU/RSS | Partially measured | Medium5 | 2026-10-04 | Synthetic query/Redis evidence exists; real workloads still required |
+| FIN-POLICY | Final closure policy | Resolve obligations,fund-return workflow and legal retention before completion | Product/legal decision required | High7 | 2026-10-11 | Admin review holds requests; no automatic completion |
+| MOB-12 | Optional features | Appointments,bank profile,annual recurrence,statement PDF,financial switches | Deferred by user | Medium4 | 2026-10-07 | Do not expose fabricated endpoints |
+| INT-01 | Live vendor acceptance | SMS,email,push,Dhamen callback/provider validation | Excluded by user | Medium5 | 2026-10-04 | No real-provider success claim; production payments remain disabled |
+| SEC-15 | Ingress redaction | Verify credential redaction beyond application boundary | Excluded by user | Medium5 | 2026-10-04 | Safer WS transports exist; legacy compatibility retained |
+| SEC-19 | Published test secrets | Reject published defaults in production | Excluded by user | High7 | 2026-10-04 | Protect runtime secrets operationally |
+| SEC-20 | Dependency alerts | Reconcile GitHub alerts/deployed image with lockfile | Excluded by user | Medium5 | 2026-10-04 | Earlier dated local graph audit does not resolve remote alerts |
+| PERF-09 | Audit retention | Growth monitoring/archival | Archival excluded for dev | Medium5 | 2026-10-04 | No automatic history deletion |
+| SEC-16/17 | Admin record integrity | Unrestricted authenticated financial/audit CRUD | Accepted risk | High9 | 2026-10-04 | User explicitly retained unrestricted CRUD |
 
-These are separate proposal-first work, not defects resolved by the current review. Existing occasion CRUD/date filters, invoice reads/listing, wallet statements, media reads and owned payment sessions are implemented in source; public deployment must still be verified.
+## Verification record
 
-| ID | Task | Short description | Status | Created | Urgency / next decision |
-| --- | --- | --- | --- | --- | --- |
-| MOB-05 | Courier earnings and targets | Settled-ledger reports, comparable periods and report preferences. | Earnings basis / delivery policy pending | 2026-10-07 | High; wallet balance is not earnings; define week/timezone and functional financial notifications. |
-| MOB-06 | Notification inbox and timeline | Persistent user notifications and actual order status history. | Proposal pending | 2026-10-07 | High; chat/order live streams do not prove a complete historical inbox/timeline. |
-| MOB-07 | Occasion reminders | Deliver reminders with explicit channel/time/retry policy. | Product decision pending | 2026-10-07 | Medium; stored settings do not prove delivery or annual recurrence. |
-| MOB-08 | Courier avatar | Secure owned upload/change/removal flow. | Proposal pending | 2026-10-07 | Medium; customer avatars excluded. |
-| MOB-09 | Phone change | Verified new-number ownership and session policy. | Security/product decision pending | 2026-10-07 | High; normalization, uniqueness and reauthentication required. |
-| MOB-10 | Account deletion / termination | Recoverable request, detailed email and support-call fund-return notice. | Remaining business/retention policy pending | 2026-10-07 | High; user approved 14-day recovery; active orders, financial liabilities and legal retention still need explicit policy. |
-| MOB-11 | Customer order search | Bounded own-order text/number search with existing filters. | Searchable-field/index decision pending | 2026-10-07 | Medium; no invented order number or unbounded history scan. |
-| MOB-12 | Optional calendar/bank/document features | Independent courier appointments, bank profile, annual recurrence and statement PDF. | Explicit approval pending | 2026-10-07 | Medium; do not expose unsupported switches or invent legal/business rules. |
-
-## Usage checkpoint — 2026-10-08
-
-At 90% five-hour usage, verified review fixes and this outstanding-work tracker are published to master. Full unit checks, hooks, scoped native PostgreSQL tests and independent review passed; final offline aggregate passed 983 tests with 258 service/native skips; complete PostgreSQL/Redis CI remains outstanding. No Docker or production changes ran. SEC-19 remains excluded by the user.
-
-## Verification follow-up — 2026-10-09
-
-Local service verification supersedes the unavailable-service checkpoint: all 1,241 tests passed on Python3.13 with PostgreSQL16, Redis7 and native media decoding, no skips and 89.35% coverage. Test fixture/contract repairs preserve exact financial and access-control assertions. No new API, migration, mobile change, archival, Docker execution or production data change was introduced. Public rollout and authenticated remote CI remain distinct outstanding gates.
-
-## Approved backend completion — 2026-10-09
-
-Goal: close verified mobile gaps without duplicate endpoints or changing mobile code.
-Architecture: reuse released services, PostgreSQL transactions and owned recovery;
-use existing bounded media decoder and private storage boundaries.
-Execution: inline, with test-first changes and final independent review.
-
-- [x] Add safe ORDER_AVAILABLE/order_id push metadata and full outgoing UTF-8 frame limit.
-- [x] Add optional UUID operation keys for order/occasion writes and top-ups; 24-hour
-  retention, encrypted results, atomic claims, owned recovery and explicit unknown outcomes.
-- [x] Add original MOV/HEIC/HEIF support with genuine decoding, MIME/container checks,
-  existing CPU/memory/time/file quotas and a reviewed migration for media constraints.
-- [x] Reverify existing chat/auth/device/claim/financial safeguards; keep approved device transfer.
-- [x] Generate both OpenAPI references; update api/documentation/review/tasks together.
-- [x] Run hooks, focused and full service tests where available; verify deployment separately.
-
-Constraints: no Docker, live-user writes or unapproved provider activation; retain
-unrelated primary edits. No speculative product capabilities. Missing operation records
-are not proof a write never executed. No tokens, request bodies or URLs in diagnostics.
-Rollback: restore prior image after resolving pending writes; media downgrade must refuse
-new formats rather than relabel/delete historical files.
-
-
-### Completion verification
-
-Approved source tasks are implemented. Independent review blocker was reproduced/fixed;
-native full suite1262passed/no skips/89.09%coverage. Both migration rollbacks and safe
-refusal guards verified using disposable databases; no Docker/production data changes.
-Production dependency audit found multidict6.7.1; minimally patched to6.9.1 and audit
-is clear. The final patched dependency suite also passed1262tests/89.09%coverage; publication remains separate.
-Public runtime currently serves the older contract; rollout remains PAY-DEPLOY/OPS-01.
-No new mobile features were invented for pending product decisions.
-
-
-Publication2026-10-09: source release `41b074a21112ce32e0a78d0a2d6f636bfc1aa2c9` pushed to master and remote SHA
-verified. Final native suite1262passed/zero skips/89.09%coverage; both hook stages,
-strict mypy and locked production dependency audit passed. Independent review blocker
-resolved. Post-push public OpenAPI still lacks client_message_id, payment-session and
-operation-recovery paths; anonymous path probes still routing404. Deployment unverified.
-
-## Deployment recovery — 2026-10-10
-
-PAY-DEPLOY is complete for the published API surface. Migration0024 correctly refused
-existing tax-bearing history. After explicit user approval and a durable 35-table backup,
-the development public schema was reset and migrations recreated it through0028.
-Twenty active cities and three system wallets were seeded; users/orders/invoices were
-empty. CranL deployment `2crdz_YXU-6SCIvQarIwY` succeeded. Public health/readiness
-returned200; OpenAPI exposes retry recovery, payment sessions and client_message_id.
-Live vendor delivery, authenticated mobile flows and background worker/scheduler
-verification remain separate tasks. No application code or migration guard was changed.
+All local application tests passed with disposable PostgreSQL16,Redis7,native media
+binaries; 1,391tests passed with89.42%coverage,zero skips. Focused ownership,OTP/race/rollback tests
+and independent reviews passed. Ruff lint/format,mypy260modules and both hook stages
+passed before final staging. Additive migration0029..0032 roundtrips/refusal guards were
+tested on isolated databases. Publication/deployment will be updated after verification.
+No Docker,live-user writes,mobile repository edits or real vendor calls were performed.

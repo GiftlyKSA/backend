@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Select, func, select, tuple_
+from sqlalchemy import Select, func, literal_column, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -222,9 +222,24 @@ class OrderRepository:
         before_id: uuid.UUID | None,
         from_date: date | None = None,
         to_date: date | None = None,
+        search: str | None = None,
     ) -> list[Order]:
         """Return a customer's orders, newest first, keyset-paged."""
         query = select(Order).where(Order.customer_id == customer_id)
+        if search is not None:
+            try:
+                order_id = uuid.UUID(search)
+            except ValueError:
+                prefix = (
+                    search.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                )
+                query = query.where(
+                    func.left(func.lower(Order.description), literal_column("100")).like(
+                        prefix + "%", escape="\\"
+                    )
+                )
+            else:
+                query = query.where(Order.id == order_id)
         if status is not None:
             query = query.where(Order.status == status)
         if from_date is not None:

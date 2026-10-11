@@ -66,6 +66,11 @@ migration service; API/worker/scheduler wait for it and skip duplicate inherited
 migration entrypoints. See the project documentation before changing deployment commands.
 Do not run Docker on the user's machine for agent verification.
 
+For an isolated PaaS worker app, set PROCESS_ROLE=worker in the same Docker image.
+It runs one scheduler and a consumer limited to two concurrent jobs; keep one replica.
+Only /api/health is exposed. API instances retain PROCESS_ROLE=api (default).
+See docs/documentation.md for connection budgets, configuration and rollback.
+
 Run workers and one scheduler per deployment after migrations:
 
 ```bash

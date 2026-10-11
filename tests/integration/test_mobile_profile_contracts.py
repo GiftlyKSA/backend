@@ -412,3 +412,21 @@ async def test_order_rating_state_is_actor_specific_and_authoritative() -> None:
         await app.state.redis.aclose()
         await engine.dispose()
         await app.state.engine.dispose()
+
+
+async def test_private_profile_responses_cannot_be_cached() -> None:
+    settings, engine, factory = await _stack()
+    app = create_app(settings)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+            _, tokens = await _register(client, app, role="CUSTOMER", full_name="Private Profile")
+            response = await client.get("/api/users/me", headers=_headers(tokens))
+            assert response.status_code == 200, response.text
+            assert response.headers["cache-control"] == "private, no-store"
+            response = await client.patch(
+                "/api/users/me", headers=_headers(tokens), json={"full_name": "Changed"}
+            )
+            assert response.status_code == 200, response.text
+            assert response.headers["cache-control"] == "private, no-store"
+    finally:
+        await engine.dispose()

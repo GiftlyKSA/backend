@@ -32,7 +32,7 @@ class SndrEmailClient(EmailClient):
     async def send_transactional(
         self, to_email: str, template_key: str, variables: dict[str, object]
     ) -> None:
-        """Send a paid invoice with safe plain text and a private PDF attachment."""
+        """Render a paid invoice receipt or the approved recoverable-account notice."""
         invoice_id = str(variables.get("invoice_id", ""))
         payload: dict[str, object] = {
             "from": f"{self._from_name} <{self._from_email}>",
@@ -45,9 +45,18 @@ class SndrEmailClient(EmailClient):
             ),
         }
         headers = {"Authorization": f"Bearer {self._api_key}"}
+        if template_key == "account-request":
+            request_id = str(variables.get("request_id", ""))
+            notice = variables.get("body")
+            if not request_id or not isinstance(notice, str) or not notice.strip():
+                raise ValueError("Account-request email requires a request ID and notice.")
+            payload["subject"] = "Your Giftly account request and 14-day recovery window"
+            payload["text"] = notice
+            headers["Idempotency-Key"] = f"giftly-account-request-{request_id}"
+
         if invoice_id:
             headers["Idempotency-Key"] = f"giftly-invoice-receipt-{invoice_id}"
-        attachment = variables.get("pdf_base64")
+        attachment = variables.get("pdf_base64") if template_key != "account-request" else None
         if attachment:
             payload["attachments"] = [
                 {

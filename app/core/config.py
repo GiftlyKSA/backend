@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: Environment
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
+    PROCESS_ROLE: Literal["api", "worker"] = "api"
 
     # Data
     DATABASE_URL: SecretStr

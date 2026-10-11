@@ -219,6 +219,7 @@ async def list_orders(
     actor: Annotated[Actor, Depends(_eligible_participant)],
     dates: Annotated[DateRange, Depends(date_range)],
     status: Annotated[OrderStatus | None, Query()] = None,
+    q: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     cursor: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OrderListResponse:
@@ -236,6 +237,7 @@ async def list_orders(
         before_id=cursor,
         from_date=dates.from_date,
         to_date=dates.to_date,
+        **({"search": q} if q is not None else {}),
     )
     return _page(views, limit)
 

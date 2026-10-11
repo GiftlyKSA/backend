@@ -38,7 +38,7 @@ async def create_occasion(
     request: Request,
     idempotency_key: Annotated[UUID | None, Header(alias="Idempotency-Key")] = None,
 ) -> OccasionResponse:
-    """Save a special date; automatic reminders and annual recurrence are not available."""
+    """Save a special date; opt in to one reminder at 09:00 Riyadh."""
     operations = OperationService(OperationRepository(db), get_settings(request))
     operation = None
     if idempotency_key is not None:

@@ -29,9 +29,12 @@ MAX_OUTSTANDING_BYTES = 50 * 1024 * 1024
 _PREFIX_BY_PURPOSE = {
     "ORDER_REQUEST": "orders/pending",
     "DELIVERY_PROOF": "orders/proof",
+    "COURIER_AVATAR": "couriers/avatars",
 }
 # A safe key: only the known prefixes, a uuid, and a supported image suffix — nothing else.
-_KEY_RE = re.compile(r"^(orders/pending|orders/proof)/[0-9a-f-]{36}\.(jpg|png|heic|heif)$")
+_KEY_RE = re.compile(
+    r"^(orders/pending|orders/proof|couriers/avatars)/[0-9a-f-]{36}\.(jpg|png|heic|heif)$"
+)
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,8 @@ class MediaService:
         prefix = _PREFIX_BY_PURPOSE.get(purpose)
         if prefix is None:
             raise BadRequestError("Unknown media purpose.")
+        if purpose == "COURIER_AVATAR" and content_type not in {"image/jpeg", "image/png"}:
+            raise BadRequestError("Courier avatars must be JPEG or PNG.")
         if content_type not in ALLOWED_IMAGE_TYPES:
             raise BadRequestError("Only JPEG, PNG, HEIC or HEIF images are allowed.")
         if not 0 < byte_size <= self._settings.MAX_UPLOAD_BYTES:
@@ -205,7 +210,9 @@ class MediaService:
             raise BadRequestError("The uploaded file size does not match the upload request.")
         if head.content_type != grant.content_type or head.content_type not in ALLOWED_IMAGE_TYPES:
             raise BadRequestError("The uploaded file is not a permitted image.")
-        if grant.content_type in {"image/heic", "image/heif"}:
+        if grant.content_type in {"image/heic", "image/heif"} or storage_key.startswith(
+            "couriers/avatars/"
+        ):
             try:
                 async with asyncio.timeout(25):
                     async with _image_slots:

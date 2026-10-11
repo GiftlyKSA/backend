@@ -15,13 +15,16 @@ from app.core.audit_context import mark_request_transaction
 from app.core.deps import Actor, get_db, require_auth
 from app.core.exceptions import UnauthorizedError
 from app.integrations.storage.base import StorageClient
+from app.repositories.courier_repository import CourierRepository
 from app.repositories.media_repository import MediaRepository
+from app.repositories.user_repository import UserRepository
 from app.schemas.media import (
     ConfirmRequest,
     ConfirmResponse,
     UploadUrlRequest,
     UploadUrlResponse,
 )
+from app.services.courier_eligibility_service import CourierEligibilityService
 from app.services.media_service import MediaService
 
 router = APIRouter(prefix="/api/media", tags=["media"])
@@ -45,7 +48,15 @@ async def create_upload_url(
         await mark_request_transaction(db)
         if await require_auth(request, db) != actor:
             raise UnauthorizedError("This session is no longer valid.")
+        if body.purpose == "COURIER_AVATAR":
+            await CourierEligibilityService(
+                users=UserRepository(db), couriers=CourierRepository(db)
+            ).require_courier(actor.id)
 
+    if body.purpose == "COURIER_AVATAR":
+        await CourierEligibilityService(
+            users=UserRepository(db), couriers=CourierRepository(db)
+        ).require_courier(actor.id)
     url, key, expires_in = await _service(request, db).request_upload_url(
         actor_id=actor.id,
         purpose=body.purpose,

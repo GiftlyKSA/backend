@@ -9,14 +9,20 @@ from app.repositories.planning_repository import PlanningRepository
 
 
 class OccasionService:
-    """Manage saved dates without implying recurrence or reminder delivery."""
+    """Manage owned dates with explicitly opted-in one-off reminders."""
 
     def __init__(self, repository: PlanningRepository) -> None:
         """Bind the ownership-scoped repository."""
         self._repository = repository
 
     async def create(
-        self, actor_id: UUID, *, title: str, occasion_date: date, reminder_days_before: int
+        self,
+        actor_id: UUID,
+        *,
+        title: str,
+        occasion_date: date,
+        reminder_days_before: int,
+        reminder_enabled: bool = False,
     ) -> Occasion:
         """Always derive ownership from the authenticated customer."""
         return await self._repository.create_occasion(
@@ -25,6 +31,7 @@ class OccasionService:
             occasion_date=occasion_date,
             reminder_days_before=reminder_days_before,
             featured_gift_id=None,
+            reminder_enabled=reminder_enabled,
         )
 
     async def get(self, actor_id: UUID, occasion_id: UUID, *, lock: bool = False) -> Occasion:
@@ -62,6 +69,7 @@ class OccasionService:
         title: str | None,
         occasion_date: date | None,
         reminder_days_before: int | None,
+        reminder_enabled: bool | None = None,
     ) -> Occasion:
         """Lock current ownership before modifying an occasion."""
         occasion = await self.get(actor_id, occasion_id, lock=True)
@@ -70,6 +78,7 @@ class OccasionService:
             title=title,
             occasion_date=occasion_date,
             reminder_days_before=reminder_days_before,
+            reminder_enabled=reminder_enabled,
         )
 
     async def delete(self, actor_id: UUID, occasion_id: UUID) -> None:

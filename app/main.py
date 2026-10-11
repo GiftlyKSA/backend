@@ -124,16 +124,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Import routers before FastAPI begins its lifespan.
     from app.routers import (
+        account_changes,
         admin_api,
         auth,
         chat,
         cities,
+        courier_avatar,
+        courier_report_routes,
         devices,
         invoices,
         media,
+        notification_inbox,
         occasions,
         order_events,
         order_media,
+        order_timeline,
         orders,
         payment_sessions,
         promos,
@@ -143,6 +148,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         webhooks,
     )
 
+    app.include_router(account_changes.router)
+    app.include_router(courier_avatar.router)
+    app.include_router(courier_report_routes.router)
+    app.include_router(notification_inbox.router)
+    app.include_router(order_timeline.router)
     app.include_router(auth.router)
     app.include_router(cities.router)
     from app.routers import operations

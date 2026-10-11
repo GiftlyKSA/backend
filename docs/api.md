@@ -237,7 +237,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Before:** `GET /api/users/me`.
 - **Then / dependent API:** Refresh `GET /api/users/me` or update local profile from response.
 
-**When/how (59 words):** Send only fields the user actually changed; omitted properties leave existing values untouched, while explicit null can clear optional values. Customer and courier users can edit common details; courier city and biography apply to courier profiles. Use the returned profile as the new display state. Phone changes, avatar upload, and theme preference are not offered by this mobile API.
+**When/how (59 words):** Send only fields the user actually changed; omitted properties leave existing values untouched, while explicit null can clear optional values. Customer and courier users can edit common details; courier city and biography apply to courier profiles. Use the returned profile as the new display state. Theme preference stays local; use the dedicated phone-change and courier-avatar contracts below.
 
 ### POST /api/users/me/courier-verification/resubmit
 
@@ -985,7 +985,7 @@ The prototype's labels and local-device data are not server contracts. The table
 | Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
 | Courier Reports `/reports` and settings sheet | Wallet transactions can be read as raw entries | No earnings aggregates, comparison, chart series, target settings, or financial-notification preference API. |
 | Courier Statement `/statement` | Wallet transactions, cursor-paged | No date-range filtering, statement totals, or downloadable statement API. |
-| Profile `/profile` | `users/me`, patch, courier resubmit, logout, device registration | Date of birth and gender are writable and returned by `users/me`; no theme preference, avatar upload/read, or phone-change API. |
+| Profile `/profile` | `users/me`, patch, courier resubmit, logout, device registration | Date of birth and gender are writable and returned by `users/me`; theme stays local; dedicated courier-avatar and phone-change APIs are described below. |
 
 **Important contract mismatches:** The mobile map proposes halala integers, but the backend uses decimal **strings** for money. It proposes local file URIs/upload IDs, but the backend expects confirmed server-generated `storage_key` values. It proposes a matching/accepted/preparing/delivering timeline, while the actual order status enum is `NEW`, `ASSIGNED`, `WAITING_PAYMENT`, `IN_PROGRESS`, `DELIVERED`, `COMPLETED`, `CANCELLED`, `DISPUTED`, `REFUNDED`. Translate those labels only for display; do not send prototype strings to the API. The server does not enforce the prototype's age-16 minimum. Order delivery dates are constrained by the database to today through 180 days ahead; the UI should prevent out-of-range entries.
 
@@ -1196,14 +1196,155 @@ Device-token registration deliberately transfers the same shared-device token to
 current authenticated account; deletion remains scoped to its current owner. No
 blanket foreign-token409. Existing ten-device quota and logout/refresh rules remain.
 
-### Remaining product capabilities
+## Approved mobile capabilities — 2026-10-11
 
-The existing calendar CRUD/date filters, order claim/realtime, chat history/media,
-invoice list/history/PDF, wallet statements and hosted payment recovery are reused.
-Occasion reminder delivery/annual recurrence, independent courier appointments,
-ledger-based earnings/targets, notification inbox, avatar change, phone change and
-customer deletion/courier termination remain pending product/security decisions;
-stored preferences or schema fields are not functional mobile endpoints. No new
-support operation is promised. Approved future recovery is at most14 days with an
-explicit deadline, support coordination for returning funds/data and detailed email;
-active liabilities and retention rules remain undecided, so do not advertise it yet.
+Implemented in source; publication/deployment are recorded separately in tasks.md.
+Exact schemas, enums and validation are in mobile-openapi.json. Existing callers remain
+compatible. Money is a decimal string; timestamps UTC, calendar dates Gregorian.
+Bearer authentication is required except public restoration. All responses are private/
+no-store. Shared error envelope is {"error":{"code":"...","message":"...","request_id":"..."}}.
+401 missing/expired/revoked credentials;403 ineligible role/account;404 missing/inaccessible
+object;422 invalid input;409 state/version conflict;429 throttle with Retry-After.
+Do not invent data or bypass ownership on404. Render user text as text, not HTML.
+
+### Courier home and report settings
+
+Active verified courier only. GET /api/couriers/me/earnings requires from_date,to_date
+(YYYY-MM-DD,inclusive,max366days), granularity day(default)|week|month.
+Riyadh reporting; Sunday–Saturday weeks. Ledger bounds are corresponding half-open UTC
+timestamps. Actual signed SETTLED ESCROW_RELEASE courier proceeds include reimbursement;
+exclude pending/reversed/unrelated movements. Wallet balance is not earnings.
+At most366zero-filled daily buckets, no pagination; previous is equal-length immediately
+preceding range. Zero baseline gives percentage:null; both zero UNCHANGED, otherwise
+NO_BASELINE. Target refers to complete current WEEK/MONTH, may exceed100%.
+
+~~~json
+{"currency":"SAR","timezone":"Asia/Riyadh","from_date":"2026-10-04","to_date":"2026-10-04","granularity":"day","basis":"SETTLED_COURIER_PROCEEDS","settled_total":"200.00","pending_total":null,"previous":{"from_date":"2026-10-03","to_date":"2026-10-03","settled_total":"100.00","difference":"100.00","percentage":"100.00","comparison":"INCREASE"},"buckets":[{"from_date":"2026-10-04","to_date":"2026-10-04","amount":"200.00"}],"target":null}
+~~~
+
+GET /api/couriers/me/report-settings default:
+{"version":0,"updated_at":null,"target_enabled":false,"target_amount":null,
+"target_period":null,"progress":null}.
+PATCH same path: {"version":0,"target_enabled":true,"target_amount":"1000.00",
+"target_period":"WEEK"}. Required strict integer version; amount positive finite decimal
+string<=1000000.00, period WEEK|MONTH; omission preserves fields. Disabled target clears
+amount/period. Stale version409: refetch and let user resolve. Response increments version
+and returns UTC updated_at. Enabled progress has enabled,period,amount,period_start,
+period_end,settled_total,progress_percent. Indexed aggregation; no speculative Redis
+cache or financial-notification switch.
+
+### Notification inbox and actual order timeline
+
+Active customers and verified couriers:
+| Method / path | Input | Response |
+| --- | --- | --- |
+| GET /api/notifications | unread_only=false,limit1..100(default25),cursor opaque22characters | items,next_cursor,unread_count |
+| GET /api/notifications/unread-count | None | {"unread_count":1} |
+| POST /api/notifications/{notification_id}/read | UUID path,no body | Updated notification; idempotent, foreign404 |
+| POST /api/notifications/read-all | No body | {"marked_count":1,"read_at":"2026-10-11T09:01:00Z"} |
+
+~~~json
+{"items":[{"id":"11111111-1111-4111-8111-111111111111","type":"ORDER_STATUS_CHANGED","title_key":"notification.order_status_changed.title","body_key":"notification.order_status_changed.body","parameters":{"status":"ASSIGNED"},"created_at":"2026-10-11T09:00:00Z","read_at":null,"navigation":{"kind":"ORDER","order_id":"22222222-2222-4222-8222-222222222222"}}],"next_cursor":null,"unread_count":1}
+~~~
+
+Types ORDER_STATUS_CHANGED,INVOICE_ISSUED,WALLET_TOPUP_COMPLETED,
+WITHDRAWAL_STATUS_CHANGED,OCCASION_REMINDER. Keys notification.<lowercase_type>.title/body.
+Parameters actual order/withdrawal status or{}. Navigation ORDER/order_id,
+OCCASION/occasion_id, or WALLET. Localize keys; reauthorize destination on opening.
+Newest(created_at,id)first; mark-all cutoff excludes later arrivals. Reset cursor on
+unread filter changes and refresh unread-only lists after reads. No public content cache.
+
+GET /api/orders/{order_id}/timeline?limit=25&cursor=... requires current participant.
+Oldest(created_at,id)first, limit1..100 and opaque22character cursor.
+~~~json
+{"items":[{"id":"33333333-3333-4333-8333-333333333333","event_type":"STATUS_CHANGED","status":"ASSIGNED","created_at":"2026-10-11T09:00:00Z","actor":{"role":"COURIER"}}],"next_cursor":null,"history_complete":true}
+~~~
+Actor null or CUSTOMER|COURIER|ADMIN role. Older orders have history_complete:false;
+never fabricate historical transitions. Keep existing WebSockets and REST recovery.
+
+### Occasion reminders
+
+Existing customer POST/PATCH /api/occasions accepts reminder_enabled:boolean,
+false on create; omission preserves on edit. Response adds reminder_enabled and
+timezone:"Asia/Riyadh". Existing days_before_reminder sets lead days.
+Existing from_date/to_date/cursor unchanged. Opt-in one-off delivery at09:00Riyadh on
+occasion_date minus lead days; actual worker/scheduler required. Durable occurrence
+deduplication and inbox; push at most5attempts,60/120/240/480/960seconds backoff,
+24-hour eligibility. Provider/edit races may duplicate/stale push; re-read the occasion.
+No exactly-once push claim, no annual recurrence. Push permission does not hide inbox.
+
+### Courier avatar workflow
+
+Active verified courier only; customer excluded.
+1. POST /api/media/upload-urls {"purpose":"COURIER_AVATAR","content_type":"image/jpeg",
+   "byte_size":2048}; JPEG/PNG only, default10MiB plus decoded-pixel bound.
+2. Response upload_url,storage_key,expires_in; upload raw bytes directly with issued
+   Content-Type,Content-Length,If-None-Match:* headers.
+3. POST /api/media/confirm {"storage_key":"<returned key>"} returns confirmed:true/key.
+4. PUT /api/users/me/courier-avatar {"storage_key":"<confirmed owned key>"} returns
+   {"avatar_url":"<private signed URL>","expires_in":300}.
+5. DELETE same path,no body -> {"avatar_url":null,"expires_in":0},idempotent.
+
+Foreign/unconfirmed/reused/wrong-purpose upload rejected. Profile/participant avatar_url
+only for couriers after authorization. Refresh expired URLs through profile; never log
+signed URLs or treat keys as public URLs. Replaced uploads released for existing cleanup;
+active pointer remains protected. Private/no-store profile responses.
+
+### Phone change and current-phone reauthentication
+
+Authenticated eligible customers/couriers; banned/deleted/admin excluded.
+| Method / path under /api/users/me | Body | Response |
+| --- | --- | --- |
+| POST /reauthentication/request | {"purpose":"PHONE_CHANGE"} (default if omitted) | 202challenge |
+| POST /reauthentication/confirm | {"challenge_id":"<UUID>","otp":"12345"} | {"reauthentication_token":"<one-use proof>","expires_in":300} |
+| POST /phone-change/request | {"new_phone":"+966501234567","reauthentication_token":"<proof>"} | 202new-phone challenge |
+| POST /phone-change/confirm | {"challenge_id":"<UUID>","otp":"12345"} | {"phone":"+966501234567","reauthentication_required":true} |
+
+Challenge {"challenge_id":"<UUID>","expires_in":60,"resend_after":60}; development only
+adds otp_dev:int. Purpose/actor/version bound proof, scoped OTP60seconds, Saudi
+normalization/uniqueness and OTP quotas enforced. Honor Retry-After. Proof may be consumed
+when sending fails429/provider503: reauthenticate afresh before retry. Success revokes
+old access versions,refresh sessions and push registrations; clear tokens, log in again
+and register device. Never log/cache OTP/proof/session data.
+
+### Account deletion and courier termination
+
+Use current-phone proof purpose ACCOUNT_REQUEST, then POST /api/users/me/account-request:
+Customer {"kind":"DELETE_ACCOUNT","confirmation":"DELETE","reauthentication_token":
+"<proof>","reason":"Optional <=500characters"}.
+Courier {"kind":"TERMINATE_CONTRACT","confirmation":"TERMINATE",
+"reauthentication_token":"<proof>"}. Existing valid email required or422(update profile).
+~~~json
+{"id":"44444444-4444-4444-8444-444444444444","kind":"DELETE_ACCOUNT","status":"RECOVERABLE","submitted_at":"2026-10-11T09:00:00Z","updated_at":"2026-10-11T09:00:00Z","restore_deadline":"2026-10-25T09:00:00Z","administrative_review_required":true,"financial_records_retained":true,"receipt":"<restricted status credential>"}
+~~~
+202 submission disables account,revoke sessions/devices. Securely retain receipt only
+for GET /api/users/me/account-request using X-Account-Request-Receipt header. It is not a
+bearer token, grants no other access, returned only on submission, omitted on GET.
+Public POST /api/users/me/account-request/restoration/request {"phone":"+966501234567"}
+returns uniform202challenge without existence disclosure.
+Public POST /api/users/me/account-request/restoration/confirm {"challenge_id":"<UUID>",
+"otp":"12345"} returns request status RESTORED within14days, no session tokens.
+Log in separately. Expiry/admin status/role/version changes prevent restoration/ban bypass.
+
+After14days status PENDING_REVIEW; no automatic permanent erase/refund. Display deadline
+and support-call coordination to resolve funds/data,orders,disputes,payments,withdrawals
+before admin completion. Financial/audit records retained pending legal policy; do not
+promise their destruction or automatic payment. Durable English email explains policy,
+at most5bounded retry attempts; real vendor delivery remains unverified.
+
+### Customer order search
+
+GET /api/orders?q=gift&from_date=2026-10-01&to_date=2026-10-31&limit=25 reuses existing list.
+q optional,trimmed1..100characters,no null bytes,case-insensitive literal prefix of first
+100descriptioncharacters or exact UUID when parsed. No invented order number/substring
+search. Customer own orders only; courier q403. Status/delivery-date/owner SQL filters
+before newest-first keyset pagination. Response unchanged. Reset cursor when q/status/
+dates change; every next page uses identical filters. Empty200 items:[],next_cursor:null;
+foreign/stale cursor documented404 retained. New composite prefix index serves default
+automatic/custom plans; forced generic plans may owner-scan. No unmeasured search cache.
+
+### Deferred features
+
+Independent courier appointments,saved bank profiles,annual recurrence,statement PDF
+and financial-notification settings remain deferred by user. Reuse existing invoice
+list/history/PDF,wallet statement,order media and owned payment-session operations.

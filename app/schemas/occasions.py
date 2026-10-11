@@ -1,17 +1,19 @@
 """Customer-owned special-date contracts."""
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class CreateOccasionRequest(BaseModel):
-    """Store a special date; reminder delivery is not implemented."""
+    """Store a special date with optional one-off reminder delivery."""
 
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=120)
     occasion_date: date
+    reminder_enabled: bool = Field(default=False, strict=True)
     reminder_days_before: int = Field(default=7, ge=0, le=365, strict=True)
 
     @field_validator("title")
@@ -29,9 +31,10 @@ class UpdateOccasionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=120)
     occasion_date: date | None = None
+    reminder_enabled: bool | None = Field(default=None, strict=True)
     reminder_days_before: int | None = Field(default=None, ge=0, le=365, strict=True)
 
-    @field_validator("title", "occasion_date", "reminder_days_before")
+    @field_validator("title", "occasion_date", "reminder_days_before", "reminder_enabled")
     @classmethod
     def non_null(cls, value: object) -> object:
         """Distinguish omitted properties from explicit nulls."""
@@ -57,6 +60,8 @@ class OccasionResponse(BaseModel):
     title: str
     occasion_date: date
     reminder_days_before: int
+    reminder_enabled: bool = False
+    timezone: Literal["Asia/Riyadh"] = "Asia/Riyadh"
     created_at: datetime
     updated_at: datetime
 

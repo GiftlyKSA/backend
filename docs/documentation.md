@@ -988,3 +988,66 @@ operational resolution and are never automatically discarded. Monitor their age/
 See api.md and generated OpenAPI for exact mobile contracts. HEIF decoding uses locked
 pillow-heif1.8.0; Linux image/native-library execution and live vendor delivery require
 separate deployment proof. No external checkout success is inferred from mocks.
+
+## Approved mobile expansion and isolated worker — 2026-10-11
+
+Actual settled courier proceeds include item reimbursement; reports use Riyadh Gregorian
+day bounds, Sunday weeks and equal-length previous periods. Versioned targets use
+optimistic concurrency. Inbox/order timeline reflect persisted real events; no invented
+history for older orders. One-off occasion reminders are opt-in at09:00Riyadh; annual
+recurrence remains deferred. Courier avatars reuse owned private JPEG/PNG upload/confirm.
+
+Phone changes require scoped current-phone verification and new-phone OTP, then revoke
+sessions/device registrations. Account deletion/termination disables access for a
+14-day recoverable period. Expired requests go to admin review, never automatic erasure
+or payout; unresolved obligations and financial/audit retention require separate policy.
+Detailed English email uses a durable bounded outbox. Proofs/receipts are restricted,
+hashed in the database and not normal access credentials. OTPs expire after60seconds.
+Customer-only literal order-description prefix/exactUUID search reuses existing filters.
+
+### Separate CranL worker app
+
+Use the same master repository/Dockerfile in a separate app in the API/database region.
+Set PROCESS_ROLE=worker, ADMIN_DASHBOARD_ENABLED=false, DB_POOL_SIZE=2,
+DB_MAX_OVERFLOW=0; inject the required shared database,Redis,encryption and selected
+provider configuration via the protected runtime environment. Do not copy secrets into
+source or logs. API keeps PROCESS_ROLE=api, three Gunicorn workers and80second timeout.
+
+Entrypoint runs the existing globally locked migration gate once before spawning
+services. Worker runtime starts one Taskiq consumer process with at most two concurrent
+tasks/two prefetched messages and one scheduler. Its port3000 listener serves only
+GET /api/health; healthy means both child processes remain running, not proof that a
+vendor delivered a message. Signals reap children; unexpected exit fails the app so
+the platform can restart it. Keep exactly one worker-app replica/scheduler; before
+scaling consumers, separate the scheduler or add scheduler leadership.
+API and worker have separate CPU/memory allocations; shared PostgreSQL/Redis still need
+a combined connection budget. Two active jobs create/close bounded database pools;
+scheduler/health do not execute API endpoints.
+
+Minute jobs include durable chat/order/inbox occasion/account email processing.
+Existing invoice receipts/reconciliation/expiry/media cleanup schedules remain.
+Inspect queue lag, pending/exhausted outboxes, child failures and provider errors.
+Do not use duplicate app cron schedules alongside the running Taskiq scheduler.
+
+### Migration and rollback
+
+Apply0029report settings,0030inbox/timeline/reminders,0031account requests and
+0032courier avatars/search index after0028 before updated services. Database role must
+have migration permissions. New tables are discovered by authenticated admin CRUD.
+Sensitive hash/token/encrypted columns remain redacted in the browser. Default reminder
+false preserves existing callers. Existing profile/order schemas remain compatible;
+new fields/endpoints are described in api.md and generated contracts.
+
+Before rollback, stop updated writers/workers and preserve new state externally.
+Downgrades refuse retained target/event/request/email/active proof/avatar records rather
+than erasing history. A refusal means rollback needs a reviewed preservation plan;
+never bypass it. No production database reset is required for these additive changes.
+New search index adds write/storage cost; normal DDL can lock the orders table during
+migration, so schedule migration appropriately as history grows.
+
+### Verification and deployment distinction
+
+Local regression tests use disposable PostgreSQL16,Redis7 and native media binaries,
+not Docker or shared production data. The checked-in query-plan harness uses only
+session-local temporary tables. External vendor acceptance, production capacity,
+authenticated remote CI and mobile integration are separate verification gates.

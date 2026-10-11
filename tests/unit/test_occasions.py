@@ -67,6 +67,7 @@ async def test_create_binds_customer_and_preserves_code_as_text():
         occasion_date=date(2026, 12, 15),
         reminder_days_before=0,
         featured_gift_id=None,
+        reminder_enabled=False,
     )
 
 

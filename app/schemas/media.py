@@ -11,7 +11,7 @@ class UploadUrlRequest(BaseModel):
     """Request a pre-signed upload URL for a media object."""
 
     model_config = ConfigDict(extra="forbid")
-    purpose: Literal["ORDER_REQUEST", "DELIVERY_PROOF"] = Field(
+    purpose: Literal["ORDER_REQUEST", "DELIVERY_PROOF", "COURIER_AVATAR"] = Field(
         ..., description="What the media is for; determines the key prefix."
     )
     content_type: Literal["image/jpeg", "image/png", "image/heic", "image/heif"] = Field(

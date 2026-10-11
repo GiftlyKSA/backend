@@ -1,6 +1,129 @@
 {
   "components": {
     "schemas": {
+      "AccountRequestCreate": {
+        "additionalProperties": false,
+        "description": "Request review after an explicitly confirmed, recoverable closure window.",
+        "properties": {
+          "confirmation": {
+            "enum": [
+              "DELETE",
+              "TERMINATE"
+            ],
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "DELETE_ACCOUNT",
+              "TERMINATE_CONTRACT"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reauthentication_token": {
+            "maxLength": 200,
+            "minLength": 32,
+            "title": "Reauthentication Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "confirmation",
+          "reauthentication_token"
+        ],
+        "title": "AccountRequestCreate",
+        "type": "object"
+      },
+      "AccountRequestResponse": {
+        "description": "Recovery and review state; no automatic erasure or financial settlement.",
+        "properties": {
+          "administrative_review_required": {
+            "const": true,
+            "default": true,
+            "title": "Administrative Review Required",
+            "type": "boolean"
+          },
+          "financial_records_retained": {
+            "const": true,
+            "default": true,
+            "title": "Financial Records Retained",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "DELETE_ACCOUNT",
+              "TERMINATE_CONTRACT"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Restricted status credential. Send as X-Account-Request-Receipt; never as an access bearer token. Returned only on submission.",
+            "title": "Receipt"
+          },
+          "restore_deadline": {
+            "format": "date-time",
+            "title": "Restore Deadline",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "RECOVERABLE",
+              "PENDING_REVIEW",
+              "RESTORED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "submitted_at",
+          "updated_at",
+          "restore_deadline"
+        ],
+        "title": "AccountRequestResponse",
+        "type": "object"
+      },
       "ApplyInvoicePromoRequest": {
         "additionalProperties": false,
         "description": "Apply a case-insensitive code, or remove it with explicit null.",
@@ -44,6 +167,49 @@
         "title": "AttachmentUrlResponse",
         "type": "object"
       },
+      "AvatarRequest": {
+        "additionalProperties": false,
+        "description": "Reference an owned confirmed avatar upload.",
+        "properties": {
+          "storage_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Storage Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storage_key"
+        ],
+        "title": "AvatarRequest",
+        "type": "object"
+      },
+      "AvatarResponse": {
+        "description": "Short-lived private read reference.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "avatar_url",
+          "expires_in"
+        ],
+        "title": "AvatarResponse",
+        "type": "object"
+      },
       "CancelOrderRequest": {
         "additionalProperties": false,
         "description": "Cancel an order before it is in progress.",
@@ -62,6 +228,66 @@
           }
         },
         "title": "CancelOrderRequest",
+        "type": "object"
+      },
+      "ChallengeConfirm": {
+        "additionalProperties": false,
+        "description": "Submit an OTP bound to the returned opaque challenge identifier.",
+        "properties": {
+          "challenge_id": {
+            "format": "uuid",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "otp": {
+            "pattern": "^\\d{5,6}$",
+            "title": "Otp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "otp"
+        ],
+        "title": "ChallengeConfirm",
+        "type": "object"
+      },
+      "ChallengeResponse": {
+        "description": "Metadata for a sixty-second scoped OTP; development code omitted elsewhere.",
+        "properties": {
+          "challenge_id": {
+            "format": "uuid",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "const": 60,
+            "default": 60,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "otp_dev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otp Dev"
+          },
+          "resend_after": {
+            "const": 60,
+            "default": 60,
+            "title": "Resend After",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "challenge_id"
+        ],
+        "title": "ChallengeResponse",
         "type": "object"
       },
       "ChatAttachmentResponse": {
@@ -413,7 +639,7 @@
       },
       "CreateOccasionRequest": {
         "additionalProperties": false,
-        "description": "Store a special date; reminder delivery is not implemented.",
+        "description": "Store a special date with optional one-off reminder delivery.",
         "properties": {
           "occasion_date": {
             "format": "date",
@@ -426,6 +652,11 @@
             "minimum": 0.0,
             "title": "Reminder Days Before",
             "type": "integer"
+          },
+          "reminder_enabled": {
+            "default": false,
+            "title": "Reminder Enabled",
+            "type": "boolean"
           },
           "title": {
             "maxLength": 120,
@@ -630,6 +861,120 @@
           "reason"
         ],
         "title": "DisputeResponse",
+        "type": "object"
+      },
+      "EarningsBucket": {
+        "description": "A clipped calendar bucket within the requested inclusive range.",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "amount"
+        ],
+        "title": "EarningsBucket",
+        "type": "object"
+      },
+      "EarningsReport": {
+        "description": "Historical signed settled courier proceeds including item reimbursement.",
+        "properties": {
+          "basis": {
+            "const": "SETTLED_COURIER_PROCEEDS",
+            "default": "SETTLED_COURIER_PROCEEDS",
+            "title": "Basis",
+            "type": "string"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/EarningsBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "currency": {
+            "const": "SAR",
+            "default": "SAR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "granularity": {
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "pending_total": {
+            "title": "Pending Total",
+            "type": "null"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/PreviousPeriod"
+          },
+          "settled_total": {
+            "title": "Settled Total",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "const": "Asia/Riyadh",
+            "default": "Asia/Riyadh",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "granularity",
+          "settled_total",
+          "previous",
+          "buckets",
+          "target"
+        ],
+        "title": "EarningsReport",
+        "type": "object"
+      },
+      "EmptyParameters": {
+        "additionalProperties": false,
+        "description": "Events that require no interpolation values.",
+        "properties": {},
+        "title": "EmptyParameters",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1111,6 +1456,169 @@
         "title": "MessageResponse",
         "type": "object"
       },
+      "NotificationPage": {
+        "description": "Newest-first bounded inbox with a database unread count.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "unread_count": {
+            "minimum": 0.0,
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "unread_count"
+        ],
+        "title": "NotificationPage",
+        "type": "object"
+      },
+      "NotificationResponse": {
+        "description": "A safe mobile event with typed destination and localization keys.",
+        "properties": {
+          "body_key": {
+            "enum": [
+              "notification.order_status_changed.body",
+              "notification.invoice_issued.body",
+              "notification.wallet_topup_completed.body",
+              "notification.withdrawal_status_changed.body",
+              "notification.occasion_reminder.body"
+            ],
+            "title": "Body Key",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "navigation": {
+            "discriminator": {
+              "mapping": {
+                "OCCASION": "#/components/schemas/OccasionNavigation",
+                "ORDER": "#/components/schemas/OrderNavigation",
+                "WALLET": "#/components/schemas/WalletNavigation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OrderNavigation"
+              },
+              {
+                "$ref": "#/components/schemas/OccasionNavigation"
+              },
+              {
+                "$ref": "#/components/schemas/WalletNavigation"
+              }
+            ],
+            "title": "Navigation"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderParameters"
+              },
+              {
+                "$ref": "#/components/schemas/WithdrawalParameters"
+              },
+              {
+                "$ref": "#/components/schemas/EmptyParameters"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "title_key": {
+            "enum": [
+              "notification.order_status_changed.title",
+              "notification.invoice_issued.title",
+              "notification.wallet_topup_completed.title",
+              "notification.withdrawal_status_changed.title",
+              "notification.occasion_reminder.title"
+            ],
+            "title": "Title Key",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "ORDER_STATUS_CHANGED",
+              "INVOICE_ISSUED",
+              "WALLET_TOPUP_COMPLETED",
+              "WITHDRAWAL_STATUS_CHANGED",
+              "OCCASION_REMINDER"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title_key",
+          "body_key",
+          "parameters",
+          "created_at",
+          "read_at",
+          "navigation"
+        ],
+        "title": "NotificationResponse",
+        "type": "object"
+      },
+      "OccasionNavigation": {
+        "description": "Reauthorize this saved date when opening it.",
+        "properties": {
+          "kind": {
+            "const": "OCCASION",
+            "default": "OCCASION",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occasion_id": {
+            "format": "uuid",
+            "title": "Occasion Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occasion_id"
+        ],
+        "title": "OccasionNavigation",
+        "type": "object"
+      },
       "OccasionPage": {
         "description": "A bounded page ordered by calendar date and ID.",
         "properties": {
@@ -1161,6 +1669,17 @@
           "reminder_days_before": {
             "title": "Reminder Days Before",
             "type": "integer"
+          },
+          "reminder_enabled": {
+            "default": false,
+            "title": "Reminder Enabled",
+            "type": "boolean"
+          },
+          "timezone": {
+            "const": "Asia/Riyadh",
+            "default": "Asia/Riyadh",
+            "title": "Timezone",
+            "type": "string"
           },
           "title": {
             "title": "Title",
@@ -1458,6 +1977,41 @@
         "title": "OrderMediaResponse",
         "type": "object"
       },
+      "OrderNavigation": {
+        "description": "Reauthorize this order when opening it.",
+        "properties": {
+          "kind": {
+            "const": "ORDER",
+            "default": "ORDER",
+            "title": "Kind",
+            "type": "string"
+          },
+          "order_id": {
+            "format": "uuid",
+            "title": "Order Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "title": "OrderNavigation",
+        "type": "object"
+      },
+      "OrderParameters": {
+        "additionalProperties": false,
+        "description": "The actual order status.",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "OrderParameters",
+        "type": "object"
+      },
       "OrderStatus": {
         "description": "Order lifecycle status (see app/services/order_state.py).",
         "enum": [
@@ -1530,6 +2084,40 @@
           "current_actor_has_rated"
         ],
         "title": "OrderSummary",
+        "type": "object"
+      },
+      "OrderTimelinePage": {
+        "description": "Oldest-first events; historical orders have explicitly incomplete history.",
+        "properties": {
+          "history_complete": {
+            "description": "False for orders predating status event capture.",
+            "title": "History Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEventResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "history_complete"
+        ],
+        "title": "OrderTimelinePage",
         "type": "object"
       },
       "ParticipantProfile": {
@@ -1817,6 +2405,103 @@
         "title": "PaymentSessionResponse",
         "type": "object"
       },
+      "PhoneChangeRequest": {
+        "additionalProperties": false,
+        "description": "The new canonical phone and a current-phone proof scoped to PHONE_CHANGE.",
+        "properties": {
+          "new_phone": {
+            "pattern": "^\\+9665\\d{8}$",
+            "title": "New Phone",
+            "type": "string"
+          },
+          "reauthentication_token": {
+            "maxLength": 200,
+            "minLength": 32,
+            "title": "Reauthentication Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_phone",
+          "reauthentication_token"
+        ],
+        "title": "PhoneChangeRequest",
+        "type": "object"
+      },
+      "PhoneChangeResponse": {
+        "description": "The new login identity; all old credentials have been revoked.",
+        "properties": {
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "reauthentication_required": {
+            "const": true,
+            "default": true,
+            "title": "Reauthentication Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "title": "PhoneChangeResponse",
+        "type": "object"
+      },
+      "PreviousPeriod": {
+        "description": "Equal-length immediately preceding proceeds comparison.",
+        "properties": {
+          "comparison": {
+            "enum": [
+              "INCREASE",
+              "DECREASE",
+              "UNCHANGED",
+              "NO_BASELINE"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "difference": {
+            "title": "Difference",
+            "type": "string"
+          },
+          "from_date": {
+            "format": "date",
+            "title": "From Date",
+            "type": "string"
+          },
+          "percentage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percentage"
+          },
+          "settled_total": {
+            "title": "Settled Total",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "title": "To Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date",
+          "settled_total",
+          "difference",
+          "percentage",
+          "comparison"
+        ],
+        "title": "PreviousPeriod",
+        "type": "object"
+      },
       "PromoPreviewResponse": {
         "description": "A previewed promo discount and the total it would produce.",
         "properties": {
@@ -1961,6 +2646,64 @@
           "count"
         ],
         "title": "RatingSummaryResponse",
+        "type": "object"
+      },
+      "ReadAllResponse": {
+        "description": "Number of unread events marked at the statement cutoff.",
+        "properties": {
+          "marked_count": {
+            "minimum": 0.0,
+            "title": "Marked Count",
+            "type": "integer"
+          },
+          "read_at": {
+            "format": "date-time",
+            "title": "Read At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marked_count",
+          "read_at"
+        ],
+        "title": "ReadAllResponse",
+        "type": "object"
+      },
+      "ReauthenticationRequest": {
+        "additionalProperties": false,
+        "description": "Choose the only operation authorized by this current-phone proof.",
+        "properties": {
+          "purpose": {
+            "default": "PHONE_CHANGE",
+            "enum": [
+              "PHONE_CHANGE",
+              "ACCOUNT_REQUEST"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "title": "ReauthenticationRequest",
+        "type": "object"
+      },
+      "ReauthenticationResponse": {
+        "description": "A one-use actor/purpose scoped proof that is never an access credential.",
+        "properties": {
+          "expires_in": {
+            "const": 300,
+            "default": 300,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "reauthentication_token": {
+            "title": "Reauthentication Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reauthentication_token"
+        ],
+        "title": "ReauthenticationResponse",
         "type": "object"
       },
       "RefreshRequest": {
@@ -2183,6 +2926,26 @@
         "title": "ResolveDisputeRequest",
         "type": "object"
       },
+      "RestorationRequest": {
+        "additionalProperties": false,
+        "description": "Current phone only; response does not disclose a matching account/request.",
+        "properties": {
+          "phone": {
+            "description": "Saudi mobile; accepts 0501234567, 501234567, or +966501234567.",
+            "examples": [
+              "0501234567"
+            ],
+            "pattern": "^\\+9665\\d{8}$",
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "title": "RestorationRequest",
+        "type": "object"
+      },
       "SendChatMediaRequest": {
         "additionalProperties": false,
         "description": "Send up to five images, one video, or one recorded voice note.",
@@ -2369,6 +3132,242 @@
           "reversed_debits"
         ],
         "title": "StatementTotals",
+        "type": "object"
+      },
+      "TargetProgress": {
+        "description": "Actual settled proceeds in the complete current target period.",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "enabled": {
+            "const": true,
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "period": {
+            "enum": [
+              "WEEK",
+              "MONTH"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "period_end": {
+            "format": "date",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "progress_percent": {
+            "title": "Progress Percent",
+            "type": "string"
+          },
+          "settled_total": {
+            "title": "Settled Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "amount",
+          "period_start",
+          "period_end",
+          "settled_total",
+          "progress_percent"
+        ],
+        "title": "TargetProgress",
+        "type": "object"
+      },
+      "TargetSettings": {
+        "description": "Versioned target settings; financial notifications are not offered.",
+        "properties": {
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Amount"
+          },
+          "target_enabled": {
+            "title": "Target Enabled",
+            "type": "boolean"
+          },
+          "target_period": {
+            "anyOf": [
+              {
+                "enum": [
+                  "WEEK",
+                  "MONTH"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Period"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "updated_at",
+          "target_enabled",
+          "target_amount",
+          "target_period",
+          "progress"
+        ],
+        "title": "TargetSettings",
+        "type": "object"
+      },
+      "TargetUpdate": {
+        "additionalProperties": false,
+        "description": "Update supplied target preferences using the last observed version.",
+        "properties": {
+          "target_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Amount"
+          },
+          "target_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Enabled"
+          },
+          "target_period": {
+            "anyOf": [
+              {
+                "enum": [
+                  "WEEK",
+                  "MONTH"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Period"
+          },
+          "version": {
+            "maximum": 2147483646.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "TargetUpdate",
+        "type": "object"
+      },
+      "TimelineActor": {
+        "description": "Only the role that initiated a change, if known.",
+        "properties": {
+          "role": {
+            "enum": [
+              "CUSTOMER",
+              "COURIER",
+              "ADMIN"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "TimelineActor",
+        "type": "object"
+      },
+      "TimelineEventResponse": {
+        "description": "One real status event.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "STATUS_CHANGED",
+            "default": "STATUS_CHANGED",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "created_at"
+        ],
+        "title": "TimelineEventResponse",
         "type": "object"
       },
       "TokenResponse": {
@@ -2575,6 +3574,21 @@
         "title": "TransactionResponse",
         "type": "object"
       },
+      "UnreadCount": {
+        "description": "Current owned unread count.",
+        "properties": {
+          "unread_count": {
+            "minimum": 0.0,
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count"
+        ],
+        "title": "UnreadCount",
+        "type": "object"
+      },
       "UnregisterDeviceRequest": {
         "additionalProperties": false,
         "description": "Remove a push token.",
@@ -2621,6 +3635,17 @@
             ],
             "title": "Reminder Days Before"
           },
+          "reminder_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Enabled"
+          },
           "title": {
             "anyOf": [
               {
@@ -2663,7 +3688,8 @@
             "description": "What the media is for; determines the key prefix.",
             "enum": [
               "ORDER_REQUEST",
-              "DELIVERY_PROOF"
+              "DELIVERY_PROOF",
+              "COURIER_AVATAR"
             ],
             "title": "Purpose",
             "type": "string"
@@ -3033,6 +4059,19 @@
         "title": "VerifyOtpResponse",
         "type": "object"
       },
+      "WalletNavigation": {
+        "description": "Open the authenticated user's wallet.",
+        "properties": {
+          "kind": {
+            "const": "WALLET",
+            "default": "WALLET",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "WalletNavigation",
+        "type": "object"
+      },
       "WalletResponse": {
         "description": "A user's wallet snapshot.",
         "properties": {
@@ -3149,6 +4188,20 @@
         "title": "WebhookAck",
         "type": "object"
       },
+      "WithdrawalParameters": {
+        "additionalProperties": false,
+        "description": "The actual withdrawal status.",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/WithdrawalStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "WithdrawalParameters",
+        "type": "object"
+      },
       "WithdrawalRequest": {
         "additionalProperties": false,
         "description": "A courier request to withdraw available wallet funds.",
@@ -3215,6 +4268,18 @@
         ],
         "title": "WithdrawalResponse",
         "type": "object"
+      },
+      "WithdrawalStatus": {
+        "description": "Courier withdrawal lifecycle.",
+        "enum": [
+          "REQUESTED",
+          "APPROVED",
+          "SUBMITTED",
+          "PAID",
+          "REJECTED"
+        ],
+        "title": "WithdrawalStatus",
+        "type": "string"
       }
     }
   },
@@ -4027,6 +5092,137 @@
         ]
       }
     },
+    "/api/couriers/me/earnings": {
+      "get": {
+        "description": "Report signed settled payout including reimbursement, never wallet balance.",
+        "operationId": "earnings_api_couriers_me_earnings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "From Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "To Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EarningsReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Earnings",
+        "tags": [
+          "courier reports"
+        ]
+      }
+    },
+    "/api/couriers/me/report-settings": {
+      "get": {
+        "description": "Read optimistic target settings and full current-period progress.",
+        "operationId": "report_settings_api_couriers_me_report_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Report Settings",
+        "tags": [
+          "courier reports"
+        ]
+      },
+      "patch": {
+        "description": "Replace target; stale versions fail with409 CONFLICT.",
+        "operationId": "update_report_settings_api_couriers_me_report_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Report Settings",
+        "tags": [
+          "courier reports"
+        ]
+      }
+    },
     "/api/dev/ping": {
       "get": {
         "description": "Confirm dev routes are registered (development only).",
@@ -4686,6 +5882,167 @@
         ]
       }
     },
+    "/api/notifications": {
+      "get": {
+        "description": "Read owned neutral events newest first; reauthorize destinations when opening.",
+        "operationId": "list_notifications_api_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unread Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 22,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "description": "Mark the owned unread snapshot; later arrivals remain unread.",
+        "operationId": "read_all_api_notifications_read_all_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadAllResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read All",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/unread-count": {
+      "get": {
+        "description": "Read the current database-backed owned unread count.",
+        "operationId": "unread_count_api_notifications_unread_count_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCount"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Unread Count",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/notifications/{notification_id}/read": {
+      "post": {
+        "description": "Idempotently mark one owned event as read.",
+        "operationId": "read_notification_api_notifications__notification_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Notification",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/occasions": {
       "get": {
         "description": "List owned occasions by date then ID, within optional inclusive Gregorian bounds.\n\nUse YYYY-MM-DD. Reset the cursor when bounds change and retain identical filters\non subsequent pages. Malformed or reversed ranges return HTTP 422.",
@@ -4787,7 +6144,7 @@
         ]
       },
       "post": {
-        "description": "Save a special date; automatic reminders and annual recurrence are not available.",
+        "description": "Save a special date; opt in to one reminder at 09:00 Riyadh.",
         "operationId": "create_occasion_api_occasions_post",
         "parameters": [
           {
@@ -5072,6 +6429,24 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           },
           {
@@ -5919,6 +7294,79 @@
         ]
       }
     },
+    "/api/orders/{order_id}/timeline": {
+      "get": {
+        "description": "Read real statuses oldest first, explicitly identifying incomplete historical data.",
+        "operationId": "order_timeline_api_orders__order_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 22,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderTimelinePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Order Timeline",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
     "/api/payment-sessions/{intent_id}": {
       "get": {
         "description": "Read the payer's session; use refresh to query authoritative provider status.",
@@ -6155,6 +7603,244 @@
         ]
       }
     },
+    "/api/users/me/account-request": {
+      "get": {
+        "description": "Read only own request state using normal auth or the separate restricted receipt.",
+        "operationId": "account_request_status_api_users_me_account_request_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Account-Request-Receipt",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Account-Request-Receipt"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Account Request Status",
+        "tags": [
+          "account changes"
+        ]
+      },
+      "post": {
+        "description": "Disable access for a 14-day recovery window before administrative review.",
+        "operationId": "submit_account_request_api_users_me_account_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Account Request",
+        "tags": [
+          "account changes"
+        ]
+      }
+    },
+    "/api/users/me/account-request/restoration/confirm": {
+      "post": {
+        "description": "Restore within the deadline after scoped OTP proof; sign in separately afterward.",
+        "operationId": "confirm_restoration_api_users_me_account_request_restoration_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Restoration",
+        "tags": [
+          "account changes"
+        ]
+      }
+    },
+    "/api/users/me/account-request/restoration/request": {
+      "post": {
+        "description": "Request a scoped recovery OTP without exposing account existence or status.",
+        "operationId": "request_restoration_api_users_me_account_request_restoration_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestorationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Restoration",
+        "tags": [
+          "account changes"
+        ]
+      }
+    },
+    "/api/users/me/courier-avatar": {
+      "delete": {
+        "description": "Remove this courier's avatar without deleting another user's upload.",
+        "operationId": "remove_avatar_api_users_me_courier_avatar_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Remove Avatar",
+        "tags": [
+          "users"
+        ]
+      },
+      "put": {
+        "description": "Attach a confirmed JPEG/PNG for an active verified courier.",
+        "operationId": "set_avatar_api_users_me_courier_avatar_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Avatar",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/users/me/courier-verification/resubmit": {
       "post": {
         "description": "Resubmit a rejected courier profile for another audited review.",
@@ -6174,6 +7860,181 @@
         "summary": "Resubmit Courier Verification",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/users/me/phone-change/confirm": {
+      "post": {
+        "description": "Change the phone and revoke every access, refresh, admin and push credential.",
+        "operationId": "confirm_phone_change_api_users_me_phone_change_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneChangeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Phone Change",
+        "tags": [
+          "account changes"
+        ]
+      }
+    },
+    "/api/users/me/phone-change/request": {
+      "post": {
+        "description": "Consume a PHONE_CHANGE proof and verify the new phone through a separate OTP.",
+        "operationId": "request_phone_change_api_users_me_phone_change_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Phone Change",
+        "tags": [
+          "account changes"
+        ]
+      }
+    },
+    "/api/users/me/reauthentication/confirm": {
+      "post": {
+        "description": "Issue a one-use proof, valid for five minutes for the selected purpose.",
+        "operationId": "confirm_reauthentication_api_users_me_reauthentication_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReauthenticationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Reauthentication",
+        "tags": [
+          "account changes"
+        ]
+      }
+    },
+    "/api/users/me/reauthentication/request": {
+      "post": {
+        "description": "Send a current-phone OTP scoped to PHONE_CHANGE or ACCOUNT_REQUEST.",
+        "operationId": "request_reauthentication_api_users_me_reauthentication_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReauthenticationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Reauthentication",
+        "tags": [
+          "account changes"
         ]
       }
     },

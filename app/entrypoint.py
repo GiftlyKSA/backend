@@ -7,6 +7,7 @@ import os
 import sys
 
 from app.bootstrap_db import upgrade_database
+from app.core.config import get_settings
 
 
 def main() -> None:
@@ -31,6 +32,8 @@ def main() -> None:
         "--timeout",
         os.getenv("GUNICORN_TIMEOUT", "80"),
     ]
+    if get_settings().PROCESS_ROLE == "worker":
+        command = [sys.executable, "-m", "app.workers.runtime"]
     os.execvp(command[0], command)  # noqa: S606, S607 - deployment command, no shell
 
 

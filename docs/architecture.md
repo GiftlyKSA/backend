@@ -120,3 +120,13 @@ Live payment/vendor acceptance, deployed firewall settings, backup restoration a
 production load capacity are **UNCONFIRMED** here. These require deployment evidence
 and testing. The [current review](codebase_review.md) distinguishes confirmed defects,
 accepted risks and checks still required before broader production use.
+
+## Mobile expansion and worker isolation — 2026-10-11
+
+The API and a separate worker app share PostgreSQL/Redis but have independent CPU/memory.
+A single scheduler queues bounded background jobs; the worker handles reminders and
+durable email/push/live-event retries. Courier reports aggregate the settled ledger,
+not wallet balances. Persistent inbox/timeline data supports mobile REST recovery;
+existing WebSockets still deliver live chat/orders. Account recovery is purpose-bound
+verification with a14-day window followed by administrative review, not automatic
+financial or personal-data destruction. External delivery remains separately verified.

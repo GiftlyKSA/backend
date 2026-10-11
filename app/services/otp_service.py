@@ -80,7 +80,9 @@ class OtpService:
     def _block_key(self, phone: str) -> str:
         return f"otp:block:{phone}"
 
-    async def request_otp(self, phone: str) -> str | None:
+    async def request_otp(
+        self, phone: str, *, scope: str | None = None, ttl_seconds: int | None = None
+    ) -> str | None:
         """Generate, store, and send an OTP for ``phone``.
 
         Returns:
@@ -90,6 +92,8 @@ class OtpService:
         Raises:
             RateLimitedError: The phone is blocked or over its request window.
         """
+        if scope and not await self._redis.set(f"otp:cooldown:{phone}", "1", ex=60, nx=True):
+            raise RateLimitedError(60)
         code = (
             str(secrets.randbelow(90_000) + 10_000)
             if self._settings.ENVIRONMENT is Environment.DEVELOPMENT
@@ -98,12 +102,12 @@ class OtpService:
         issued = await self._redis.eval(
             _ISSUE_LUA,
             4,
-            self._code_key(phone),
-            self._attempts_key(phone),
+            self._code_key(f"{scope}:{phone}" if scope else phone),
+            self._attempts_key(f"{scope}:{phone}" if scope else phone),
             self._rate_key(phone),
             self._block_key(phone),
             hmac_hex(code, self._hmac_key),
-            self._settings.OTP_TTL_SECONDS,
+            ttl_seconds or self._settings.OTP_TTL_SECONDS,
             self._settings.OTP_WINDOW_SECONDS,
             self._settings.OTP_MAX_PER_WINDOW,
             self._settings.OTP_BLOCK_SECONDS,
@@ -114,7 +118,7 @@ class OtpService:
 
         return code if self._settings.ENVIRONMENT is Environment.DEVELOPMENT else None
 
-    async def verify_otp(self, phone: str, code: str) -> bool:
+    async def verify_otp(self, phone: str, code: str, *, scope: str | None = None) -> bool:
         """Verify a submitted OTP, consuming it on success.
 
         Returns:
@@ -126,9 +130,9 @@ class OtpService:
         result = await self._redis.eval(
             _VERIFY_LUA,
             3,
-            self._code_key(phone),
-            self._attempts_key(phone),
-            self._rate_key(phone),
+            self._code_key(f"{scope}:{phone}" if scope else phone),
+            self._attempts_key(f"{scope}:{phone}" if scope else phone),
+            self._rate_key(f"verified:{scope}:{phone}" if scope else phone),
             hmac_hex(code, self._hmac_key),
             self._settings.OTP_TTL_SECONDS,
         )
