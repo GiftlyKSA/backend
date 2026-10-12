@@ -15,7 +15,7 @@ import logging
 from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, TypeVar
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, ValidationError, model_validator
@@ -397,16 +397,133 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} is required in production.")
 
 
+class WorkerSettings(Settings):
+    """Validate worker dependencies while retaining typed business settings."""
+
+    @model_validator(mode="after")
+    def _validate_boot(self) -> WorkerSettings:
+        self._validate_encryption_keys()
+        self._validate_rates()
+        self._validate_payments()
+        if self.is_production:
+            if self.DEBUG:
+                raise ValueError("DEBUG must be False in production.")
+            self._require_production_fields(
+                "AWS_REGION",
+                "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY",
+                "S3_BUCKET_NAME",
+                "CLOUDFRONT_DOMAIN",
+                "CLOUDFRONT_KEY_PAIR_ID",
+                "CLOUDFRONT_PRIVATE_KEY",
+                "SUPABASE_URL",
+                "SUPABASE_SERVICE_KEY",
+                "SNDR_API_KEY",
+                "SNDR_BASE_URL",
+                "SNDR_FROM_EMAIL",
+                "SNDR_FROM_NAME",
+            )
+            for name in ("SUPABASE_URL", "SNDR_BASE_URL"):
+                parsed = urlsplit(getattr(self, name))
+                if (
+                    parsed.scheme != "https"
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                    or parsed.query
+                    or parsed.fragment
+                ):
+                    raise ValueError(f"{name} must be an HTTPS base URL without credentials.")
+        return self
+
+
+class MigrationSettings(BaseSettings):
+    """Minimal settings for the migration gate, independent of integrations."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=True
+    )
+    ENVIRONMENT: Environment
+    DATABASE_URL: SecretStr
+    LOG_LEVEL: str = "INFO"
+    DEBUG: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        """Return the actual environment without changing integration selection."""
+        return self.ENVIRONMENT is Environment.PRODUCTION
+
+    @model_validator(mode="after")
+    def _validate_boot(self) -> MigrationSettings:
+        if self.is_production and self.DEBUG:
+            raise ValueError("DEBUG must be False in production.")
+        if not self.DATABASE_URL.get_secret_value().strip():
+            raise ValueError("DATABASE_URL must not be empty.")
+        return self
+
+
+class SchedulerSettings(BaseSettings):
+    """Queue-only settings; scheduler imports task declarations without executing them."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=True
+    )
+    ENVIRONMENT: Environment
+    REDIS_URL: SecretStr
+    LOG_LEVEL: str = "INFO"
+    DEBUG: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        """Return the configured environment."""
+        return self.ENVIRONMENT is Environment.PRODUCTION
+
+    @model_validator(mode="after")
+    def _validate_boot(self) -> SchedulerSettings:
+        if self.is_production and self.DEBUG:
+            raise ValueError("DEBUG must be False in production.")
+        if not self.REDIS_URL.get_secret_value().strip():
+            raise ValueError("REDIS_URL must not be empty.")
+        return self
+
+
 @lru_cache
-def get_settings() -> Settings:
-    """Return the process-wide settings singleton, constructed once at first use."""
+def get_worker_settings() -> WorkerSettings:
+    """Load validated worker configuration."""
+    return _load_settings(WorkerSettings)
+
+
+@lru_cache
+def get_scheduler_settings() -> SchedulerSettings:
+    """Load only scheduler configuration."""
+    return _load_settings(SchedulerSettings)
+
+
+@lru_cache
+def get_migration_settings() -> MigrationSettings:
+    """Load only migration configuration."""
+    return _load_settings(MigrationSettings)
+
+
+_SettingsT = TypeVar("_SettingsT", bound=BaseSettings)
+
+
+def _load_settings(settings_class: type[_SettingsT]) -> _SettingsT:
     try:
-        return Settings()
+        return settings_class()
     except ValidationError as exc:
         reasons = [
-            str(error["msg"]).removeprefix("Value error, ")
+            ".".join(str(part) for part in error["loc"])
+            + ": "
+            + str(error["msg"]).removeprefix("Value error, ")
             for error in exc.errors(include_input=False, include_url=False)
         ]
         message = "Invalid application settings: " + "; ".join(reasons)
         logger.error("Application settings failed validation: %s", message)
         raise RuntimeError(message) from None
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Load the API configuration; process-selection environment cannot weaken it."""
+    return _load_settings(Settings)

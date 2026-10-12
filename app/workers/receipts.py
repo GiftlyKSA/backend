@@ -12,10 +12,10 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.integrations.email.base import EmailClient
-from app.integrations.factory import build_clients
+from app.integrations.factory import build_email_client
 from app.repositories.invoice_repository import InvoiceRepository
 from app.services.receipt_service import ReceiptService
 from app.workers.broker import broker
@@ -35,10 +35,10 @@ async def send_pending_receipts(
     Collaborators are injectable for tests; by default the job builds its own engine and
     the environment's email client (a Fake outside production).
     """
-    settings = settings or get_settings()
-    owned_clients = build_clients(settings) if email is None else None
-    if owned_clients is not None:
-        email = owned_clients.email
+    settings = settings or get_worker_settings()
+    owned_client = build_email_client(settings) if email is None else None
+    if owned_client is not None:
+        email = owned_client
     assert email is not None
     own_engine = None
     if factory is None:
@@ -60,17 +60,10 @@ async def send_pending_receipts(
                 _logger.exception("receipt send failed for invoice %s", invoice_id)
     finally:
         try:
-            if owned_clients is not None:
-                for client in (
-                    owned_clients.gateway,
-                    owned_clients.email,
-                    owned_clients.sms,
-                    owned_clients.push,
-                    owned_clients.storage,
-                ):
-                    aclose = getattr(client, "aclose", None)
-                    if aclose is not None:
-                        await aclose()
+            if owned_client is not None:
+                aclose = getattr(owned_client, "aclose", None)
+                if aclose is not None:
+                    await aclose()
         finally:
             if own_engine is not None:
                 await own_engine.dispose()

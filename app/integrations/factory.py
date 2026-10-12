@@ -60,13 +60,7 @@ def build_clients(settings: Settings) -> Clients:
 
 def _build_production_clients(settings: Settings) -> Clients:
     gateway = build_payment_client(settings)
-    email = SndrEmailClient(
-        base_url=settings.SNDR_BASE_URL or "",
-        api_key=_required_secret(settings.SNDR_API_KEY, "SNDR_API_KEY"),
-        from_email=settings.SNDR_FROM_EMAIL or "",
-        from_name=settings.SNDR_FROM_NAME or "",
-        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
-    )
+    email = build_email_client(settings)
     sms = RealSmsClient(
         provider_key=(
             settings.SMS_PROVIDER_KEY.get_secret_value() if settings.SMS_PROVIDER_KEY else ""
@@ -74,26 +68,8 @@ def _build_production_clients(settings: Settings) -> Clients:
         base_url=settings.SUPABASE_URL or "",
         timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
     )
-    push = RealPushClient(
-        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
-        supabase_url=settings.SUPABASE_URL or "",
-        service_key=(
-            settings.SUPABASE_SERVICE_KEY.get_secret_value()
-            if settings.SUPABASE_SERVICE_KEY
-            else ""
-        ),
-    )
-    storage = S3StorageClient(
-        bucket=settings.S3_BUCKET_NAME or "",
-        region=settings.AWS_REGION or "",
-        access_key_id=_required_secret(settings.AWS_ACCESS_KEY_ID, "AWS_ACCESS_KEY_ID"),
-        secret_access_key=_required_secret(settings.AWS_SECRET_ACCESS_KEY, "AWS_SECRET_ACCESS_KEY"),
-        cloudfront_domain=settings.CLOUDFRONT_DOMAIN or "",
-        cloudfront_key_pair_id=settings.CLOUDFRONT_KEY_PAIR_ID or "",
-        cloudfront_private_key=_required_secret(
-            settings.CLOUDFRONT_PRIVATE_KEY, "CLOUDFRONT_PRIVATE_KEY"
-        ),
-    )
+    push = build_push_client(settings)
+    storage = build_storage_client(settings)
     return Clients(gateway=gateway, email=email, sms=sms, push=push, storage=storage)
 
 
@@ -131,4 +107,49 @@ def _build_fake_clients(settings: Settings) -> Clients:
         sms=FakeSmsClient(environment),
         push=FakePushClient(environment),
         storage=FakeStorageClient(environment),
+    )
+
+
+def build_email_client(settings: Settings) -> EmailClient:
+    """Construct only the email integration required by the caller."""
+    if not settings.is_production:
+        return FakeEmailClient(settings.ENVIRONMENT)
+    return SndrEmailClient(
+        base_url=settings.SNDR_BASE_URL or "",
+        api_key=_required_secret(settings.SNDR_API_KEY, "SNDR_API_KEY"),
+        from_email=settings.SNDR_FROM_EMAIL or "",
+        from_name=settings.SNDR_FROM_NAME or "",
+        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
+    )
+
+
+def build_push_client(settings: Settings) -> PushClient:
+    """Construct only the push integration required by the caller."""
+    if not settings.is_production:
+        return FakePushClient(settings.ENVIRONMENT)
+    return RealPushClient(
+        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
+        supabase_url=settings.SUPABASE_URL or "",
+        service_key=(
+            settings.SUPABASE_SERVICE_KEY.get_secret_value()
+            if settings.SUPABASE_SERVICE_KEY
+            else ""
+        ),
+    )
+
+
+def build_storage_client(settings: Settings) -> StorageClient:
+    """Construct only the storage integration required by the caller."""
+    if not settings.is_production:
+        return FakeStorageClient(settings.ENVIRONMENT)
+    return S3StorageClient(
+        bucket=settings.S3_BUCKET_NAME or "",
+        region=settings.AWS_REGION or "",
+        access_key_id=_required_secret(settings.AWS_ACCESS_KEY_ID, "AWS_ACCESS_KEY_ID"),
+        secret_access_key=_required_secret(settings.AWS_SECRET_ACCESS_KEY, "AWS_SECRET_ACCESS_KEY"),
+        cloudfront_domain=settings.CLOUDFRONT_DOMAIN or "",
+        cloudfront_key_pair_id=settings.CLOUDFRONT_KEY_PAIR_ID or "",
+        cloudfront_private_key=_required_secret(
+            settings.CLOUDFRONT_PRIVATE_KEY, "CLOUDFRONT_PRIVATE_KEY"
+        ),
     )

@@ -1121,3 +1121,54 @@ regenerate shared encryption keys. Admin credentials and API process settings we
 copied. Keep exactly one scheduler replica and do not duplicate its schedules in app
 cron jobs. Backend app cron inventory was empty. Sustained capacity, external vendor
 delivery and replica/rolling-update configuration remain separate operational checks.
+
+## Per-process configuration and error logging - 2026-10-12
+
+API startup uses Settings/get_settings and retains its full production interlocks.
+WorkerSettings/get_worker_settings validate DB, Redis, field encryption, business rules,
+selected payment safety and the email/push/storage integrations used by current jobs.
+JWT, OTP, SMS, CORS and dashboard credentials are not worker requirements. SchedulerSettings
+requires ENVIRONMENT and REDIS_URL; MigrationSettings requires ENVIRONMENT and DATABASE_URL.
+Both support LOG_LEVEL and DEBUG, with DEBUG forbidden in production. Since both Docker
+images retain the migration startup gate, the scheduler app still needs DATABASE_URL.
+API startup rejects WorkerSettings; its validation cannot be changed by the internal
+Taskiq component marker. The explicit supervisor command sets that marker for each child;
+operators do not need to configure a role variable. Keep all apps on the same environment.
+
+| App | Settings to retain |
+| --- | --- |
+| API | Existing API settings, including its production integrations/security requirements |
+| Worker | ENVIRONMENT, DATABASE_URL, REDIS_URL, FIELD_ENCRYPTION_KEYS, FIELD_ENCRYPTION_KEY_VERSION, configured email/push/storage settings, business-rule overrides and selected payment settings |
+| Scheduler | ENVIRONMENT, DATABASE_URL, REDIS_URL; optional LOG_LEVEL=INFO and DEBUG=false |
+
+Worker overrides DB_POOL_SIZE=2 and DB_MAX_OVERFLOW=0 remain recommended and already saved
+in CranL. Other DB pool and integration timeout overrides are optional. Current published
+storage adapters still use AWS_*, S3_BUCKET_NAME and CLOUDFRONT_*; the separate local R2
+configuration changes remain unpublished and must not be inferred from this release.
+Production worker validation requires those current storage fields plus SUPABASE_URL,
+SUPABASE_SERVICE_KEY, SNDR_API_KEY, SNDR_BASE_URL, SNDR_FROM_EMAIL and SNDR_FROM_NAME.
+Email jobs create only email clients, push jobs only push clients, and storage jobs only
+storage clients; owned clients are closed on completion/failure. Missing production
+credentials fail closed; development/test still select guarded fakes.
+
+PAYMENT_CHECKOUTS_ENABLED=false pauses new checkout creation without disabling owned
+recovery checks. It never establishes settlement. PAYMENT_PROVIDER selects the adapter;
+production payments remain disabled independently of this switch.
+
+API, entrypoint, migrations and Taskiq processes install the same scrubbed formatter.
+LOG_LEVEL=INFO retains INFO operational JSON; errors retain ERROR severity. Error/exception
+records use the ERROR separator with at most six detail lines, bounded length, UTC time,
+logger, safe message, correlation where available, exception type and source location.
+No exception locals/raw exception payload, HTTP bodies, headers or signed URLs are logged.
+Existing expected warning logs retain their severity. External server/ingress logs outside
+these configured Python processes need their own redaction and collection configuration.
+No external alert delivery has been enabled. Connect a collector/error tracker separately
+with redacted events, bounded retries and duplicate grouping; alert delivery must not block
+HTTP handlers or recursively log its own delivery failures. GlitchTip supports Sentry SDKs
+and email/webhook alerts; Grafana contact points support Slack, Telegram and webhooks.
+Provider/webhook credentials belong in runtime secrets, not source or this documentation.
+
+No schema migration or mobile contract changes are needed. Rollback to the previous image
+requires restoring its shared settings requirements before restart; retain runtime secrets
+securely during rollout. Production-mode validation tests use dummy credentials and prove
+configuration behavior, not vendor acceptance or production deployment.

@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
-from app.integrations.factory import build_clients
+from app.integrations.factory import build_storage_client
 from app.integrations.storage.base import StorageClient
 from app.repositories.media_repository import MediaRepository
 
@@ -25,14 +25,14 @@ async def clean_abandoned_uploads(
     settings: Settings | None = None,
 ) -> int:
     """Fence old grants, delete objects, then remove grant rows; retry failures later."""
-    settings = settings or get_settings()
+    settings = settings or get_worker_settings()
     own_engine = None
     if factory is None:
         own_engine = build_engine(settings)
         factory = build_session_factory(own_engine)
-    owned_clients = build_clients(settings) if storage is None else None
-    if owned_clients is not None:
-        storage = owned_clients.storage
+    owned_client = build_storage_client(settings) if storage is None else None
+    if owned_client is not None:
+        storage = owned_client
     assert storage is not None
     removed = 0
     try:
@@ -52,17 +52,10 @@ async def clean_abandoned_uploads(
                 _logger.exception("failed to clean abandoned upload %s", key)
     finally:
         try:
-            if owned_clients is not None:
-                for client in (
-                    owned_clients.gateway,
-                    owned_clients.email,
-                    owned_clients.sms,
-                    owned_clients.push,
-                    owned_clients.storage,
-                ):
-                    aclose = getattr(client, "aclose", None)
-                    if aclose is not None:
-                        await aclose()
+            if owned_client is not None:
+                aclose = getattr(owned_client, "aclose", None)
+                if aclose is not None:
+                    await aclose()
         finally:
             if own_engine is not None:
                 await own_engine.dispose()

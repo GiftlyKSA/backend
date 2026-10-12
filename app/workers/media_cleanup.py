@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from app.core.config import get_settings
+from app.core.config import get_worker_settings
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
 from app.services.media_cleanup_service import clean_abandoned_uploads
@@ -16,7 +16,7 @@ _logger = logging.getLogger("app.workers.media_cleanup")
 @broker.task(schedule=[{"cron": "0 * * * *"}])
 async def run_media_cleanup() -> None:
     """Run one bounded cleanup batch under a shared lock."""
-    settings = get_settings()
+    settings = get_worker_settings()
     redis = build_redis(settings)
     try:
         async with redis_lock(redis, "job:media_cleanup", ttl_seconds=300):

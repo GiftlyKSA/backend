@@ -197,7 +197,7 @@ async def test_invoice_expiry_releases_only_active_intent_then_promo_and_order()
 async def test_expiry_worker_rolls_back_failed_policy(monkeypatch) -> None:
     from app.workers import expiry
 
-    monkeypatch.setattr(expiry, "get_settings", make_test_settings)
+    monkeypatch.setattr(expiry, "get_worker_settings", make_test_settings)
     policy = AsyncMock()
     policy.expire_invoice.side_effect = RuntimeError("release failed")
     monkeypatch.setattr(expiry, "ExpiryService", Mock(return_value=policy))

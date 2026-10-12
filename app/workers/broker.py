@@ -7,13 +7,19 @@ or scheduler. Request-specific SMS verification remains part of the authenticate
 
 from __future__ import annotations
 
+import os
 from importlib import import_module
 
 from taskiq_redis import ListQueueBroker
 
-from app.core.config import get_settings
+from app.core.config import get_scheduler_settings, get_worker_settings
+from app.core.logging import configure_logging
 
-_settings = get_settings()
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+_component = os.getenv("GIFTLY_TASKIQ_COMPONENT", "worker")
+if _component not in ("worker", "scheduler"):
+    raise RuntimeError("Invalid internal Taskiq component.")
+_settings = get_scheduler_settings() if _component == "scheduler" else get_worker_settings()
 
 broker = ListQueueBroker(
     url=_settings.REDIS_URL.get_secret_value(),

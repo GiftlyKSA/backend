@@ -8,7 +8,7 @@ revision is a DRAFT to be read line by line before committing.
 from __future__ import annotations
 
 import asyncio
-from logging.config import fileConfig
+import os
 
 from alembic import context
 from sqlalchemy import text
@@ -16,19 +16,19 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
-from app.core.config import get_settings
+from app.core.config import get_migration_settings
+from app.core.logging import configure_logging
 from app.models import Base
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 target_metadata = Base.metadata
 _MIGRATION_LOCK_ID = 749283746
 
 
-_settings = get_settings()
+_settings = get_migration_settings()
 config.set_main_option("sqlalchemy.url", _settings.DATABASE_URL.get_secret_value())
 
 

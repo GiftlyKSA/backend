@@ -314,3 +314,23 @@ creation-time settings; applying its saved runtime environment after build resol
 Secrets were transferred only after explicit approval, without display/file storage.
 Existing development/provider modes were preserved. Vendor delivery, sustained capacity
 and replica/rolling-update configuration remain unverified; no new source change.
+
+## Configuration/logging verification - 2026-10-12
+
+Added per-process production validation with minimal migration/scheduler requirements.
+API interlocks remain strict; worker settings and internal scheduler markers cannot bypass
+API validation. Current worker jobs construct and close only their needed integration.
+Error formatting is centralized across API/startup/migrations/Taskiq, bounded to six detail
+lines, retains severity and excludes exception locals/raw payloads. Focused regressions
+cover redaction, log-line injection, safe locations, cleanup, missing provider credentials,
+production fake rejection and isolated scheduler task-registry import without worker keys.
+No schema/client contract change or live vendor delivery is claimed. The initial logging
+suite used an outdated disposable database; rerunning on the latest disposable release DB
+passed 1,406 tests. Combined release verification is recorded below when completed.
+
+Combined configuration/logging release: all1,417tests passed with disposable PostgreSQL16,
+Redis7 and native media binaries; zero skips, one upstream Starlette/httpx deprecation.
+Both hook stages and strict mypy260modules passed. Initial combined run exposed one
+renamed test seam and accumulated historical fixture records; the seam was updated and
+verification rerun against a freshly migrated disposable DB without production writes.
+Source publication and CranL verification are separate from these local results.

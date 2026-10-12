@@ -10,7 +10,7 @@ from uuid import UUID
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
@@ -32,7 +32,7 @@ async def reconcile_gateway_payments(
     limit: int = 20,
 ) -> int:
     """Verify a bounded batch; production awaits confirmed vendor authentication."""
-    settings = settings or get_settings()
+    settings = settings or get_worker_settings()
     if settings.is_production or settings.payment_provider != "dhamen":
         return 0
     if not 1 <= limit <= 20:
@@ -100,7 +100,7 @@ async def _reconcile_one(
 @broker.task(schedule=[{"cron": "*/5 * * * *"}])
 async def run_gateway_reconciliation() -> None:
     """Recover checkout outcomes with a bounded deadline and shared scheduler lock."""
-    settings = get_settings()
+    settings = get_worker_settings()
     if settings.is_production or settings.payment_provider != "dhamen":
         return
     redis = build_redis(settings)

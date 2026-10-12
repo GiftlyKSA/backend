@@ -13,11 +13,11 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
-from app.integrations.factory import Clients, build_clients
+from app.integrations.factory import build_storage_client
 from app.integrations.storage.base import StorageClient
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
@@ -55,27 +55,25 @@ async def auto_approve_delivered(
     settings: Settings | None = None,
 ) -> int:
     """Auto-approve delivered orders past the window; returns how many completed."""
-    settings = settings or get_settings()
+    settings = settings or get_worker_settings()
     own_engine = None
     if factory is None:
         own_engine = build_engine(settings)
         factory = build_session_factory(own_engine)
 
     completed = 0
-    clients: Clients | None = None
+    storage: StorageClient | None = None
     try:
-        clients = build_clients(settings)
+        storage = build_storage_client(settings)
         async with factory() as session:
-            cutoff = _service(session, settings, clients.storage).auto_approve_cutoff()
+            cutoff = _service(session, settings, storage).auto_approve_cutoff()
             due = await OrderRepository(session).list_auto_approve_due(cutoff, limit)
             order_ids = [order.id for order in due]
 
         for order_id in order_ids:
             async with factory() as session:
                 try:
-                    if await _service(session, settings, clients.storage).auto_approve(
-                        order_id=order_id
-                    ):
+                    if await _service(session, settings, storage).auto_approve(order_id=order_id):
                         completed += 1
                     await session.commit()
                 except Exception:  # noqa: BLE001 - one bad order must not stall the sweep
@@ -83,17 +81,10 @@ async def auto_approve_delivered(
                     _logger.exception("auto-approve failed for order %s", order_id)
     finally:
         try:
-            if clients is not None:
-                for client in (
-                    clients.storage,
-                    clients.gateway,
-                    clients.email,
-                    clients.sms,
-                    clients.push,
-                ):
-                    aclose = getattr(client, "aclose", None)
-                    if aclose is not None:
-                        await aclose()
+            if storage is not None:
+                aclose = getattr(storage, "aclose", None)
+                if aclose is not None:
+                    await aclose()
         finally:
             if own_engine is not None:
                 await own_engine.dispose()
@@ -105,7 +96,7 @@ async def auto_approve_delivered(
 @broker.task(schedule=[{"cron": "*/15 * * * *"}])
 async def run_auto_approve() -> None:
     """Scheduled task: acquire a lock and auto-approve overdue deliveries."""
-    settings = get_settings()
+    settings = get_worker_settings()
     redis = build_redis(settings)
     try:
         # Lua compare-and-delete release (audit SEC-5): if this run outlives the TTL

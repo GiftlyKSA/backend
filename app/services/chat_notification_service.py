@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
-from app.integrations.factory import build_clients
+from app.integrations.factory import build_push_client
 from app.integrations.push.base import PushClient
 from app.repositories.chat_notification_repository import (
     ChatNotificationRepository,
@@ -75,10 +75,10 @@ async def send_pending_chat_notifications(
     settings: Settings | None = None,
 ) -> int:
     """Drain at most twenty recipient pages per scheduled run by default."""
-    settings = settings or get_settings()
-    owned_clients = build_clients(settings) if push is None else None
-    if owned_clients is not None:
-        push = owned_clients.push
+    settings = settings or get_worker_settings()
+    owned_client = build_push_client(settings) if push is None else None
+    if owned_client is not None:
+        push = owned_client
     assert push is not None
     own_engine = None
     if factory is None:
@@ -100,17 +100,10 @@ async def send_pending_chat_notifications(
                 sent += 1
     finally:
         try:
-            if owned_clients is not None:
-                for client in (
-                    owned_clients.gateway,
-                    owned_clients.email,
-                    owned_clients.sms,
-                    owned_clients.push,
-                    owned_clients.storage,
-                ):
-                    aclose = getattr(client, "aclose", None)
-                    if aclose is not None:
-                        await aclose()
+            if owned_client is not None:
+                aclose = getattr(owned_client, "aclose", None)
+                if aclose is not None:
+                    await aclose()
         finally:
             if own_engine is not None:
                 await own_engine.dispose()

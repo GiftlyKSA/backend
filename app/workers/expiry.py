@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
@@ -43,7 +43,7 @@ async def expire_stale(
     settings: Settings | None = None,
 ) -> tuple[int, int]:
     """Expire lapsed invoices and top-up intents; returns (invoices, intents) expired."""
-    settings = settings or get_settings()
+    settings = settings or get_worker_settings()
     own_engine = None
     if factory is None:
         own_engine = build_engine(settings)
@@ -111,7 +111,7 @@ async def _expire_topup_intent(session: AsyncSession, intent_id: uuid.UUID) -> b
 @broker.task(schedule=[{"cron": "*/10 * * * *"}])
 async def run_expire_stale() -> None:
     """Scheduled task: acquire a lock and expire lapsed invoices/intents."""
-    settings = get_settings()
+    settings = get_worker_settings()
     redis = build_redis(settings)
     try:
         # Lua compare-and-delete release (audit SEC-5): if this run outlives the TTL
@@ -127,7 +127,7 @@ async def run_expire_stale() -> None:
 @broker.task(schedule=[{"cron": "0 0 * * *", "cron_offset": timedelta(hours=3)}])
 async def cancel_overdue_orders() -> None:
     """Cancel unaccepted orders daily at Saudi midnight in bounded transactions."""
-    settings = get_settings()
+    settings = get_worker_settings()
     engine = build_engine(settings)
     factory = build_session_factory(engine)
     total = 0
@@ -159,7 +159,7 @@ async def purge_refresh_tokens(
     Returns:
         The number of rows deleted.
     """
-    settings = settings or get_settings()
+    settings = settings or get_worker_settings()
     own_engine = None
     if factory is None:
         own_engine = build_engine(settings)
@@ -185,7 +185,7 @@ async def purge_refresh_tokens(
 @broker.task(schedule=[{"cron": "0 * * * *"}])
 async def run_purge_refresh_tokens() -> None:
     """Nightly task: acquire a lock and purge long-expired refresh tokens."""
-    settings = get_settings()
+    settings = get_worker_settings()
     redis = build_redis(settings)
     try:
         async with redis_lock(redis, "job:purge_refresh_tokens", ttl_seconds=120):

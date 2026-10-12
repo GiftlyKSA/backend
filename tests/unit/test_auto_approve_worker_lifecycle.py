@@ -22,8 +22,8 @@ async def test_auto_approve_sweep_reuses_and_closes_clients_after_order_failure(
         push=SimpleNamespace(aclose=AsyncMock()),
         storage=SimpleNamespace(aclose=AsyncMock()),
     )
-    build_clients = Mock(return_value=clients)
-    monkeypatch.setattr(auto_approve, "build_clients", build_clients)
+    build_clients = Mock(return_value=clients.storage)
+    monkeypatch.setattr(auto_approve, "build_storage_client", build_clients)
     order_ids = [uuid4(), uuid4()]
     monkeypatch.setattr(
         OrderRepository,
@@ -51,5 +51,6 @@ async def test_auto_approve_sweep_reuses_and_closes_clients_after_order_failure(
     assert storage_clients == [clients.storage, clients.storage, clients.storage]
     service.auto_approve.assert_awaited()
     session.rollback.assert_awaited_once()
-    for client in (clients.gateway, clients.email, clients.sms, clients.push, clients.storage):
-        client.aclose.assert_awaited_once()
+    clients.storage.aclose.assert_awaited_once()
+    for client in (clients.gateway, clients.email, clients.sms, clients.push):
+        client.aclose.assert_not_awaited()

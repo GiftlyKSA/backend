@@ -3,7 +3,7 @@
 import logging
 from datetime import UTC, datetime
 
-from app.core.config import get_settings
+from app.core.config import get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
@@ -14,7 +14,7 @@ from app.workers.broker import broker
 @broker.task(schedule=[{"cron": "15 * * * *"}])
 async def purge_write_operations() -> None:
     """Expire completed results without removing unresolved payment protection."""
-    settings = get_settings()
+    settings = get_worker_settings()
     redis = build_redis(settings)
     engine = build_engine(settings)
     try:

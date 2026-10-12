@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from collections.abc import Iterator
@@ -14,6 +15,8 @@ from typing import Literal, cast
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+
+from app.core.logging import configure_logging
 
 _logger = logging.getLogger(__name__)
 Component = Literal["combined", "worker", "scheduler"]
@@ -27,6 +30,7 @@ def worker_commands(component: Component = "combined") -> tuple[list[str], ...]:
             "-m",
             "taskiq",
             "worker",
+            "--no-configure-logging",
             "app.workers.broker:broker",
             "--workers",
             "1",
@@ -39,7 +43,14 @@ def worker_commands(component: Component = "combined") -> tuple[list[str], ...]:
             "--wait-tasks-timeout",
             "30",
         ],
-        [sys.executable, "-m", "taskiq", "scheduler", "app.workers.scheduler:scheduler"],
+        [
+            sys.executable,
+            "-m",
+            "taskiq",
+            "scheduler",
+            "--no-configure-logging",
+            "app.workers.scheduler:scheduler",
+        ],
     )
     if component == "worker":
         return (commands[0],)
@@ -118,13 +129,18 @@ async def run(component: Component = "combined") -> int:
     try:
         commands = worker_commands(component)
         for command in commands:
-            processes.append(await asyncio.create_subprocess_exec(*command))
+            child_env = dict(os.environ)
+            child_env["GIFTLY_TASKIQ_COMPONENT"] = (
+                "scheduler" if "scheduler" in command else "worker"
+            )
+            processes.append(await asyncio.create_subprocess_exec(*command, env=child_env))
         server = _ManagedServer(
             uvicorn.Config(
                 health_app(processes, expected_processes=len(commands)),
                 host="0.0.0.0",  # noqa: S104 - dedicated PaaS liveness listener
                 port=3000,
                 access_log=False,
+                log_config=None,
             )
         )
         serving = asyncio.create_task(server.serve())
@@ -154,7 +170,7 @@ async def run(component: Component = "combined") -> int:
 
 def main() -> None:
     """Start the isolated worker after the entrypoint migration gate."""
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     parser = argparse.ArgumentParser(description="Run Giftly background services.")
     parser.add_argument(
         "--component", choices=("combined", "worker", "scheduler"), default="combined"

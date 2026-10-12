@@ -57,3 +57,13 @@ confirmed queued job execution. The initial worker environment mismatch was reso
 by restarting after its build. Both apps retain development mode and shared API
 DB/Redis settings. Live vendor delivery and sustained capacity remain unverified.
 See documentation.md for app URLs, overrides and singleton scheduler requirements.
+
+## Configuration/logging follow-up - 2026-10-12
+
+Per-process validation and bounded scrubbed error formatting are implemented; release
+verification is in progress. Scheduler does not require API/worker secrets; worker requires
+only its current job dependencies. API interlocks remain unchanged. External error-alert
+service/destination setup is pending selection; no Slack/Telegram/ClickUp messages sent.
+
+Configuration/logging local verification:1,417tests passed,zero skips; both hook stages
+and strict typing passed. No Docker,production data changes or external alerts were used.

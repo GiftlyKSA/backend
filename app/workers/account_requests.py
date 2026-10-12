@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.integrations.email.base import EmailClient
-from app.integrations.factory import build_clients
+from app.integrations.factory import build_email_client
 from app.models.account_change import AccountRequestEmail
 from app.repositories.account_change_repository import AccountChangeRepository
 from app.workers.broker import broker
@@ -57,10 +57,10 @@ async def process_account_requests(
     settings: Settings | None = None,
 ) -> int:
     """Advance up to 100 recovery deadlines and send a bounded page of leased emails."""
-    settings = settings or get_settings()
-    clients = build_clients(settings) if email is None else None
-    if clients is not None:
-        email = clients.email
+    settings = settings or get_worker_settings()
+    owned_client = build_email_client(settings) if email is None else None
+    if owned_client is not None:
+        email = owned_client
     assert email is not None
     engine = None
     if factory is None:
@@ -85,17 +85,10 @@ async def process_account_requests(
 
     finally:
         try:
-            if clients is not None:
-                for client in (
-                    clients.gateway,
-                    clients.email,
-                    clients.sms,
-                    clients.push,
-                    clients.storage,
-                ):
-                    close = getattr(client, "aclose", None)
-                    if close is not None:
-                        await close()
+            if owned_client is not None:
+                close = getattr(owned_client, "aclose", None)
+                if close is not None:
+                    await close()
         finally:
             if engine is not None:
                 await engine.dispose()

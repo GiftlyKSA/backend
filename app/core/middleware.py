@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import logging
 import re
+import traceback
 import uuid
 from contextvars import ContextVar
+from pathlib import Path
 from time import perf_counter
 
 from fastapi import FastAPI, Request
@@ -164,9 +166,14 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 def unexpected_error_response(request_id: str, exc: Exception) -> JSONResponse:
     """Report only safe failure metadata and render the stable internal-error envelope."""
+    frames = traceback.extract_tb(exc.__traceback__, limit=-1)
+    fields = {"exception_type": type(exc).__name__}
+    if frames:
+        last = frames[-1]
+        fields["exception_location"] = f"{Path(last.filename).name}:{last.lineno}:{last.name}"
     _logger.error(
-        "Unhandled error",
-        extra={"request_id": request_id, "extra_fields": {"exception_type": type(exc).__name__}},
+        "The request failed unexpectedly; use the request ID to investigate.",
+        extra={"request_id": request_id, "extra_fields": fields},
     )
     return JSONResponse(
         status_code=500,

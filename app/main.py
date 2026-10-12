@@ -9,6 +9,7 @@ unrestricted only in development; dev-only routes are registered only in develop
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -16,7 +17,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, WorkerSettings, get_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.jwt import JwtError, decode_access_token
 from app.core.logging import configure_logging
@@ -85,8 +86,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and return the configured FastAPI application."""
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     settings = settings or get_settings()
 
+    if isinstance(settings, WorkerSettings):
+        raise ValueError("API startup requires API settings.")
     configure_logging(settings.LOG_LEVEL)
 
     app = FastAPI(

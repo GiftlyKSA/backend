@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_worker_settings
 from app.core.crypto import build_aad, build_cipher
 from app.core.db import build_engine, build_session_factory
 from app.core.redis import build_redis
@@ -37,7 +37,7 @@ async def send_pending_chat_live_deliveries(
     """Claim at most twenty rows per tick, publishing within each fenced lease."""
     if not 1 <= limit <= 100:
         raise ValueError("Live delivery limit must be between one and one hundred.")
-    settings = settings or get_settings()
+    settings = settings or get_worker_settings()
     own_redis = redis is None
     redis = redis or build_redis(settings)
     own_engine = None

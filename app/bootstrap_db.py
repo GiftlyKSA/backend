@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+
+from app.core.logging import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -29,5 +32,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     main()

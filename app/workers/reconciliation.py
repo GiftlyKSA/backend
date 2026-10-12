@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from app.core.config import get_settings
+from app.core.config import get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.redis import build_redis
@@ -25,7 +25,7 @@ _LOCK_TTL_SECONDS = 600
 
 async def run_reconciliation() -> ReconcileReport:
     """Run one reconciliation pass, logging drift; safe to call directly in tests."""
-    settings = get_settings()
+    settings = get_worker_settings()
     engine = build_engine(settings)
     factory = build_session_factory(engine)
     try:
@@ -49,7 +49,7 @@ async def run_reconciliation() -> ReconcileReport:
 @broker.task(schedule=[{"cron": "0 3 * * *"}])
 async def reconcile_ledger() -> None:
     """Nightly task: acquire a lock, reconcile, and page on drift."""
-    settings = get_settings()
+    settings = get_worker_settings()
     redis = build_redis(settings)
     try:
         # Lua compare-and-delete release (audit SEC-5): if this run outlives the TTL

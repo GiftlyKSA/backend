@@ -7,11 +7,12 @@ import os
 import sys
 
 from app.bootstrap_db import upgrade_database
+from app.core.logging import configure_logging
 
 
 def main() -> None:
     """Upgrade the database, then replace this process with its configured service."""
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     try:
         upgrade_database()
     except Exception:
