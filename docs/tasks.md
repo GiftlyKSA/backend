@@ -36,7 +36,7 @@ Implemented backend features must not be reopened solely because mobile wiring i
 
 | ID | Task | Description | Status | Urgency | Created | Note |
 | --- | --- | --- | --- | --- | --- | --- |
-| FIN-POLICY | Final closure policy | Resolve obligations,fund-return workflow and legal retention before completion | Product/legal decision required | High7 | 2026-10-11 | Admin review holds requests; no automatic completion |
+| FIN-POLICY | Final closure policy | Resolve obligations, fund-return workflow and legal retention before completion | Postponed by user (2026-10-13) | High7 | 2026-10-11 | Existing 14-day recovery/admin-review hold remains; no automatic completion or refund |
 | MOB-12 | Optional features | Appointments,bank profile,annual recurrence,statement PDF,financial switches | Deferred by user | Medium4 | 2026-10-07 | Do not expose fabricated endpoints |
 | SEC-19 | Published test secrets | Reject published defaults in production | Excluded by user | High7 | 2026-10-04 | Protect runtime secrets operationally |
 | PERF-09 | Audit retention | Growth monitoring/archival | Archival excluded for dev | Medium5 | 2026-10-04 | No automatic history deletion |
