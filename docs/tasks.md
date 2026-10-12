@@ -8,15 +8,18 @@ external/mobile verification. Scores indicate urgency, not CVSS.
 
 | ID | Task | Description | Status | Urgency | Created | Note |
 | --- | --- | --- | --- | --- | --- | --- |
-| MOB-05 | Courier reports | Settled payout including reimbursement, charts/comparison and optimistic targets | Implemented; release verification underway | High7 | 2026-10-07 | Riyadh/Sunday weeks, maximum366days; no unsupported financial switch |
-| MOB-06 | Inbox and timeline | Owned paginated notifications/read actions and actual order transitions | Implemented; release verification underway | High7 | 2026-10-07 | Older orders explicitly incomplete; foreign access denied |
+| MOB-05 | Courier reports | Settled payout including reimbursement, charts/comparison and optimistic targets | Deployed; authenticated empty-ledger/settings/role checks passed | High7 | 2026-10-07 | Riyadh/Sunday weeks, maximum366days; no unsupported financial switch |
+| MOB-06 | Inbox and timeline | Owned paginated notifications/read actions and actual order transitions | Deployed; ownership/read/pagination checks passed | High7 | 2026-10-07 | Older orders explicitly incomplete; foreign access denied |
 | MOB-07 | Occasion reminders | Opt-in one-off09:00Riyadh reminder and bounded durable push retries | Implemented; worker running, vendor delivery unverified | Medium5 | 2026-10-07 | Annual recurrence deferred; live vendor delivery unverified |
-| MOB-08 | Courier avatar | Existing private upload/confirm plus attach/remove/profile read | Implemented; release verification underway | Medium5 | 2026-10-07 | Customers excluded; owned decodedJPEG/PNG only |
-| MOB-09 | Phone change | Current-phone reauth,new-number verification and credential revocation | Implemented; release verification underway | High8 | 2026-10-07 | Scoped60secondOTP; single-use300secondproof; fresh login required |
+| MOB-08 | Courier avatar | Existing private upload/confirm plus attach/remove/profile read | Partial live verification; dev fake blocks real image flow | Medium5 | 2026-10-07 | Customers excluded; owned decodedJPEG/PNG only |
+| MOB-09 | Phone change | Current-phone reauth,new-number verification and credential revocation | Deployed; authenticated proof/change/revocation checks passed | High8 | 2026-10-07 | Scoped60secondOTP; single-use300secondproof; fresh login required |
 | MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker running, vendor delivery unverified | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
-| MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Implemented; release verification underway | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
+| MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Deployed; ownership/cursor/customer-only checks passed | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
 | OPS-01 | Isolated worker | Separate worker/scheduler Dockerfiles,single scheduler,two concurrent tasks | Deployed; health and queue execution verified | High7 | 2026-10-04 | Riyadh/shared DBRedis; independent apps; keep one scheduler |
-| UI-01 | Mobile integration | Wire published capabilities using exact contracts and chat handoff | Mobile work pending | High7 | 2026-10-11 | No mobile code changed; capability-gate until public deployment verified |
+| UI-01 | Mobile integration | Add courier-home earnings, customer q search and actual timeline to existing integration | UI-agent implementation pending; source audit completed | High7 | 2026-10-11 | No mobile code changed; real avatar upload remains unverified |
+| UI-02 | Courier home earnings | Wire week/month cards to existing earnings reports; reuse helpers, never wallet balance. | Mobile work pending | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
+| UI-03 | Customer order search | Add bounded q search; preserve date/status filters and reset cursors. | Mobile work pending | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
+| UI-04 | Historical order timeline | Load participant timeline with pagination and history_complete warning. | Mobile work pending | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
 
 ## Deferred, accepted or externally unverified
 
@@ -62,8 +65,8 @@ See documentation.md for app URLs, overrides and singleton scheduler requirement
 
 Per-process validation and bounded scrubbed error formatting are implemented; release
 verification is in progress. Scheduler does not require API/worker secrets; worker requires
-only its current job dependencies. API interlocks remain unchanged. External error-alert
-service/destination setup is pending selection; no Slack/Telegram/ClickUp messages sent.
+only its current job dependencies. API interlocks remain unchanged. External error alerts
+were deferred by the user; no Slack/Telegram/ClickUp messages sent.
 
 Configuration/logging local verification:1,417tests passed,zero skips; both hook stages
 and strict typing passed. No Docker,production data changes or external alerts were used.
@@ -74,3 +77,26 @@ Production empty-secret guard follow-up is under final verification.
 
 Final configuration/logging verification:1,419tests passed,no skips,89.49%coverage.
 Empty production secret regression fixed; API/worker fail closed on blank credentials.
+
+
+## Authenticated deployment checks - 2026-10-12
+
+User approved isolated fixtures and backend verification/UI handoff only; mobile source
+was not edited. Deployed backend.giftly.sa matched published mobile OpenAPI on 13 feature
+paths. The initial run recorded 70 HTTP requests, including expected permission and
+validation failures, with no 5xx. An extra cleanup login returned 429; limits stayed intact.
+
+Guarded cleanup soft-deleted three test accounts, cancelled three test orders and removed
+test targets/upload grants. All test wallets had zero balances, holds and ledger entries.
+Protected message, timeline and audit history was retained. Existing records were untouched.
+
+Mobile already wires reports/targets, notifications, courier avatar and phone change.
+Outstanding integration work is listed as UI-02 through UI-04. Existing mobile
+contract/device tests (105) and report tests (18), plus TypeScript checks, passed.
+No physical-device verification or mobile edit/push is claimed.
+
+Remaining release checks: real decoded avatar upload/confirm/attach/read, nonzero/reversed
+earnings and older historical timelines. Development fake storage returns loopback URLs
+and cannot supply decoded image bytes. No security check was weakened. Provider testing
+remains excluded. CranL container command output was unavailable; a brief management
+transport 502 was separate from API results.

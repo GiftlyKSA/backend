@@ -2,7 +2,8 @@
 
 ## Mobile read additions — 2026-10-07
 
-Release verification passed; PaaS deployment is UNCONFIRMED. These operations
+The inspected feature routes are deployed as of 2026-10-12. Authenticated checks and
+remaining limits are recorded in tasks.md. These operations
 require Bearer authentication and current customer/courier eligibility. They do not
 expose administrative, development or provider operations.
 
@@ -757,7 +758,7 @@ Media sends use the same optional retry UUID, scoped to conversation and sender.
 - **Before:** OS push token obtained after user permission.
 - **Then / dependent API:** Push delivery for order and chat notices; delete on sign-out.
 
-**When/how:** Register or refresh the current device's push token using `IOS` or `ANDROID`. The server associates that token with the authenticated account and can move a handed-down device token away from a previous owner. Register again after token rotation or a successful new login. Each account can register at most 10 device tokens. Refreshing its existing token remains allowed at the quota; adding another returns `409 DEVICE_LIMIT_REACHED`. Delete an owned registration before adding another. Do not confuse this with an in-app notification-list API; the backend has no endpoint to fetch a notification feed.
+**When/how:** Register or refresh the current device's push token using `IOS` or `ANDROID`. The server associates that token with the authenticated account and can move a handed-down device token away from a previous owner. Register again after token rotation or a successful new login. Each account can register at most 10 device tokens. Refreshing its existing token remains allowed at the quota; adding another returns `409 DEVICE_LIMIT_REACHED`. Delete an owned registration before adding another. Do not confuse this with an in-app notification-list API; use GET /api/notifications for the separate owned notification feed.
 
 ### DELETE /api/devices
 
@@ -973,17 +974,17 @@ The prototype's labels and local-device data are not server contracts. The table
 | Phone login `/login`, OTP `/verify-otp` | `send-otp`, `verify-otp`, `refresh` | Demo phone-role fixtures and permissive demo OTP are not backend rules. |
 | Customer registration `/register-customer` | `register`, `users/me` | Backend supports courier registration too, but mobile has no courier onboarding flow. Name length/age-16 rules from prototype are not enforced here. |
 | Help `/help` | None | Static app content; no help/contact API. |
-| Customer Home `/home` | `users/me`, `wallets/me`, `orders`, `conversations` | Occasions CRUD is available; no notification-feed or aggregated home endpoint. |
+| Customer Home `/home` | `users/me`, `wallets/me`, `orders`, `conversations` | Occasions CRUD and notifications/unread-count are available; no aggregated home endpoint. |
 | Create order `/request` | `media/upload-urls`, signed PUT, `media/confirm`, `orders` | Backend allows **0–3** photos, not prototype's four; no morning/evening period, recipient phone, or returned image URLs. |
 | Waiting `/waiting/[id]` | `orders/{id}` | No separate push/poll status stream; refresh the order. |
-| Customer/Courier Orders `/orders` | `orders`; courier `orders/available` | No customer text/order-number search; no order number in responses. Courier should not show a search box. |
-| Order detail `/order/[id]` | `orders/{id}`, active invoice, participant, ratings, chat | No timeline events or media/proof download/list API in the returned contract. |
+| Customer/Courier Orders `/orders` | `orders`; courier `orders/available` | Customer q supports description-prefix/exactUUID search; no order number exists. Courier search remains excluded. |
+| Order detail `/order/[id]` | `orders/{id}`, active invoice, participant, ratings, chat | Read actual history through orders/{id}/timeline; read authorized media through orders/{id}/media. |
 | Chat `/chat/[id]` | `conversations`, messages, read, WebSocket | Conversation ID comes from inbox; WebSocket has no durable replay, so use REST history after reconnect. |
 | Invoice `/invoice/[id]` | `orders/{id}/invoice`, `invoices/{id}`, promo preview/apply/remove; courier create/cancel; customer pay | Pay the returned current invoice ID after promo changes. No saved-card API. Production payment is disabled. |
-| Customer Calendar `/calendar` | `/api/occasions` CRUD | Customer-owned special dates; stored reminder preferences only, no automatic reminders or annual recurrence. |
+| Customer Calendar `/calendar` | `/api/occasions` CRUD | Customer-owned dates support opt-in one-off reminders; annual recurrence remains deferred. |
 | Courier Calendar `/calendar` | Assigned orders support inclusive delivery-date ranges for day/week/month views | No appointment CRUD or separate appointments API. |
 | Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
-| Courier Reports `/reports` and settings sheet | Wallet transactions can be read as raw entries | No earnings aggregates, comparison, chart series, target settings, or financial-notification preference API. |
+| Courier Reports `/reports` and settings sheet | couriers/me/earnings and couriers/me/report-settings | Settled proceeds, comparisons, buckets and versioned targets are available; financial-notification settings remain deferred. |
 | Courier Statement `/statement` | Wallet transactions, cursor-paged | No date-range filtering, statement totals, or downloadable statement API. |
 | Profile `/profile` | `users/me`, patch, courier resubmit, logout, device registration | Date of birth and gender are writable and returned by `users/me`; theme stays local; dedicated courier-avatar and phone-change APIs are described below. |
 
@@ -1348,3 +1349,20 @@ automatic/custom plans; forced generic plans may owner-scan. No unmeasured searc
 Independent courier appointments,saved bank profiles,annual recurrence,statement PDF
 and financial-notification settings remain deferred by user. Reuse existing invoice
 list/history/PDF,wallet statement,order media and owned payment-session operations.
+
+
+## Mobile release verification - 2026-10-12
+
+Authenticated customer/courier checks confirmed reports/targets, owned notification
+pagination and read operations, participant timeline pagination, customer q search and
+phone change with old credential revocation. Deployed and published contracts matched
+on 13 inspected feature paths.
+
+Avatar role/type/removal checks passed, but full image confirmation and attachment remain
+unverified. Deployed development fake storage returns localhost URLs and cannot supply
+actual uploaded bytes for decoder checks. Clients must not bypass HTTPS, ownership or
+image validation to use these URLs. See tasks.md for remaining release checks.
+
+Existing mobile source already wires reports, notifications, avatar and phone flows.
+Remaining UI work: courier-home earnings, customer q search and actual historical timeline
+events. Integration prompts are delivered in chat only.

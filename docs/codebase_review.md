@@ -347,3 +347,28 @@ PostgreSQL16 database with Redis7/native media. Empty/whitespace production cred
 are rejected in both shared required-field validation and provider secret construction.
 No schema or mobile contract change. External alerts/vendors/production-mode rollout
 remain unverified; named backend production app currently uses development mode.
+
+
+## Authenticated release verification - 2026-10-12
+
+Deployed/public and published contracts matched on 13 inspected feature paths. The initial
+70 recorded HTTP requests verified report/settings role checks and version conflicts,
+notification ownership/read idempotency/cursor pages, participant timeline pagination,
+customer prefix/UUID search and phone change with access/refresh revocation and preserved
+user identity on new login. No 5xx was recorded.
+
+Avatar role/type/ownership/removal checks passed; confirmation returned 400 with deployed
+development fake storage. Real upload/decoding/attachment/read remains unverified.
+Nonzero/reversed earnings, older timeline completeness and physical UI behavior were not
+tested remotely. Earlier full local application tests are separate evidence.
+
+Confirmed integration gaps: UI-02 (home earnings), UI-03 (customer q search), UI-04 (actual
+history). These reuse published endpoints. Read-only mobile review and existing focused
+tests (105 contract/device + 18 report tests) and TypeScript checks passed; no mobile edits.
+
+An initial cleanup transaction hit immutable-message protection and rolled back. Final
+guarded cleanup retained protected history, cancelled three test orders, soft-deleted
+three test accounts and removed test targets/upload grants. Test wallets had zero
+balances, holds and ledger entries. Existing users and provider modes/limits were unchanged.
+An extra cleanup login returned 429. CranL command output was unavailable, and a brief
+management transport 502 was not an API 5xx.
