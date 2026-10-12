@@ -1,8 +1,20 @@
 # Giftly task tracker
 
-**Created:**2026-10-11 · **Updated:**2026-10-12.
+**Created:**2026-10-11 · **Updated:**2026-10-13.
 Source: codebase_review.md. Status distinguishes source, publication, deployment and
 external/mobile verification. Scores indicate urgency, not CVSS.
+
+## Work ownership - updated 2026-10-13
+
+This chat handles backend implementation, contracts, documentation and backend release
+verification only. Mobile implementation belongs to the separate mobile chat. Do not edit
+the mobile repository here. UI-01 through UI-04 remain pending confirmation from that chat;
+the integration prompt has been delivered, but mobile completion is not verified.
+
+Backend authenticated checks completed on 2026-10-12. Remaining backend verification:
+real-storage courier avatar upload/confirm/attach/read, nonzero/reversed earnings and older
+timeline completeness. Live vendor checks remain excluded. Do not reopen implemented
+backend features solely because mobile wiring is pending.
 
 ## Current release
 
@@ -16,10 +28,10 @@ external/mobile verification. Scores indicate urgency, not CVSS.
 | MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker running, vendor delivery unverified | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
 | MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Deployed; ownership/cursor/customer-only checks passed | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
 | OPS-01 | Isolated worker | Separate worker/scheduler Dockerfiles,single scheduler,two concurrent tasks | Deployed; health and queue execution verified | High7 | 2026-10-04 | Riyadh/shared DBRedis; independent apps; keep one scheduler |
-| UI-01 | Mobile integration | Add courier-home earnings, customer q search and actual timeline to existing integration | UI-agent implementation pending; source audit completed | High7 | 2026-10-11 | No mobile code changed; real avatar upload remains unverified |
-| UI-02 | Courier home earnings | Wire week/month cards to existing earnings reports; reuse helpers, never wallet balance. | Mobile work pending | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
-| UI-03 | Customer order search | Add bounded q search; preserve date/status filters and reset cursors. | Mobile work pending | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
-| UI-04 | Historical order timeline | Load participant timeline with pagination and history_complete warning. | Mobile work pending | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
+| UI-01 | Mobile integration | Add courier-home earnings, customer q search and actual timeline to existing integration | Handed off to separate mobile chat; completion unverified | High7 | 2026-10-11 | No mobile code changed; real avatar upload remains unverified |
+| UI-02 | Courier home earnings | Wire week/month cards to existing earnings reports; reuse helpers, never wallet balance. | Separate mobile chat; completion unverified | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
+| UI-03 | Customer order search | Add bounded q search; preserve date/status filters and reset cursors. | Separate mobile chat; completion unverified | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
+| UI-04 | Historical order timeline | Load participant timeline with pagination and history_complete warning. | Separate mobile chat; completion unverified | Medium5 | 2026-10-12 | Reuse deployed endpoint; chat handoff only |
 
 ## Deferred, accepted or externally unverified
 
