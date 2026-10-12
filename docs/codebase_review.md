@@ -334,3 +334,16 @@ Both hook stages and strict mypy260modules passed. Initial combined run exposed 
 renamed test seam and accumulated historical fixture records; the seam was updated and
 verification rerun against a freshly migrated disposable DB without production writes.
 Source publication and CranL verification are separate from these local results.
+
+CranL939e3f3 rollout verified: worker/scheduler builds succeeded; API and both background
+health endpoints returned200. Scheduler kept6 settings after removing74, worker removed25
+API-only settings, both restarted and continued scheduling/queue execution. New scrubbed
+INFO logs observed; platform classification of uvicorn.error INFO records is not an error.
+Final production guard follow-up rejects empty/whitespace SecretStr credentials, which
+previously bypassed the generic required-field check; final regression/coverage pending.
+
+Final release verification:1,419tests passed,no skips,89.49%coverage on a fresh disposable
+PostgreSQL16 database with Redis7/native media. Empty/whitespace production credentials
+are rejected in both shared required-field validation and provider secret construction.
+No schema or mobile contract change. External alerts/vendors/production-mode rollout
+remain unverified; named backend production app currently uses development mode.

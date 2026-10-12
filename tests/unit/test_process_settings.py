@@ -124,3 +124,11 @@ def test_scheduler_component_cannot_weaken_api_getter(monkeypatch):
             get_settings()
     finally:
         get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_production_worker_rejects_empty_secret_credentials(value):
+    values = worker_values()
+    values["SNDR_API_KEY"] = value
+    with pytest.raises(ValidationError, match="SNDR_API_KEY"):
+        WorkerSettings(_env_file=None, **values)

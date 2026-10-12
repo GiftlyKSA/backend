@@ -75,7 +75,7 @@ def _build_production_clients(settings: Settings) -> Clients:
 
 def _required_secret(value: SecretStr | None, name: str) -> str:
     """Return a production secret or fail closed if boot validation regresses."""
-    if value is None:
+    if value is None or not value.get_secret_value().strip():
         raise RuntimeError(f"{name} is required in production.")
     return value.get_secret_value()
 

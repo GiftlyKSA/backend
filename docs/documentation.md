@@ -1172,3 +1172,13 @@ No schema migration or mobile contract changes are needed. Rollback to the previ
 requires restoring its shared settings requirements before restart; retain runtime secrets
 securely during rollout. Production-mode validation tests use dummy credentials and prove
 configuration behavior, not vendor acceptance or production deployment.
+
+CranL rollout of939e3f3 completed for worker/scheduler and all three app health checks
+returned200. Removed74 copied scheduler variables, leaving ENVIRONMENT,DATABASE_URL,
+REDIS_URL,LOG_LEVEL,DEBUG and PORT. Removed25 API-only worker variables; encrypted data,
+shared DB/Redis, job integrations and business rules remain. Restarted both successfully;
+logs show the new INFO JSON formatter, scheduler startup and repeated queue execution.
+No environment mode or API credentials changed. These apps still run development mode;
+production configuration behavior was tested with dummy settings, not real vendors.
+CranL may label INFO lines as errors because the logger is named uvicorn.error; collectors
+must inspect the actual record severity instead of searching the logger name.

@@ -393,7 +393,10 @@ class Settings(BaseSettings):
     def _require_production_fields(self, *names: str) -> None:
         """Reject an empty production integration setting."""
         for name in names:
-            if getattr(self, name) in (None, ""):
+            value = getattr(self, name)
+            if isinstance(value, SecretStr):
+                value = value.get_secret_value()
+            if value is None or (isinstance(value, str) and not value.strip()):
                 raise ValueError(f"{name} is required in production.")
 
 
