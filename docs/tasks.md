@@ -31,10 +31,10 @@ Implemented backend features must not be reopened solely because mobile wiring i
 | UI-02 | Courier home earnings | Wire week/month cards to existing earnings reports; reuse helpers, never wallet balance. | Completed in mobile chat (user-reported 5501a79) | Medium5 | 2026-10-12 | User report 2026-10-13; no mobile edits in this chat |
 | UI-03 | Customer order search | Add bounded q search; preserve date/status filters and reset cursors. | Completed in mobile chat (user-reported 5501a79) | Medium5 | 2026-10-12 | User report 2026-10-13; no mobile edits in this chat |
 | UI-04 | Historical order timeline | Load participant timeline with pagination and history_complete warning. | Completed in mobile chat (user-reported 5501a79) | Medium5 | 2026-10-12 | User report 2026-10-13; no mobile edits in this chat |
-| MOB-13 | Annual recurrence | Opt-in annual calendar feed and version-fenced reminders; leap years only | Implemented; release in progress | Medium5 | 2026-10-13 | Existing one-off CRUD preserved |
-| MOB-14 | Statement PDF | Complete owned informational snapshot with bounded generation | Implemented; release in progress | Medium5 | 2026-10-13 | No legal/earnings document claim |
-| PUSH-01 | Expo delivery | Durable tickets/receipts and registration-fenced invalid-token cleanup | Implemented; release in progress | High7 | 2026-10-13 | Runtime Expo/EAS setup required |
-| STORE-01 | Private S3 selection | Public HTTPS real storage independent of other providers | Implemented; keys deferred by user | High7 | 2026-10-13 | Do not weaken mobile HTTPS/image validation |
+| MOB-13 | Annual recurrence | Opt-in annual calendar feed and version-fenced reminders; leap years only | Deployed; runtime contract confirmed | Medium5 | 2026-10-13 | Existing one-off CRUD preserved |
+| MOB-14 | Statement PDF | Complete owned informational snapshot with bounded generation | Deployed; runtime contract confirmed | Medium5 | 2026-10-13 | No legal/earnings document claim |
+| PUSH-01 | Expo delivery | Durable tickets/receipts and registration-fenced invalid-token cleanup | Adapter deployed; Expo/EAS setup pending | High7 | 2026-10-13 | Runtime Expo/EAS setup required |
+| STORE-01 | Private S3 selection | Public HTTPS real storage independent of other providers | Code deployed; keys deferred by user | High7 | 2026-10-13 | Do not weaken mobile HTTPS/image validation |
 
 ## Deferred work and accepted decisions
 

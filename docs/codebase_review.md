@@ -409,3 +409,12 @@ bucket CORS remain unverified. Receipt acceptance does not establish device deli
 Configuration default auto remains fake in development; do not enable real Expo/S3 without
 their explicit runtime setup. The legacy API SMS adapter has separate Supabase requirements.
 These operational limits are recorded here, not reopened as verification-only task rows.
+
+
+Release publication: source master e7a756c28657f13625ec68902bb06ed059667436 confirmed remotely.
+All three CranL builds succeeded; API worker startup logs completed and all three health
+checks passed. Both public hostnames expose the new occurrence/PDF routes and recurrence
+request field. New route contracts exactly match published OpenAPI and unauthenticated
+requests return401 UNAUTHORIZED. Read-only Alembic query confirmed0034_expo_push_receipts.
+This establishes runtime route/schema deployment, not authenticated end-to-end provider/
+avatar execution. No remote fixture/provider-setting writes were made.

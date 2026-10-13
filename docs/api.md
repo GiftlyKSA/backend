@@ -1517,3 +1517,9 @@ configuration validation, not proof of DNS reachability or valid bucket credenti
 Fake storage remains a local/test double with auto in non-production. Hosted mobile use
 must explicitly select s3 with real keys; do not use or rewrite localhost fake URLs.
 Storage keys are opaque server-issued references, never public access URLs.
+
+
+Deployment evidence (2026-10-13): both backend.giftly.sa and its CranL hostname expose
+the occurrence/PDF additions matching the published contract. Authentication gates return401
+without credentials; Alembic0034 is applied. Real storage and Expo activation remain subject
+to the explicit runtime configuration above. No live vendor success claim is made.
