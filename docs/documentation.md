@@ -1053,7 +1053,7 @@ not Docker or shared production data. The checked-in query-plan harness uses onl
 session-local temporary tables. External vendor acceptance, production capacity,
 authenticated remote CI and mobile integration are separate verification gates.
 
-## Separate worker and scheduler images — 2026-10-12
+## Separate worker and scheduler images â€” 2026-10-12
 
 Use Dockerfile for API,Dockerfile.worker for queued jobs,Dockerfile.scheduler for
 scheduling. Build context is the repository root for every image. Each uses the same
@@ -1081,7 +1081,7 @@ CI builds and checks all three images,including non-root execution and packaged 
 verification. Docker was not started locally; image/runtime execution remains a CI or
 authorized PaaS verification step.
 
-### Strict API/background separation — 2026-10-12
+### Strict API/background separation â€” 2026-10-12
 
 The API entrypoint no longer changes its default service based on PROCESS_ROLE.
 Dockerfile starts only HTTP/WebSocket Gunicorn workers; neither FastAPI startup nor

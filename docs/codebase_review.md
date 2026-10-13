@@ -277,7 +277,7 @@ The inspected latest startup log window contained no errors. This verifies API
 rollout, not vendor delivery, background workers, authenticated financial actions
 or a new complete security audit. No application code changed in this recovery.
 
-## Split-image follow-up — 2026-10-12
+## Split-image follow-up â€” 2026-10-12
 
 Dockerfile.worker and Dockerfile.scheduler select only their respective Taskiq component.
 Reviewed explicit-command precedence,selected-child liveness,signal cleanup,non-root
@@ -290,7 +290,7 @@ there because Docker was not run locally. No API/schema/mobile changes or new co
 security defect. Stop old scheduling before enabling separate scheduler; this requires
 deployment coordination to avoid overlap,not a client change.
 
-## API-only startup — 2026-10-12
+## API-only startup â€” 2026-10-12
 
 Removed the PROCESS_ROLE fallback that could turn the default API image into the combined
 worker/scheduler runtime. Removed the unused setting/environment template entries.
@@ -427,7 +427,7 @@ passed; fresh final PostgreSQL/Redis full suite1508passed,89.46%coverage,zero sk
 unchanged upstream deprecation warning. This follow-up does not change endpoint schemas.
 
 
-## Contract recheck — 2026-10-13
+## Contract recheck â€” 2026-10-13
 
 | ID | Category / score | Evidence and impact | Minimal fix / status | Verification |
 | --- | --- | --- | --- | --- |
@@ -450,3 +450,14 @@ Expo/EAS credentials and real provider delivery remain unverified/deferred. Inde
 appointments remain excluded; annual leap-years-only and informational PDF policies were
 already approved. No migration is needed for this follow-up; rollback is a code/image
 rollback, retaining the existing0033/0034 schema and device/occasion data.
+
+
+Follow-up runtime evidence: dadc4211ad3b64f7a0e6b24c81ed9036bf1fcbbe is pushed/master
+(remote SHA confirmed). API i_-ntQ4wv1Yr3rvwXCsDN, worker sHTokVGPI_0Dojtxv8QaE and
+scheduler hn_CAl4yV2_hiME2FNrtL builds succeeded. Three API startup-complete records,
+readiness200/PostgreSQLRedisok; both public OpenAPI occurrence/PDF operations exactly match
+the published specification, including literal-description/export-budget details.
+Worker/scheduler health200. This confirms source/runtime contract rollout; authenticated
+live rendering and real Expo delivery were not exercised. Existing401 gates remain intact.
+GitHub still reports one moderate dependency alert; alert reconciliation was excluded by
+the user and is not established by the clean locked production-dependency audit.
