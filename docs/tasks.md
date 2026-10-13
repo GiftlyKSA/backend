@@ -22,7 +22,7 @@ Implemented backend features must not be reopened solely because mobile wiring i
 | --- | --- | --- | --- | --- | --- | --- |
 | MOB-05 | Courier reports | Settled payout including reimbursement, charts/comparison and optimistic targets | Deployed; authenticated empty-ledger/settings/role checks passed | High7 | 2026-10-07 | Riyadh/Sunday weeks, maximum366days; no unsupported financial switch |
 | MOB-06 | Inbox and timeline | Owned paginated notifications/read actions and actual order transitions | Deployed; ownership/read/pagination checks passed | High7 | 2026-10-07 | Older orders explicitly incomplete; foreign access denied |
-| MOB-07 | Occasion reminders | Opt-in one-off09:00Riyadh reminder and bounded durable push retries | Implemented; worker running | Medium5 | 2026-10-07 | Annual recurrence deferred; provider limits documented in review |
+| MOB-07 | Occasion reminders | Opt-in one-off09:00Riyadh reminder and bounded durable push retries | Implemented; worker running | Medium5 | 2026-10-07 | Annual recurrence deployed; provider limits documented in review |
 | MOB-09 | Phone change | Current-phone reauth,new-number verification and credential revocation | Deployed; authenticated proof/change/revocation checks passed | High8 | 2026-10-07 | Scoped60secondOTP; single-use300secondproof; fresh login required |
 | MOB-10 | Account requests |14-day recovery,then admin review,durable detailed email | Implemented; worker running | High8 | 2026-10-07 | No automatic permanent erasure/refund; retention/completion policy unresolved |
 | MOB-11 | Own-order search | Literal bounded description prefix/exactUUID,existing status/date/cursor | Deployed; ownership/cursor/customer-only checks passed | Medium5 | 2026-10-07 | Index/custom/automatic/generic/write measurements recorded |
@@ -47,3 +47,8 @@ Implemented backend features must not be reopened solely because mobile wiring i
 | SEC-16/17 | Admin record integrity | Unrestricted authenticated financial/audit CRUD | Accepted risk | High9 | 2026-10-04 | User explicitly retained unrestricted CRUD |
 
 Independent courier appointments are excluded by the user (2026-10-13); assigned-order calendar remains.
+
+
+2026-10-13 contract follow-up: compatible event_type push alias and complete literal PDF
+text are implemented and locally verified. Existing recurrence/PDF routes are deployed;
+the latest follow-up rollout is checked separately. No appointments were added.

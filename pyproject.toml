@@ -27,6 +27,8 @@ dependencies = [
     "python-multipart>=0.0.20",
     "reportlab>=4.4,<5",
     "pillow-heif==1.8.0",
+    "arabic-reshaper>=3,<4",
+    "python-bidi>=0.6,<1",
 ]
 
 [project.optional-dependencies]

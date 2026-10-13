@@ -262,22 +262,30 @@ def test_pdf_all_entries_literal_descriptions_and_references_fit_pages(monkeypat
     assert any(text == "Reversed Debits: 0.00 SAR" for _, _, _, text in recorded)
 
 
-def test_pdf_non_english_description_is_explicitly_omitted(monkeypatch):
+def test_pdf_preserves_complete_literal_descriptions(monkeypatch):
     from reportlab.pdfgen.canvas import Canvas
 
     recorded = []
+    positioned = []
     original = Canvas.drawString
 
     def draw(canvas, x, y, text, *args, **kwargs):
         recorded.append(text)
+        positioned.append((canvas.getPageNumber(), x, y, text))
         return original(canvas, x, y, text, *args, **kwargs)
 
     monkeypatch.setattr(Canvas, "drawString", draw)
     value = snapshot(1)
-    value.items[0].description = "وصف عربي"
+    value.items[0].description = (
+        "\u0648\u0635\u0641 \u0639\u0631\u0628\u064a <script>alert(1)</script> " + "W" * 5000
+    )
     render_statement_pdf(value)
-    assert "[Non-English description omitted]" in recorded
-    assert any("non-English text omitted" in text for text in recorded)
+    assert "[Non-English description omitted]" not in recorded
+    from app.services.wallet_statement_pdf import _entry_lines
+
+    lines = _entry_lines(value.items[0], "SAR")
+    assert value.items[0].description in "".join(lines)
+    assert all(y >= 55 for _, _, y, text in positioned if not text.startswith("Informational"))
 
 
 @pytest.mark.parametrize(
@@ -410,3 +418,26 @@ async def test_pdf_failed_read_release_does_not_render_or_leak_admission(monkeyp
         )
     render.assert_not_called()
     assert slots._value == 2
+
+
+def test_pdf_text_budget_rejects_oversized_snapshot(monkeypatch):
+    import app.services.wallet_statement_pdf as module
+
+    monkeypatch.setattr(module, "_MAX_TEXT_CHARACTERS", 10)
+    with pytest.raises(ValidationDomainError, match="text exceeds"):
+        render_statement_pdf(snapshot(1))
+
+
+def test_pdf_unsupported_glyph_has_visible_lossless_notation():
+    from app.services.wallet_statement_pdf import _display
+
+    assert "\\U0001F680" in _display("Launch \U0001f680")
+    assert _display("<script>alert(1)</script>") == "<script>alert(1)</script>"
+
+
+def test_pdf_page_budget_rejects_complete_export_instead_of_truncating(monkeypatch):
+    import app.services.wallet_statement_pdf as module
+
+    monkeypatch.setattr(module, "_MAX_PAGES", 1)
+    with pytest.raises(module.StatementExportUnavailableError):
+        render_statement_pdf(snapshot(40))

@@ -104,6 +104,10 @@ async def test_notification_page_commits_claim_before_push_and_retries_failure(
     else:
         assert processed == 1
         assert push.sent == ["courier-token"]
-        assert push.data == {"type": "ORDER_AVAILABLE", "order_id": str(claim.order_id)}
+        assert push.data == {
+            "event_type": "ORDER_AVAILABLE",
+            "type": "ORDER_AVAILABLE",
+            "order_id": str(claim.order_id),
+        }
         assert repo.advanced == (token_id, True)
         assert factory.commits == 2

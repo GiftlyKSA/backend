@@ -246,7 +246,13 @@ async def download_wallet_statement(
     from_date: Annotated[CalendarDate, Query(description="Inclusive Asia/Riyadh start day.")],
     to_date: Annotated[CalendarDate, Query(description="Inclusive Asia/Riyadh end day.")],
 ) -> Response:
-    """Download a complete informational snapshot of at most 366 days and 5000 entries."""
+    """Download a complete informational snapshot of at most 366 days and 5000 entries.
+
+    Owner-only PDF with literal descriptions and private, no-store headers. English headings,
+    Arabic shaping; unsupported glyphs use Unicode escapes. Complete export limits: 250 pages,
+    1,000,000 description characters, 8 MiB and two concurrent renders per API process.
+    Oversized ranges/text return 422; busy or expired rendering returns 503.
+    """
     service = WalletStatementService(
         WalletRepository(db),
         CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),

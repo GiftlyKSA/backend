@@ -8340,7 +8340,7 @@
     },
     "/api/wallets/me/statement/pdf": {
       "get": {
-        "description": "Download a complete informational snapshot of at most 366 days and 5000 entries.",
+        "description": "Download a complete informational snapshot of at most 366 days and 5000 entries.\n\nOwner-only PDF with literal descriptions and private, no-store headers. English headings,\nArabic shaping; unsupported glyphs use Unicode escapes. Complete export limits: 250 pages,\n1,000,000 description characters, 8 MiB and two concurrent renders per API process.\nOversized ranges/text return 422; busy or expired rendering returns 503.",
         "operationId": "download_wallet_statement_api_wallets_me_statement_pdf_get",
         "parameters": [
           {

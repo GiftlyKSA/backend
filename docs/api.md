@@ -1190,7 +1190,7 @@ capped by WS_MAX_OUTGOING_FRAME_BYTES (32768 by default), measured in UTF-8 byte
 oversized frames close1009. Recover committed messages with existing paginated REST
 history; deduplicate by server message ID. Inbound WS_MAX_FRAME_BYTES remains4096.
 
-New-order push adapter includes data:{"type":"ORDER_AVAILABLE","order_id":"<UUID>"}.
+New-order push adapter includes data:{"event_type":"ORDER_AVAILABLE","type":"ORDER_AVAILABLE","order_id":"<UUID>"}.
 Open the existing authorized order/radar flow; push metadata does not grant ownership.
 Actual vendor/device forwarding is unverified and excluded from this task.
 Device-token registration deliberately transfers the same shared-device token to the
@@ -1382,7 +1382,7 @@ does not receive that old event. Device transfers and revoked registrations are 
 
 Exact Expo data (not the HTTP response to creating an order):
 ```json
-{"type":"ORDER_AVAILABLE","order_id":"11111111-1111-4111-8111-111111111111"}
+{"event_type":"ORDER_AVAILABLE","type":"ORDER_AVAILABLE","order_id":"11111111-1111-4111-8111-111111111111"}
 ```
 The UUID is the actual persisted order ID. Title/body are generic, without customer details,
 photos, credentials or signed URLs. Treat pushes as repeatable hints, deduplicate navigation
@@ -1494,11 +1494,11 @@ specified document, invoice or earnings report. It does not invent opening/closi
 - Cache-Control: private, no-store; X-Content-Type-Options:nosniff.
 
 All selected entries are covered from one SQL snapshot, up to 5000 entries. Larger exports
-return422 VALIDATION_ERROR requesting a narrower range, never a partial PDF. English
-descriptions are abbreviated to120characters; unsupported non-English descriptions are
-explicitly omitted. IDs, amounts and entry counts remain complete.
+return422 VALIDATION_ERROR requesting a narrower range, never a partial PDF. Descriptions are complete literal text, with Arabic shaping and English headings.
+Characters unsupported by the bundled font are shown as lossless Unicode escape notation.
+No description is interpreted as HTML/JavaScript. IDs, amounts and entry counts remain complete.
 Two render slots per API process; read/release timeout25seconds, cooperative rendering
-deadline20seconds, maximum8MiB. Cancellation retains admission until the actual thread
+deadline20seconds, maximum8MiB/250pages and 1,000,000 description characters. Cancellation retains admission until the actual thread
 finishes. 503 STATEMENT_EXPORT_UNAVAILABLE denotes busy/expired rendering; no public cache
 or unauthenticated download URL is created. Existing401/403/404/422 envelopes apply.
 
@@ -1528,3 +1528,11 @@ to the explicit runtime configuration above. No live vendor success claim is mad
 Occasion creation retains the optional UUID Idempotency-Key. Unchanged one-off requests
 can replay pre-recurrence receipts; changing the same key to annual/different input remains
 409 CONFLICT. Use a new key for a new operation and retain a key for identical retries.
+
+
+Contract clarification (2026-10-13): new-order data contains event_type:ORDER_AVAILABLE;
+type:ORDER_AVAILABLE is retained as a compatibility alias. Both identify the same event.
+Deduplicate hints using (event_type or legacy type, order_id), never the delivery ticket.
+At-least-once hints only trigger authorized reads; they never accept an order.
+The compatible payload and complete-description PDF follow-up are implemented locally;
+push/deployment verification is recorded separately in the review.

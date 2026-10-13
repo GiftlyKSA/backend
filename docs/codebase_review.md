@@ -425,3 +425,28 @@ replayable, including receipts from the first defaulted recurrence rollout. A di
 annual request still conflicts and does not create a duplicate. Native replay regressions
 passed; fresh final PostgreSQL/Redis full suite1508passed,89.46%coverage,zero skips,one
 unchanged upstream deprecation warning. This follow-up does not change endpoint schemas.
+
+
+## Contract recheck — 2026-10-13
+
+| ID | Category / score | Evidence and impact | Minimal fix / status | Verification |
+| --- | --- | --- | --- | --- |
+| CONTRACT-01 | Integration compatibility / Medium4 | order_notification_service.py emitted type while latest requested event_type; strict new mobile dispatchers could ignore a valid hint. | Added event_type=ORDER_AVAILABLE and retained legacy type, actual UUID only; no new endpoint or recipient changes. Implemented; follow-up rollout separate. | Regression first failed for missing alias, then passed; durable commit/failure and Expo fencing checks retained. |
+| PDF-02 | Data quality / Medium5 | wallet_statement_pdf.py truncated descriptions and omitted non-ASCII content; snapshots lost user text. | Complete literal descriptions, licensed bundled Amiri font, Arabic shaping, lossless Unicode notation for unsupported glyphs. Existing owner/no-store protections retained; 250-page/1M-character limits reject excessive exports. Implemented; follow-up rollout separate. | Long text crosses pages without clipping; Arabic/HTML literal text, explicit page/text limits, cancellation/ownership cases; rendered preview inspected. |
+
+Full native disposable PostgreSQL16/Redis suite:1511passed,zero skips,89.45%coverage;
+one unchanged upstream Starlette/httpx deprecation warning. Both hook stages pass.
+Locked production dependency audit reports no known vulnerabilities. This is not a claim
+that the application or dependencies have no undiscovered flaws. No Docker was run.
+An initial suite was interrupted because native Redis was absent; after restoring the
+owned native service the complete suite passed. An automatically rejected exploratory
+command lacked an explicit disposable DB target; it was replaced with the named target.
+No production fixtures, real notifications or mobile edits were used.
+
+Existing recurrence/PDF routes remain deployed with401 gates; latest API deployment before
+this follow-up is SMs25sst_MVza4IdSMElb. The new push alias and PDF text must not be described
+as deployed until the follow-up build/startup and public contract are checked.
+Expo/EAS credentials and real provider delivery remain unverified/deferred. Independent
+appointments remain excluded; annual leap-years-only and informational PDF policies were
+already approved. No migration is needed for this follow-up; rollback is a code/image
+rollback, retaining the existing0033/0034 schema and device/occasion data.

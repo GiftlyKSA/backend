@@ -1234,3 +1234,26 @@ no speculative occurrence index or cross-account cache was introduced.
 
 Independent courier appointments are excluded by the user. The calendar remains assigned
 orders only. Final closure/fund-return/retention policy remains postponed.
+
+
+### Push payload and literal statement text (2026-10-13)
+
+New-order push data includes event_type=ORDER_AVAILABLE, order_id (actual UUID), and the
+legacy type=ORDER_AVAILABLE alias. The committed outbox, city/active/verified eligibility,
+Expo tickets/receipts and shared-device registration fencing remain unchanged. Scheduler
+queues jobs; only the separate worker sends and checks receipts. Configure PUSH_PROVIDER=expo
+on that worker and its Expo project credentials; EXPO_ACCESS_TOKEN is needed when enhanced
+push security is enabled. Development auto remains fake. Real delivery is unverified.
+
+Statement PDF descriptions are no longer abbreviated or omitted. Plain-text drawing
+retains Arabic/English content with bidirectional shaping; unsupported glyphs are represented
+as Unicode escapes. The English headings and informational-snapshot designation remain.
+Complete exports are limited to 5000 rows, 1,000,000 description characters, 250 pages,
+8 MiB, two concurrent renders per API process and the existing read/render deadlines.
+Exports fail explicitly rather than return a partial range; no public cache is permitted.
+
+Bundled font: Amiri Regular, upstream https://github.com/aliftype/amiri,
+SIL Open Font License (app/assets/fonts/OFL.txt). SHA-256:
+2444788b85996d795f0db7e14f3f6bfc3ea1c985e391267db0269b9e40f3447d.
+The locked arabic-reshaper and python-bidi dependencies support this display-only transform;
+stored/API user text is unchanged. No schema migration is introduced by this follow-up.

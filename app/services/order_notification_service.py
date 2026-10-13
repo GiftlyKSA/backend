@@ -52,7 +52,11 @@ async def _deliver_claim(
                     [token for _, token in page],
                     _TITLE,
                     _BODY,
-                    data={"type": "ORDER_AVAILABLE", "order_id": str(claim.order_id)},
+                    data={
+                        "event_type": "ORDER_AVAILABLE",
+                        "type": "ORDER_AVAILABLE",
+                        "order_id": str(claim.order_id),
+                    },
                 ),
                 timeout=_PUSH_TIMEOUT_SECONDS,
             )
