@@ -1257,3 +1257,33 @@ SIL Open Font License (app/assets/fonts/OFL.txt). SHA-256:
 2444788b85996d795f0db7e14f3f6bfc3ea1c985e391267db0269b9e40f3447d.
 The locked arabic-reshaper and python-bidi dependencies support this display-only transform;
 stored/API user text is unchanged. No schema migration is introduced by this follow-up.
+
+
+### Configure private avatars on a hosted development app (2026-10-14)
+
+The avatar flow is already implemented; mobile HTTPS validation must remain enabled.
+ENVIRONMENT=development does not select real storage by itself. On both the API and worker,
+set STORAGE_PROVIDER=s3 plus S3_ENDPOINT (public HTTPS origin), S3_BUCKET (private bucket),
+S3_REGION=auto for R2, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY. The scheduler does not need
+storage credentials. Keep secrets in CranL runtime settings, not source, mobile or logs.
+The .env.example uses safe public placeholders and empty secret values.
+
+Use the supplied account endpoint/bucket only after valid keys are entered. Restrict keys
+to the intended bucket and required object read/write/delete operations; keep public access
+and public bucket URLs disabled. For web clients, configure bucket CORS for the actual UI
+origins, PUT/GET/HEAD and Content-Type/If-None-Match (Content-Length is browser-controlled),
+exposing ETag where needed. Native clients still must send the exact signed PUT headers.
+Do not rewrite a signed URL or redirect to a different storage host.
+
+Restart the API and worker after settings changes. Missing real configuration fails boot;
+provider availability errors return safe503 STORAGE_UNAVAILABLE. Default fake storage in a
+hosted development app now rejects avatar grants/reads, while local test doubles remain.
+Upload/access URLs expire after300seconds; unclaimed avatar grants after24hours. Confirm
+checks actual bytes and the declared exact size; courier avatars never exceed10MiB.
+The API handles requests; the separate worker performs hourly bounded orphan cleanup.
+Rollback: return to the previous image if needed, retaining private storage configuration,
+keys, bucket contents and DB history. No migration or bucket/data deletion is required.
+
+Real configured-bucket signature/header/reachability verification must be recorded separately
+from mocked signatures and local PostgreSQL tests. No production readiness claim follows
+from a source push or a successfully generated signature alone.

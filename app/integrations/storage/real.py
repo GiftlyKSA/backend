@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import aioboto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from botocore.session import get_session
 
+from app.core.exceptions import StorageUnavailableError
 from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, ObjectHead, StorageClient
+
+_logger = logging.getLogger("app.storage")
 
 _IMAGE_MAGIC = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG\r\n\x1a\n"}
 
@@ -33,7 +37,13 @@ class S3StorageClient(StorageClient):
         self._bucket = bucket
         self._region = region
         self._endpoint = endpoint.rstrip("/")
-        self._client_config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+        self._client_config = Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            connect_timeout=5,
+            read_timeout=10,
+            retries={"mode": "standard", "total_max_attempts": 3},
+        )
         self._read_signer = get_session().create_client(
             "s3",
             endpoint_url=self._endpoint,
@@ -58,30 +68,36 @@ class S3StorageClient(StorageClient):
 
     @asynccontextmanager
     async def _client(self) -> AsyncIterator[Any]:
-        loop = asyncio.get_running_loop()
-        async with self._condition:
-            if self._loop is not None and self._loop is not loop:
-                raise RuntimeError("S3 storage client belongs to a different event loop")
-            if self._closing or self._closed:
-                raise RuntimeError("S3 storage client is closing or closed")
-            self._loop = loop
-            if self._s3 is None:
-                context = self._session.client(
-                    "s3",
-                    region_name=self._region,
-                    endpoint_url=self._endpoint,
-                    config=self._client_config,
-                )
-                self._s3 = await context.__aenter__()
-                self._s3_context = context
-            self._active += 1
-            s3 = self._s3
         try:
-            yield s3
-        finally:
+            loop = asyncio.get_running_loop()
             async with self._condition:
-                self._active -= 1
-                self._condition.notify_all()
+                if self._loop is not None and self._loop is not loop:
+                    raise RuntimeError("S3 storage client belongs to a different event loop")
+                if self._closing or self._closed:
+                    raise RuntimeError("S3 storage client is closing or closed")
+                self._loop = loop
+                if self._s3 is None:
+                    context = self._session.client(
+                        "s3",
+                        region_name=self._region,
+                        endpoint_url=self._endpoint,
+                        config=self._client_config,
+                    )
+                    self._s3 = await context.__aenter__()
+                    self._s3_context = context
+                self._active += 1
+                s3 = self._s3
+            try:
+                yield s3
+            finally:
+                async with self._condition:
+                    self._active -= 1
+                    self._condition.notify_all()
+        except (BotoCoreError, ClientError, TimeoutError, OSError):
+            _logger.error(
+                "Private storage operation failed; check provider availability and configuration."
+            )
+            raise StorageUnavailableError() from None
 
     async def aclose(self) -> None:
         """Drain active operations and close the pooled S3 connection."""
@@ -195,11 +211,15 @@ class S3StorageClient(StorageClient):
         """Sign a temporary private GET locally without a network request."""
         if self._closing or self._closed:
             raise RuntimeError("S3 storage client is closing or closed")
-        return cast(
-            str,
-            self._read_signer.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self._bucket, "Key": storage_key},
-                ExpiresIn=ttl_seconds,
-            ),
-        )
+        try:
+            return cast(
+                str,
+                self._read_signer.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": self._bucket, "Key": storage_key},
+                    ExpiresIn=ttl_seconds,
+                ),
+            )
+        except (BotoCoreError, ClientError, TimeoutError, OSError):
+            _logger.error("Private storage signing failed; check provider configuration.")
+            raise StorageUnavailableError() from None

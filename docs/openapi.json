@@ -5862,7 +5862,7 @@
     },
     "/api/media/upload-urls": {
       "post": {
-        "description": "Issue a pre-signed upload URL with a server-generated key.",
+        "description": "Issue a pre-signed upload URL with a server-generated key.\n\nCourier avatars require an active verified courier, real HTTPS storage outside test,\nJPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return\n503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and\nIf-None-Match: *. URLs expire after 300 seconds; unclaimed avatar grants after 24 hours.",
         "operationId": "create_upload_url_api_media_upload_urls_post",
         "requestBody": {
           "content": {

@@ -42,7 +42,13 @@ async def create_upload_url(
     body: UploadUrlRequest,
     actor: Annotated[Actor, Depends(require_auth)],
 ) -> UploadUrlResponse:
-    """Issue a pre-signed upload URL with a server-generated key."""
+    """Issue a pre-signed upload URL with a server-generated key.
+
+    Courier avatars require an active verified courier, real HTTPS storage outside test,
+    JPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return
+    503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and
+    If-None-Match: *. URLs expire after 300 seconds; unclaimed avatar grants after 24 hours.
+    """
 
     async def resume_writes() -> None:
         await mark_request_transaction(db)

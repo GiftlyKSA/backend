@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import Settings, get_worker_settings
+from app.core.config import Environment, Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.integrations.factory import build_storage_client
 from app.integrations.storage.base import StorageClient
@@ -26,6 +26,9 @@ async def clean_abandoned_uploads(
 ) -> int:
     """Fence old grants, delete objects, then remove grant rows; retry failures later."""
     settings = settings or get_worker_settings()
+    if settings.storage_provider == "fake" and settings.ENVIRONMENT is not Environment.TEST:
+        _logger.info("Private media cleanup skipped: real storage is not configured.")
+        return 0
     own_engine = None
     if factory is None:
         own_engine = build_engine(settings)

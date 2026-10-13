@@ -1,6 +1,6 @@
 # Giftly task tracker
 
-**Created:**2026-10-11 · **Updated:**2026-10-13.
+**Created:**2026-10-11 · **Updated:**2026-10-14.
 Source: codebase_review.md. Status distinguishes source, publication, deployment and
 mobile implementation ownership. Scores indicate urgency, not CVSS.
 
@@ -34,7 +34,7 @@ Implemented backend features must not be reopened solely because mobile wiring i
 | MOB-13 | Annual recurrence | Opt-in annual calendar feed and version-fenced reminders; leap years only | Deployed; runtime contract confirmed | Medium5 | 2026-10-13 | Existing one-off CRUD preserved |
 | MOB-14 | Statement PDF | Complete owned informational snapshot, literal descriptions and Arabic rendering | Implemented, pushed and deployed in dadc421; runtime contract confirmed | Medium5 | 2026-10-13 | 5000 rows, 250 pages, 1M description characters and 8 MiB; private/no-store |
 | PUSH-01 | New-order push implementation | City-scoped committed outbox, Expo tickets/receipts and invalid-token fencing | Implemented, pushed and deployed in dadc421 | High7 | 2026-10-13 | event_type=ORDER_AVAILABLE; legacy type retained; actual order UUID; device delivery unverified |
-| STORE-01 | Private S3 implementation | Public HTTPS storage selection with owned signed upload/confirm/avatar flow | Code pushed and deployed | High7 | 2026-10-13 | Courier avatars only; activation depends on deferred real credentials |
+| STORE-01 | Private S3 implementation | Public HTTPS storage selection with owned signed upload/confirm/avatar flow | Prior adapter deployed; availability follow-up published by this release; rollout tracked separately | High7 | 2026-10-13 | Courier avatars only; fake grants fail503; credential activation remains pending |
 
 ## Remaining setup and mobile work
 
@@ -44,7 +44,7 @@ The following rows are configuration or mobile implementation work, not verifica
 | ID | Task | Description | Status | Urgency | Created | Note |
 | --- | --- | --- | --- | --- | --- | --- |
 | PUSH-SETUP | Activate Expo delivery | Configure the worker provider and Expo/EAS platform credentials | Pending runtime setup | High7 | 2026-10-13 | Set PUSH_PROVIDER=expo; EXPO_ACCESS_TOKEN if enhanced security is enabled; do not claim device delivery from build success |
-| STORE-SETUP | Activate private S3 | Supply real S3 credentials and select the reachable HTTPS storage origin | Deferred by user | High7 | 2026-10-13 | Use S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY; no localhost workaround |
+| STORE-SETUP | Activate private S3 | Supply real S3 credentials on API/worker and select the reachable HTTPS storage origin | Waiting for user key-configuration confirmation (2026-10-14) | High7 | 2026-10-13 | Use S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY; no localhost workaround |
 | UI-05 | Latest mobile handoff | Wire event_type fallback, annual occurrence calendar and authenticated statement PDF download | Prompt delivered; mobile implementation unconfirmed | Medium5 | 2026-10-13 | Separate mobile chat owns implementation; do not reopen completed UI-01 through UI-04 |
 
 ## Deferred work and accepted decisions

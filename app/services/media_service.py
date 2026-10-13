@@ -13,9 +13,11 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
-from app.core.config import Settings
-from app.core.exceptions import BadRequestError, ConflictError
+from app.core.config import Environment, Settings
+from app.core.exceptions import BadRequestError, ConflictError, StorageUnavailableError
 from app.integrations.storage.base import ObjectHead, StorageClient
 from app.models import MediaUpload
 from app.repositories.media_repository import MediaRepository
@@ -24,6 +26,8 @@ from app.services.chat_media_validation import MEDIA_TYPES, verify_image_isolate
 ALLOWED_IMAGE_TYPES = frozenset(MEDIA_TYPES["IMAGE"])
 _image_slots = asyncio.Semaphore(2)
 _UPLOAD_TTL_SECONDS = 300
+_AVATAR_MAX_BYTES = 10 * 1024 * 1024
+_AVATAR_GRANT_RETENTION = timedelta(days=1)
 MAX_OUTSTANDING_UPLOADS = 20
 MAX_OUTSTANDING_BYTES = 50 * 1024 * 1024
 _PREFIX_BY_PURPOSE = {
@@ -59,6 +63,33 @@ class MediaService:
         self._uploads = uploads
         self._prepared: dict[tuple[uuid.UUID, str, str], ObjectHead] = {}
 
+    def _require_avatar_storage(self) -> None:
+        if (
+            self._settings.storage_provider == "fake"
+            and self._settings.ENVIRONMENT is not Environment.TEST
+        ):
+            raise StorageUnavailableError()
+
+    def _avatar_url(self, url: str) -> str:
+        if (
+            self._settings.ENVIRONMENT is Environment.TEST
+            and self._settings.storage_provider == "fake"
+        ):
+            return url
+        try:
+            parsed = urlsplit(url)
+            expected = urlsplit(self._settings.S3_ENDPOINT or "")
+        except ValueError:
+            raise StorageUnavailableError() from None
+        if parsed.scheme != "https" or parsed.netloc != expected.netloc or parsed.fragment:
+            raise StorageUnavailableError()
+        return url
+
+    def avatar_read_url(self, key: str) -> str:
+        """Sign a temporary avatar reference after caller authorization."""
+        self._require_avatar_storage()
+        return self._avatar_url(self._storage.signed_read_url(key, ttl_seconds=_UPLOAD_TTL_SECONDS))
+
     async def request_upload_url(
         self,
         *,
@@ -81,7 +112,11 @@ class MediaService:
             raise BadRequestError("Courier avatars must be JPEG or PNG.")
         if content_type not in ALLOWED_IMAGE_TYPES:
             raise BadRequestError("Only JPEG, PNG, HEIC or HEIF images are allowed.")
-        if not 0 < byte_size <= self._settings.MAX_UPLOAD_BYTES:
+        max_bytes = self._settings.MAX_UPLOAD_BYTES
+        if purpose == "COURIER_AVATAR":
+            max_bytes = min(max_bytes, _AVATAR_MAX_BYTES)
+            self._require_avatar_storage()
+        if not 0 < byte_size <= max_bytes:
             raise BadRequestError("The file is too large.")
 
         ext = MEDIA_TYPES["IMAGE"][content_type]
@@ -94,6 +129,8 @@ class MediaService:
             byte_size=byte_size,
             ttl_seconds=_UPLOAD_TTL_SECONDS,
         )
+        if purpose == "COURIER_AVATAR":
+            self._avatar_url(url)
         if resume_writes is not None:
             await resume_writes()
         await self._uploads.issue(
@@ -199,16 +236,32 @@ class MediaService:
         grant = await self._uploads.get(storage_key, for_update=for_update)
         if grant is None or grant.owner_user_id != actor_id:
             raise BadRequestError("The upload key is not available to this account.")
+        if storage_key.startswith("couriers/avatars/"):
+            self._require_avatar_storage()
+            if grant.created_at < datetime.now(UTC) - _AVATAR_GRANT_RETENTION:
+                raise BadRequestError("The upload grant expired; request a new upload URL.")
         return grant
 
     async def _verify_object(self, grant: MediaUpload | _UploadSnapshot) -> ObjectHead:
         storage_key = grant.storage_key
+        avatar = storage_key.startswith("couriers/avatars/")
+        if avatar:
+            self._require_avatar_storage()
         head = await self._storage.head_object(storage_key)
         if head is None or not head.exists:
             raise BadRequestError("The uploaded object was not found.")
-        if head.byte_size != grant.byte_size or head.byte_size > self._settings.MAX_UPLOAD_BYTES:
+        max_bytes = (
+            min(self._settings.MAX_UPLOAD_BYTES, _AVATAR_MAX_BYTES)
+            if avatar
+            else self._settings.MAX_UPLOAD_BYTES
+        )
+        if head.byte_size != grant.byte_size or head.byte_size > max_bytes:
             raise BadRequestError("The uploaded file size does not match the upload request.")
-        if head.content_type != grant.content_type or head.content_type not in ALLOWED_IMAGE_TYPES:
+        if (
+            head.content_type != grant.content_type
+            or head.content_type not in ALLOWED_IMAGE_TYPES
+            or (avatar and head.content_type not in {"image/jpeg", "image/png"})
+        ):
             raise BadRequestError("The uploaded file is not a permitted image.")
         if grant.content_type in {"image/heic", "image/heif"} or storage_key.startswith(
             "couriers/avatars/"
@@ -224,6 +277,8 @@ class MediaService:
                                 "The uploaded file size does not match its upload grant."
                             )
                         await verify_image_isolated(body, grant.content_type)
+            except ValueError as exc:
+                raise BadRequestError("The uploaded file exceeds its declared size.") from exc
             except TimeoutError as exc:
                 from app.core.exceptions import MediaValidationUnavailableError
 

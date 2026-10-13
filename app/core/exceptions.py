@@ -28,6 +28,14 @@ class DomainError(Exception):
             self.message = message
 
 
+class StorageUnavailableError(DomainError):
+    """Private storage is unconfigured or temporarily unreachable."""
+
+    code = "STORAGE_UNAVAILABLE"
+    message = "Private storage is temporarily unavailable. Please try again later."
+    status_code = 503
+
+
 class MediaValidationUnavailableError(DomainError):
     """Required decoder capacity or infrastructure is temporarily unavailable."""
 

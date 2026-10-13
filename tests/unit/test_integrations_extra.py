@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 import httpx
 import pytest
 from app.core.config import Environment
+from app.core.exceptions import StorageUnavailableError
 from app.integrations.email.sndr_client import SndrEmailClient
 from app.integrations.factory import build_clients
 from app.integrations.push.real import RealPushClient
@@ -172,7 +173,7 @@ async def test_real_storage_only_treats_missing_object_as_absent(code: str, miss
     if missing:
         assert await client.head_object("missing.jpg") is None
     else:
-        with pytest.raises(ClientError):
+        with pytest.raises(StorageUnavailableError):
             await client.head_object("private.jpg")
     await client.aclose()
 

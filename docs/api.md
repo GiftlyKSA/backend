@@ -1536,3 +1536,34 @@ Deduplicate hints using (event_type or legacy type, order_id), never the deliver
 At-least-once hints only trigger authorized reads; they never accept an order.
 The compatible payload and complete-description PDF follow-up are published in dadc421;
 both public API contracts match. Real Expo device delivery remains unverified.
+
+
+### Avatar storage availability follow-up (2026-10-14)
+
+Existing endpoints and fields are unchanged: POST /api/media/upload-urls with
+purpose=COURIER_AVATAR; signed PUT; POST /api/media/confirm; PUT or DELETE
+/api/users/me/courier-avatar; GET /api/users/me renews courier_profile.avatar_url.
+Only active verified couriers may upload/attach; customer avatar uploads remain forbidden.
+JPEG/PNG only, at most10MiB or the lower MAX_UPLOAD_BYTES value. Actual HEAD size/type and
+full isolated decoding are checked; metadata and magic headers alone cannot establish validity.
+
+Outside ENVIRONMENT=test, fake storage cannot issue avatar grants or access URLs.
+503 STORAGE_UNAVAILABLE means real storage is unconfigured or the provider is unavailable;
+the safe envelope contains no provider response, key, credential or signed URL.
+Real origins must match the configured public HTTPS endpoint. No HTTP/internal origin
+or replacement upload endpoint is introduced. Unexpected signing origins fail closed.
+
+PUT requires exact Content-Type, exact Content-Length and If-None-Match: *;
+do not use multipart encoding or add the API Bearer header to storage requests.
+An expired300-second upload URL requires a new grant. Successfully uploaded bytes can
+be confirmed/attached within the existing24-hour orphan retention window. After24hours,
+an unclaimed avatar grant is rejected with400 BAD_REQUEST, requesting a new upload URL.
+Read URLs last300seconds; renew through an authorized profile read. Upload retries must
+not overwrite existing objects. A412 conditional-write response is not proof of valid upload;
+confirm the owned key or restart with a new grant as appropriate.
+
+Failure during validation, signing or attachment leaves the current avatar intact.
+Replacement/removal releases the old grant only within the successful DB transaction.
+The hourly separate worker fences and deletes abandoned objects after24hours; active
+avatars remain protected. Cleanup skips non-test fake storage instead of discarding real
+object metadata. The worker must use the same real endpoint/bucket/credentials as the API.

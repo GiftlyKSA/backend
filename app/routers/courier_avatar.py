@@ -42,14 +42,13 @@ async def set_avatar(
     await mark_request_transaction(db)
     if await require_auth(request, db) != actor:
         raise UnauthorizedError("This session is no longer valid.")
+    avatar_url = media.avatar_read_url(body.storage_key)
     await CourierAvatarService(CourierAvatarRepository(db), eligibility).set_avatar(
         actor.id, body.storage_key, media
     )
     response.headers["Cache-Control"] = "private, no-store"
     return AvatarResponse(
-        avatar_url=request.app.state.clients.storage.signed_read_url(
-            body.storage_key, ttl_seconds=300
-        ),
+        avatar_url=avatar_url,
         expires_in=300,
     )
 

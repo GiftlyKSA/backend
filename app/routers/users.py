@@ -20,6 +20,7 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.city_repository import CityRepository
 from app.repositories.courier_avatar_repository import CourierAvatarRepository
 from app.repositories.courier_repository import CourierRepository
+from app.repositories.media_repository import MediaRepository
 from app.repositories.rating_repository import RatingRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.users import (
@@ -30,6 +31,7 @@ from app.schemas.users import (
 )
 from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.media_service import MediaService
 from app.services.user_service import ParticipantView, UserService
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -181,4 +183,8 @@ async def _avatar_url(db: AsyncSession, owner: uuid.UUID, request: Request | Non
     if request is None:
         return None
     key = await CourierAvatarRepository(db).get_key(owner)
-    return request.app.state.clients.storage.signed_read_url(key, ttl_seconds=300) if key else None
+    if key is None:
+        return None
+    return MediaService(
+        request.app.state.clients.storage, request.app.state.settings, MediaRepository(db)
+    ).avatar_read_url(key)

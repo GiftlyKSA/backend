@@ -461,3 +461,31 @@ Worker/scheduler health200. This confirms source/runtime contract rollout; authe
 live rendering and real Expo delivery were not exercised. Existing401 gates remain intact.
 GitHub still reports one moderate dependency alert; alert reconciliation was excluded by
 the user and is not established by the clean locked production-dependency audit.
+
+
+## Avatar availability recheck - 2026-10-14
+
+| ID | Category / severity / score | Evidence and impact | Minimal fix / status | Verification |
+| --- | --- | --- | --- | --- |
+| AVATAR-01 | Integration reliability / High7 | Hosted development auto selects fake storage; masked runtime inventory shows API and worker S3 keys absent. Mobile receives unusable loopback grants. | Outside test, avatar grants/reads require real configured HTTPS storage and safe503 STORAGE_UNAVAILABLE. Real S3 selection/credentials remain deployment setup. | Development fake denial, unexpected/internal/HTTP/malformed signing origin rejection, unchanged schema tests. |
+| AVATAR-02 | Resource integrity / Medium5 | Raising MAX_UPLOAD_BYTES could allow avatars above the specified10MiB; old unclaimed grants could be consumed until cleanup eventually runs. | Avatar hard cap10MiB (lower setting honored); reject unclaimed grants older than the existing24-hour orphan-retention window. No migration. | Cap and expiry regressions; existing PostgreSQL ownership, replacement, decoder and cleanup coverage. |
+| AVATAR-03 | Reliability / Medium5 | Provider errors escaped as generic exceptions; a fake-configured worker could remove metadata for objects in real API storage. | Safe storage503 errors with redacted fixed logging, bounded S3 timeouts/retries; non-test fake cleanup skips DB/object changes. | Missing404 remains absent; AccessDenied maps to safe503; fake cleanup performs no DB access; replacement failure retains old avatar. |
+
+Signed PUT remains Content-Type/Content-Length/If-None-Match:* with300-second expiry.
+Full image decoding and actual byte/type/size checks remain mandatory for avatars.
+The current URL is signed before replacement mutation, so signing failure leaves the old
+pointer intact. Existing owner locks and cleanup fencing remain; no new endpoint/field.
+
+Local native PostgreSQL/Redis initial full suite1519passed,89.42%coverage,zero skips;
+additional malformed-origin/renewal focused checks passed. Final complete-suite outcome
+and follow-up rollout are recorded separately. No Docker, real bucket writes or production
+account fixtures used. Configured-bucket HTTPS/PUT/GET/conditional-write success remains
+UNCONFIRMED until valid keys and explicit runtime setup are confirmed. Production readiness
+is not established by mocked signing or source publication.
+
+
+Final local evidence: complete native disposable PostgreSQL/Redis suite1521passed,
+zero skips,89.37%coverage,one unchanged upstream warning; final JPEG/PNG confirmation guard
+also passed the29-test focused avatar/ownership/API group. Both hook stages passed.
+No real bucket operation or production account was used. Runtime activation remains
+waiting for user confirmation of API/worker credentials; do not claim live readiness.
