@@ -1523,3 +1523,8 @@ Deployment evidence (2026-10-13): both backend.giftly.sa and its CranL hostname 
 the occurrence/PDF additions matching the published contract. Authentication gates return401
 without credentials; Alembic0034 is applied. Real storage and Expo activation remain subject
 to the explicit runtime configuration above. No live vendor success claim is made.
+
+
+Occasion creation retains the optional UUID Idempotency-Key. Unchanged one-off requests
+can replay pre-recurrence receipts; changing the same key to annual/different input remains
+409 CONFLICT. Use a new key for a new operation and retain a key for identical retries.

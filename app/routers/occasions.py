@@ -8,6 +8,7 @@ from pydantic import JsonValue, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_settings, require_role
+from app.core.exceptions import ConflictError
 from app.models.enums import UserRole
 from app.repositories.occasion_occurrence_repository import OccasionOccurrenceRepository
 from app.repositories.operation_repository import OperationRepository
@@ -46,7 +47,19 @@ async def create_occasion(
     operation = None
     if idempotency_key is not None:
         payload = TypeAdapter(dict[str, JsonValue]).validate_python(body.model_dump(mode="json"))
-        operation = await operations.begin(actor.id, "occasion.create", idempotency_key, payload)
+        if body.recurrence == "NONE":
+            payload.pop("recurrence")
+        try:
+            operation = await operations.begin(
+                actor.id, "occasion.create", idempotency_key, payload
+            )
+        except ConflictError:
+            if body.recurrence != "NONE":
+                raise
+            # Retain both legacy and early defaulted one-off receipts.
+            operation = await operations.begin(
+                actor.id, "occasion.create", idempotency_key, {**payload, "recurrence": "NONE"}
+            )
         if operation.result_encrypted is not None:
             return OccasionResponse.model_validate_json(operations.result(operation))
     occasion = await _service(db).create(actor.id, **body.model_dump())

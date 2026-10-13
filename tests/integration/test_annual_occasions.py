@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 from app.core.exceptions import BadRequestError, NotFoundError, ValidationDomainError
-from app.models import User
+from app.models import Occasion, User
 from app.models.enums import UserRole
 from app.models.notification_models import InboxNotification, OccasionReminder
 from app.repositories.notification_reminder_repository import NotificationReminderRepository
@@ -186,3 +186,51 @@ async def test_future_anchor_and_century_year_are_not_exposed(db_session):
         user.id, start=date(2100, 1, 1), end=date(2100, 12, 31), limit=25, cursor=None
     )
     assert page.items == []
+
+
+@pytest.mark.parametrize("default_included", [False, True])
+async def test_legacy_and_defaulted_oneoff_receipts_replay_without_duplicate(
+    db_session, monkeypatch, default_included
+):
+    from types import SimpleNamespace
+
+    from app.core.deps import Actor
+    from app.repositories.operation_repository import OperationRepository
+    from app.routers import occasions as routes
+    from app.schemas.occasions import CreateOccasionRequest, OccasionResponse
+    from app.services.operation_service import OperationService
+
+    from tests.conftest import make_test_settings
+
+    user = await owner(db_session)
+    body = CreateOccasionRequest(title="Legacy", occasion_date=date(2027, 1, 20))
+    settings = make_test_settings()
+    key = uuid4()
+    payload = body.model_dump(mode="json")
+    if not default_included:
+        payload.pop("recurrence")
+    ops = OperationService(OperationRepository(db_session), settings)
+    operation = await ops.begin(user.id, "occasion.create", key, payload)
+    saved = await occasion(db_session, user, "Legacy", date(2027, 1, 20), "NONE")
+    await ops.finish(operation, OccasionResponse.model_validate(saved), saved.id)
+    monkeypatch.setattr(routes, "get_settings", lambda request: settings)
+    response = await routes.create_occasion(
+        body, db_session, Actor(user.id, UserRole.CUSTOMER, "test"), SimpleNamespace(), key
+    )
+    assert response.id == saved.id and response.recurrence == "NONE"
+    from app.core.exceptions import ConflictError
+
+    with pytest.raises(ConflictError):
+        await routes.create_occasion(
+            body.model_copy(update={"recurrence": "ANNUAL"}),
+            db_session,
+            Actor(user.id, UserRole.CUSTOMER, "test"),
+            SimpleNamespace(),
+            key,
+        )
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Occasion).where(Occasion.user_id == user.id)
+        )
+        == 1
+    )

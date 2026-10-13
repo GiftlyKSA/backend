@@ -418,3 +418,10 @@ request field. New route contracts exactly match published OpenAPI and unauthent
 requests return401 UNAUTHORIZED. Read-only Alembic query confirmed0034_expo_push_receipts.
 This establishes runtime route/schema deployment, not authenticated end-to-end provider/
 avatar execution. No remote fixture/provider-setting writes were made.
+
+
+Final compatibility follow-up: existing one-off occasion idempotency fingerprints remain
+replayable, including receipts from the first defaulted recurrence rollout. A different
+annual request still conflicts and does not create a duplicate. Native replay regressions
+passed; fresh final PostgreSQL/Redis full suite1508passed,89.46%coverage,zero skips,one
+unchanged upstream deprecation warning. This follow-up does not change endpoint schemas.
