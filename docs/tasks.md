@@ -50,5 +50,5 @@ Independent courier appointments are excluded by the user (2026-10-13); assigned
 
 
 2026-10-13 contract follow-up: compatible event_type push alias and complete literal PDF
-text are implemented and locally verified. Existing recurrence/PDF routes are deployed;
-the latest follow-up rollout is checked separately. No appointments were added.
+text are published in dadc421 and locally verified. Both public API contracts match the
+follow-up deployment. Real Expo device delivery remains unverified. No appointments were added.

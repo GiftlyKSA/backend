@@ -1534,5 +1534,5 @@ Contract clarification (2026-10-13): new-order data contains event_type:ORDER_AV
 type:ORDER_AVAILABLE is retained as a compatibility alias. Both identify the same event.
 Deduplicate hints using (event_type or legacy type, order_id), never the delivery ticket.
 At-least-once hints only trigger authorized reads; they never accept an order.
-The compatible payload and complete-description PDF follow-up are implemented locally;
-push/deployment verification is recorded separately in the review.
+The compatible payload and complete-description PDF follow-up are published in dadc421;
+both public API contracts match. Real Expo device delivery remains unverified.
