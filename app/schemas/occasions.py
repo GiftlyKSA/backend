@@ -13,6 +13,7 @@ class CreateOccasionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=120)
     occasion_date: date
+    recurrence: Literal["NONE", "ANNUAL"] = "NONE"
     reminder_enabled: bool = Field(default=False, strict=True)
     reminder_days_before: int = Field(default=7, ge=0, le=365, strict=True)
 
@@ -31,10 +32,13 @@ class UpdateOccasionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=120)
     occasion_date: date | None = None
+    recurrence: Literal["NONE", "ANNUAL"] | None = None
     reminder_enabled: bool | None = Field(default=None, strict=True)
     reminder_days_before: int | None = Field(default=None, ge=0, le=365, strict=True)
 
-    @field_validator("title", "occasion_date", "reminder_days_before", "reminder_enabled")
+    @field_validator(
+        "title", "occasion_date", "reminder_days_before", "reminder_enabled", "recurrence"
+    )
     @classmethod
     def non_null(cls, value: object) -> object:
         """Distinguish omitted properties from explicit nulls."""
@@ -60,6 +64,7 @@ class OccasionResponse(BaseModel):
     title: str
     occasion_date: date
     reminder_days_before: int
+    recurrence: Literal["NONE", "ANNUAL"] = "NONE"
     reminder_enabled: bool = False
     timezone: Literal["Asia/Riyadh"] = "Asia/Riyadh"
     created_at: datetime
@@ -71,3 +76,22 @@ class OccasionPage(BaseModel):
 
     items: list[OccasionResponse]
     next_cursor: UUID | None = None
+
+
+class OccasionOccurrence(BaseModel):
+    """One virtual date, distinct from its saved occasion identity."""
+
+    occasion_id: UUID
+    title: str
+    occurrence_date: date
+    recurrence: Literal["NONE", "ANNUAL"]
+    reminder_enabled: bool
+    reminder_days_before: int
+    timezone: Literal["Asia/Riyadh"] = "Asia/Riyadh"
+
+
+class OccasionOccurrencePage(BaseModel):
+    """Bounded expanded dates ordered by occurrence date and occasion ID."""
+
+    items: list[OccasionOccurrence]
+    next_cursor: str | None = None

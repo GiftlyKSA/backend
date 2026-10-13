@@ -372,3 +372,40 @@ three test accounts and removed test targets/upload grants. Test wallets had zer
 balances, holds and ledger entries. Existing users and provider modes/limits were unchanged.
 An extra cleanup login returned 429. CranL command output was unavailable, and a brief
 management transport 502 was not an API 5xx.
+
+
+## Annual, PDF, Expo and S3 release review - 2026-10-13
+
+Confirmed before implementation: deployed public contracts matched existing order/device/
+occasion/statement/avatar routes, development ping200, separate worker/scheduler health200.
+No appointment CRUD, annual recurrence or statement PDF appeared in deployed OpenAPI.
+Old storage always selected a development fake, returning localhost URLs; new S3 secret
+variable names were absent in masked CranL configuration. Supabase push was not configured.
+
+User approved annual recurrence (February29 only in leap years), an informational statement
+PDF and Expo Push Service. Independent courier appointments were excluded. Final account-
+closure/fund-return/retention policy remains postponed. Mobile commit5501a79 completion is
+user-reported; no mobile edits or independent commit verification in this chat.
+
+| ID | Category | Severity | Status | Evidence and system impact |
+| --- | --- | --- | --- | --- |
+| ADD-01 | Access control / integrity | High7 | Implemented | Annual occurrence SQL scopes owner before limit; cursor anchors use identical scope/range; reminder edit versions/leases and occurrence-date inbox uniqueness prevent stale/duplicate events. |
+| ADD-02 | Financial correctness / resources | High7 | Implemented | PDF reuses whole-range statement SQL snapshot; rejects more than5000entries, never exports only the first page. Decimal status totals are authoritative; read transaction released before CPU rendering. |
+| ADD-03 | Push reliability / privacy | High7 | Implemented | Committed order outbox retained; active verified city recipients rechecked before Expo send; bounded chunks persist tickets, receipts update in batches, invalid-token deletion fenced by unchanged registration and worker lease. Payload contains only type/order UUID. |
+| ADD-04 | Storage configuration | High7 | Code implemented; credentials deferred | Private HTTPS S3 selector works independently in dev. New five variables, create-only signed PUT and private expiring GET, ownership/decoder checks retained. No real keys or remote selector changes; hosted fake remains a blocker until configured. |
+
+Local evidence:1503tests passed,89.40%coverage,zero skips on fresh disposable PostgreSQL16/
+Redis7/native media; one upstream Starlette/httpx deprecation warning. An initial reused
+test database caused one global-purge fixture failure; the fresh-database full run passed.
+Additive0033/0034 upgrade/downgrade/re-upgrade passed. Annual leap/calendar/ownership,
+receipt re-registration/lease fences, bounded PDF cancellation and malformed provider
+payload tests passed. PDF rendered with bundled Poppler and visually inspected.
+A rolled-back synthetic1000occasion EXPLAIN ANALYZE used owner/date index scope and bounded
+sorting; execution3.525ms/planning0.689ms locally, not a production capacity claim.
+
+No Docker, production fixture writes, real pushes/provider delivery, S3 uploads or mobile
+edits. Expo/EAS platform credentials, external delivery and real storage reachability/keys/
+bucket CORS remain unverified. Receipt acceptance does not establish device delivery.
+Configuration default auto remains fake in development; do not enable real Expo/S3 without
+their explicit runtime setup. The legacy API SMS adapter has separate Supabase requirements.
+These operational limits are recorded here, not reopened as verification-only task rows.

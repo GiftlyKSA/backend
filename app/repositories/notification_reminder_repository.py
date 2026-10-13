@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,33 @@ class NotificationReminderRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Bind the transaction."""
         self._session = session
+
+    async def advance_annual(self, *, now: datetime, limit: int = 100) -> None:
+        """Move completed/expired annual schedules forward under the existing edit fence."""
+        await self._session.execute(
+            text("""
+WITH ready AS (
+ SELECT r.occasion_id,r.scheduled_at,o.occasion_date,o.reminder_days_before
+ FROM occasion_reminders r JOIN occasions o ON o.id=r.occasion_id
+ WHERE o.recurrence='ANNUAL' AND o.reminder_enabled AND r.enabled
+ AND r.version=o.reminder_version
+ AND (r.push_completed_at IS NOT NULL OR r.scheduled_at<CAST(:now AS timestamptz)-interval '1 day')
+ ORDER BY r.scheduled_at,r.occasion_id LIMIT :limit
+ FOR UPDATE OF o,r SKIP LOCKED
+), next_dates AS (
+ SELECT *,giftly_next_annual_date(occasion_date,reminder_days_before,
+ greatest(CAST(:now AS timestamptz),scheduled_at+interval '1 second')) AS next_date FROM ready
+)
+UPDATE occasion_reminders r SET
+ occurrence_date=coalesce(n.next_date,r.occurrence_date),
+ scheduled_at=CASE WHEN n.next_date IS NULL THEN r.scheduled_at
+ ELSE (n.next_date-n.reminder_days_before+time '09:00') AT TIME ZONE 'Asia/Riyadh' END,
+ enabled=n.next_date IS NOT NULL,delivered_at=NULL,push_completed_at=NULL,push_attempts=0,
+ next_attempt_at=NULL,lease_token=NULL,lease_expires_at=NULL,cursor_token_id=NULL
+FROM next_dates n WHERE r.occasion_id=n.occasion_id
+"""),
+            {"now": now, "limit": limit},
+        )
 
     async def materialize_due(self, *, now: datetime, limit: int = 100) -> int:
         """Insert the in-app event even when there are no registered devices."""
@@ -63,7 +90,7 @@ class NotificationReminderRepository:
                 insert(InboxNotification)
                 .values(
                     user_id=occasion.user_id,
-                    event_key=f"occasion:{occasion.id}:{occasion.occasion_date.isoformat()}",
+                    event_key=f"occasion:{occasion.id}:{reminder.occurrence_date.isoformat()}",
                     notification_type="OCCASION_REMINDER",
                     destination_kind="OCCASION",
                     resource_id=occasion.id,

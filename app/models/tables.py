@@ -289,6 +289,9 @@ class Occasion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     occasion_date: Mapped[date] = mapped_column(Date, nullable=False)
+    recurrence: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="NONE", server_default=text("'NONE'")
+    )
     reminder_days_before: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default=text("7")
     )
@@ -304,6 +307,7 @@ class Occasion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint("reminder_version > 0", name="chk_occasions_reminder_version"),
+        CheckConstraint("recurrence IN ('NONE','ANNUAL')", name="chk_occasions_recurrence"),
         CheckConstraint(
             "reminder_days_before BETWEEN 0 AND 365",
             name="chk_occasions_reminder_days",

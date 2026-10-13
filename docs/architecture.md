@@ -45,7 +45,7 @@ is a server-rendered dashboard within the same backend.
 | PostgreSQL / SQLAlchemy | Store users, orders, invoices, wallets, messages and activity. |
 | Redis | Shares OTP verification state, rate limits, revocation, coordination and live events; also backs the job queue. |
 | Taskiq workers / scheduler | Run receipt delivery, notifications, expiry, cleanup and reconciliation. |
-| Private S3 / CloudFront adapter | Store media privately and issue temporary authorized access links. |
+| Private S3-compatible adapter | Store media privately and issue temporary authorized access links. |
 | Jinja2 admin dashboard | Provides authorized record management and operational views. |
 | Alembic / Docker / uv | Manage schema versions, deployment packaging and locked dependencies. |
 

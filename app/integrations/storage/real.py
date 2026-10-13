@@ -1,27 +1,16 @@
-"""Real S3 + CloudFront storage client.
-
-Uploads are pre-signed PUTs pinned to a content-type and exact content length so a
-URL cannot be used to upload a larger object. Post-upload the object is HEADed and its
-real content type is verified by magic bytes, not the declared header. Reads use
-short-TTL signed CloudFront URLs. A synchronous boto call would be wrapped in
-``run_in_threadpool``; aioboto3 is async so calls are awaited directly.
-"""
+"""Private S3-compatible storage with pinned uploads and temporary signed reads."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import aioboto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from botocore.signers import CloudFrontSigner
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from botocore.session import get_session
 
 from app.integrations.storage.base import STORAGE_READ_CHUNK_BYTES, ObjectHead, StorageClient
 
@@ -29,7 +18,7 @@ _IMAGE_MAGIC = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG\r\n\x1a\n"
 
 
 class S3StorageClient(StorageClient):
-    """Talks to a private S3 bucket and signs CloudFront read URLs."""
+    """Use a private S3-compatible bucket and locally signed read URLs."""
 
     def __init__(
         self,
@@ -38,25 +27,21 @@ class S3StorageClient(StorageClient):
         region: str,
         access_key_id: str,
         secret_access_key: str,
-        cloudfront_domain: str,
-        cloudfront_key_pair_id: str,
-        cloudfront_private_key: str,
+        endpoint: str,
     ) -> None:
-        """Hold the bucket, region, and CDN domain."""
+        """Hold explicit bucket credentials and a reusable local SigV4 signer."""
         self._bucket = bucket
         self._region = region
-        self._cloudfront_domain = cloudfront_domain
-        self._cloudfront_key_pair_id = cloudfront_key_pair_id
-        key = serialization.load_pem_private_key(
-            cloudfront_private_key.replace("\\n", "\n").encode("utf-8"), password=None
+        self._endpoint = endpoint.rstrip("/")
+        self._client_config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+        self._read_signer = get_session().create_client(
+            "s3",
+            endpoint_url=self._endpoint,
+            region_name=region,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            config=self._client_config,
         )
-        if not isinstance(key, RSAPrivateKey):
-            raise ValueError("CLOUDFRONT_PRIVATE_KEY must contain an RSA private key.")
-        self._cloudfront_private_key = key
-        self._cloudfront_signer = CloudFrontSigner(
-            self._cloudfront_key_pair_id, self._sign_cloudfront_policy
-        )
-        self._client_config = Config(signature_version="s3v4")
         self._session = aioboto3.Session(
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
@@ -82,7 +67,10 @@ class S3StorageClient(StorageClient):
             self._loop = loop
             if self._s3 is None:
                 context = self._session.client(
-                    "s3", region_name=self._region, config=self._client_config
+                    "s3",
+                    region_name=self._region,
+                    endpoint_url=self._endpoint,
+                    config=self._client_config,
                 )
                 self._s3 = await context.__aenter__()
                 self._s3_context = context
@@ -116,6 +104,7 @@ class S3StorageClient(StorageClient):
                 context = self._s3_context
             if context is not None:
                 await context.__aexit__(None, None, None)
+            self._read_signer.close()
         finally:
             async with self._condition:
                 self._s3 = None
@@ -203,20 +192,14 @@ class S3StorageClient(StorageClient):
                 body.close()
 
     def signed_read_url(self, storage_key: str, *, ttl_seconds: int) -> str:
-        """Return a short-lived, RSA-signed CloudFront read URL."""
-        signed = cast(
+        """Sign a temporary private GET locally without a network request."""
+        if self._closing or self._closed:
+            raise RuntimeError("S3 storage client is closing or closed")
+        return cast(
             str,
-            self._cloudfront_signer.generate_presigned_url(
-                f"https://{self._cloudfront_domain}/{storage_key}",
-                date_less_than=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+            self._read_signer.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self._bucket, "Key": storage_key},
+                ExpiresIn=ttl_seconds,
             ),
-        )
-        return f"{signed}&Hash-Algorithm=SHA256"
-
-    def _sign_cloudfront_policy(self, message: bytes) -> bytes:
-        """Sign a CloudFront canned policy using AWS's documented algorithm."""
-        return self._cloudfront_private_key.sign(
-            message,
-            padding.PKCS1v15(),
-            hashes.SHA256(),
         )

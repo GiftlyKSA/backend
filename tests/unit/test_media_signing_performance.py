@@ -15,7 +15,6 @@ from app.services.order_media_read_service import OrderMediaReadService
 
 from tests.conftest import make_test_settings
 from tests.unit.test_chat_media_service import stack
-from tests.unit.test_integrations_extra import _private_key_pem
 
 
 class ResponsiveSigner:
@@ -153,22 +152,23 @@ def test_service_cipher_keeps_rotation_snapshot_and_aad_binding():
         service._decrypt_preview(conversation, encrypted)
 
 
-def test_cloudfront_signer_setup_is_constant_across_read_urls():
+def test_s3_signer_setup_is_constant_across_read_urls():
     from app.integrations.storage.real import S3StorageClient
-    from botocore.signers import CloudFrontSigner
+    from botocore.session import get_session
 
-    with patch(
-        "app.integrations.storage.real.CloudFrontSigner", wraps=CloudFrontSigner
-    ) as constructor:
+    session = get_session()
+    with (
+        patch("app.integrations.storage.real.get_session", return_value=session),
+        patch.object(session, "create_client", wraps=session.create_client) as constructor,
+    ):
         client = S3StorageClient(
             bucket="private",
-            region="me-south-1",
+            region="auto",
+            endpoint="https://objects.example.com",
             access_key_id="testing",
             secret_access_key="testing",
-            cloudfront_domain="private.example",
-            cloudfront_key_pair_id="test-pair",
-            cloudfront_private_key=_private_key_pem(),
         )
         urls = [client.signed_read_url(f"orders/{index}", ttl_seconds=300) for index in range(50)]
-    assert all("Signature=" in url and "Hash-Algorithm=SHA256" in url for url in urls)
+    assert all("X-Amz-Signature=" in url for url in urls)
     assert constructor.call_count == 1
+    client._read_signer.close()

@@ -57,7 +57,7 @@ in `app/integrations/`; jobs in `app/workers/`; migrations in `app/migrations/`.
 | Shared state | Redis 7 | OTP HMACs, rate windows, JWT revocation, connection/decoder leases, Pub/Sub. |
 | Jobs | Taskiq with Redis broker | Bounded background maintenance and delivery retries. |
 | Admin | Jinja2, packaged CSS/JavaScript | Authenticated table maintenance, activity and overview. |
-| Private media | S3-compatible adapter and signed CloudFront access | Owned upload grants and temporary playback links. |
+| Private media | S3-compatible adapter and private signed S3 access | Owned upload grants and temporary playback links. |
 | Dependencies | `uv`, `uv.lock` | Reproducible runtime and development graph. |
 
 Cloudflare, Cranl secrets storage, backups and production ingress settings are deployment
@@ -248,7 +248,7 @@ required; failure to provide it prevents startup.
 | Pools/timeouts | DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_TIMEOUT_SECONDS, INTEGRATION_HTTP_TIMEOUT_SECONDS. |
 | Authentication | JWT_*, OTP_*, ADMIN_* and REFRESH_TOKEN_RETENTION_DAYS. |
 | Encryption | FIELD_ENCRYPTION_KEYS version map and FIELD_ENCRYPTION_KEY_VERSION. |
-| Private storage | AWS_*, S3_BUCKET_NAME, CLOUDFRONT_*. |
+| Private storage | S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY. |
 | Communication | SNDR_*, SMS_PROVIDER_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY. |
 | Boundaries | CORS_ALLOWED_ORIGINS, RATE_LIMIT_*, MAX_REQUEST_BODY_BYTES, WS_*, CHAT_*. |
 | Business rules | Service fee, commission, invoice/item, topup, withdrawal and expiry controls. |
@@ -855,7 +855,7 @@ a crash after provider acceptance can repeat a push. Failed intents remain visib
 for operational investigation. Chat Redis publication still has its five-second
 bound; push-provider waits no longer hold the HTTP/WebSocket acknowledgement.
 
-CloudFront signing runs off the event loop and reuses its signer; chat encryption
+Private S3 signing runs off the event loop and reuses its signer; chat encryption
 reuses one cipher/key-version snapshot per service. Media URLs retain ownership
 checks and their existing expiry. PDF downloads authorize and reread content first,
 then may reuse identical output for one hour in private Redis. Changes to displayed
@@ -1182,3 +1182,55 @@ No environment mode or API credentials changed. These apps still run development
 production configuration behavior was tested with dummy settings, not real vendors.
 CranL may label INFO lines as errors because the logger is named uvicorn.error; collectors
 must inspect the actual record severity instead of searching the logger name.
+
+## Storage, Expo and annual/PDF rollout - 2026-10-13
+
+Apply additive Alembic0033 (annual recurrence) then0034 (Expo receipts). Existing occasions
+default NONE, with no automatic recurring/reminder opt-in. Pause consumers before rollback:
+0034 refuses pending receipts;0033 refuses annual settings. Restore the previous application
+image/configuration together with schema rollback. No published migration was rewritten.
+
+API and worker storage:
+```ini
+STORAGE_PROVIDER=s3
+S3_ENDPOINT=https://311e31ea73ce6c252e5997bc74c3b8d6.r2.cloudflarestorage.com
+S3_BUCKET=cranl-2e701ae6-media
+S3_REGION=auto
+S3_ACCESS_KEY_ID=<set privately in CranL>
+S3_SECRET_ACCESS_KEY=<set privately in CranL>
+```
+Replace AWS_REGION/AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/S3_BUCKET_NAME and all
+CLOUDFRONT_* settings; the new storage adapter does not consume them. Do not deploy explicit
+s3 without real keys: startup fails closed. Validate private bucket access and mobile/browser
+CORS for signed PUT Content-Type, Content-Length and If-None-Match, without making the
+bucket public. No localhost/internal storage origin is acceptable for a physical device.
+The user deferred supplying keys; this source change alone cannot resolve hosted storage.
+
+Worker push:
+```ini
+PUSH_PROVIDER=expo
+EXPO_ACCESS_TOKEN=
+```
+EXPO_ACCESS_TOKEN is optional unless Expo enhanced push security is enabled; then supply its
+secret token privately. Configure native Android/iOS credentials in the Expo/EAS project.
+Use Expo project-scoped push tokens. auto selects fake outside production and Expo in
+production; explicit expo is an intentional real-provider selection in development.
+No real pushes were sent or provider settings changed as routine verification.
+Keep worker/scheduler separate; the scheduler enqueues due reminders, order pushes and
+receipt checks each minute. Receipt checks become due15minutes after accepted tickets.
+The dedicated receipt pool has one connection/no overflow; account for it in worker budgets.
+Scheduler still needs only queue/migration configuration, no S3/Expo credentials.
+
+The legacy Supabase push adapter is optional when PUSH_PROVIDER=supabase; Expo needs no
+Supabase service. The current separate legacy real-SMS adapter still requires its existing
+API configuration; selecting Expo does not complete the unpublished Authentica work.
+
+Wallet PDFs are no-store informational snapshots, not invoice/earnings/legal documents.
+Bounded SQL and rendering avoid complete-history loading:1..366days,5000entries,8MiB,
+two render slots per API process. Large ranges must be narrowed rather than truncated.
+Annual calendar expansion is SQL-scoped to the owner before ordering/limit; at most two
+calendar years are expanded for a366-day range. Existing owner/date indexes are reused;
+no speculative occurrence index or cross-account cache was introduced.
+
+Independent courier appointments are excluded by the user. The calendar remains assigned
+orders only. Final closure/fund-return/retention policy remains postponed.

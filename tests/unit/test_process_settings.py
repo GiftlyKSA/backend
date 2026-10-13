@@ -17,13 +17,11 @@ def worker_values():
         "OTP_HMAC_KEY": None,
         "FIELD_ENCRYPTION_KEYS": '{"1":"' + base64.b64encode(b"a" * 32).decode() + '"}',
         "FIELD_ENCRYPTION_KEY_VERSION": 1,
-        "AWS_REGION": "test",
-        "AWS_ACCESS_KEY_ID": "test",
-        "AWS_SECRET_ACCESS_KEY": "test",
-        "S3_BUCKET_NAME": "test",
-        "CLOUDFRONT_DOMAIN": "test",
-        "CLOUDFRONT_KEY_PAIR_ID": "test",
-        "CLOUDFRONT_PRIVATE_KEY": "test",
+        "S3_REGION": "test",
+        "S3_ENDPOINT": "https://objects.example.com",
+        "S3_ACCESS_KEY_ID": "test",
+        "S3_SECRET_ACCESS_KEY": "test",
+        "S3_BUCKET": "test",
         "SNDR_API_KEY": "test",
         "SNDR_BASE_URL": "https://api.sndr.sh",
         "SNDR_FROM_EMAIL": "hello@example.com",
@@ -42,7 +40,7 @@ def test_production_worker_does_not_need_api_auth_sms_or_cors():
     assert settings.is_production
 
 
-@pytest.mark.parametrize("key", ["SNDR_API_KEY", "SUPABASE_SERVICE_KEY", "AWS_SECRET_ACCESS_KEY"])
+@pytest.mark.parametrize("key", ["SNDR_API_KEY", "S3_SECRET_ACCESS_KEY"])
 def test_worker_requires_credentials_for_enabled_jobs(key):
     values = worker_values()
     values[key] = None
@@ -131,4 +129,28 @@ def test_production_worker_rejects_empty_secret_credentials(value):
     values = worker_values()
     values["SNDR_API_KEY"] = value
     with pytest.raises(ValidationError, match="SNDR_API_KEY"):
+        WorkerSettings(_env_file=None, **values)
+
+
+def test_expo_worker_needs_no_supabase_settings():
+    values = worker_values()
+    values["SUPABASE_URL"] = None
+    values["SUPABASE_SERVICE_KEY"] = None
+    assert WorkerSettings(_env_file=None, **values).push_provider == "expo"
+
+
+@pytest.mark.parametrize("name", ["SUPABASE_URL", "SUPABASE_SERVICE_KEY"])
+def test_explicit_legacy_push_worker_requires_its_credentials(name):
+    values = worker_values()
+    values["PUSH_PROVIDER"] = "supabase"
+    values[name] = None
+    with pytest.raises(ValidationError, match=name):
+        WorkerSettings(_env_file=None, **values)
+
+
+@pytest.mark.parametrize("provider_field", ["STORAGE_PROVIDER", "PUSH_PROVIDER"])
+def test_production_worker_cannot_select_fakes(provider_field):
+    values = worker_values()
+    values[provider_field] = "fake"
+    with pytest.raises(ValidationError, match="Production must not select fake"):
         WorkerSettings(_env_file=None, **values)

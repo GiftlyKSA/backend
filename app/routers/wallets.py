@@ -1,6 +1,6 @@
 """Wallet routes.
 
-Reads are scoped to the authenticated user's own wallet — ownership is enforced by
+Reads are scoped to the authenticated user's own wallet â€” ownership is enforced by
 filtering on the actor id from the JWT, never a path or body value.
 """
 
@@ -38,6 +38,7 @@ from app.services.money_service import MoneyService
 from app.services.operation_service import OperationService
 from app.services.payment_service import build_payment_service
 from app.services.reporting_dates import reporting_bounds
+from app.services.wallet_statement_pdf import WalletStatementPdfService
 from app.services.wallet_statement_service import WalletStatementService
 from app.services.withdrawal_service import WithdrawalService
 
@@ -230,3 +231,40 @@ async def get_wallet_statement(
         WalletRepository(db),
         CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),
     ).read(actor.id, from_date=from_date, to_date=to_date, limit=limit, cursor=cursor)
+
+
+@router.get(
+    "/me/statement/pdf",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}
+    },
+)
+async def download_wallet_statement(
+    db: DbDep,
+    actor: Annotated[Actor, Depends(_CustomerOrCourier)],
+    from_date: Annotated[CalendarDate, Query(description="Inclusive Asia/Riyadh start day.")],
+    to_date: Annotated[CalendarDate, Query(description="Inclusive Asia/Riyadh end day.")],
+) -> Response:
+    """Download a complete informational snapshot of at most 366 days and 5000 entries."""
+    service = WalletStatementService(
+        WalletRepository(db),
+        CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),
+    )
+    payload = await WalletStatementPdfService(service).export(
+        actor.id,
+        from_date=from_date,
+        to_date=to_date,
+        release_reads=db.commit,
+    )
+    return Response(
+        payload,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": (
+                f'attachment; filename="giftly-statement-{from_date}-{to_date}.pdf"'
+            ),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

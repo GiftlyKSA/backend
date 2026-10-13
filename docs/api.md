@@ -1366,3 +1366,154 @@ image validation to use these URLs. See tasks.md for remaining release checks.
 Existing mobile source already wires reports, notifications, avatar and phone flows.
 Remaining UI work: courier-home earnings, customer q search and actual historical timeline
 events. Integration prompts are delivered in chat only.
+
+## Approved mobile additions - 2026-10-13
+
+These additions preserve existing saved-occasion CRUD, wallet statement JSON, device
+registration and avatar attachment paths. Deployment is recorded separately in the review.
+
+### City-scoped new-order push and Expo receipts
+
+The committed order/outbox is delivered by the separate worker, not the API transaction.
+Recipients are ACTIVE, verified, non-deleted couriers whose assigned city FK matches the
+order city. Original recipient/device ownership is rechecked before each Expo send chunk.
+Only NEW orders are advertised. A registration created after the initial recipient snapshot
+does not receive that old event. Device transfers and revoked registrations are excluded.
+
+Exact Expo data (not the HTTP response to creating an order):
+```json
+{"type":"ORDER_AVAILABLE","order_id":"11111111-1111-4111-8111-111111111111"}
+```
+The UUID is the actual persisted order ID. Title/body are generic, without customer details,
+photos, credentials or signed URLs. Treat pushes as repeatable hints, deduplicate navigation
+by type/order_id and read authorized GET /api/orders/available or the order detail. Do not
+accept an order, change money or assume ownership from a push.
+
+POST /api/devices still accepts {token:string,device_os:IOS|ANDROID}; it returns 201 with
+the existing DeviceResponse. DELETE /api/devices accepts {token:string} and returns 204.
+With Expo selected, mobile must register getExpoPushTokenAsync() results, not native FCM/APNs
+tokens. Preserve shared-device account switching and unregister-before-logout behavior.
+
+Send chunks are at most 100. Accepted ticket IDs are committed before later chunks.
+Transport retries are bounded; the existing durable outboxes recover failures. Unknown
+remote outcomes can duplicate hints; no exactly-once delivery or business action is claimed.
+Receipt lookups start after 15 minutes. Missing/transient receipts use bounded backoff,
+at most 32 attempts and a 24-hour lifetime. DeviceNotRegistered deletes only an unchanged
+device-ID/token/last_seen_at registration; refreshed or transferred registrations survive.
+Receipt updates and invalid-token removals are batched with lease fencing.
+No provider delivery was tested in this release.
+
+### Annual customer occasions
+
+Existing POST /api/occasions and PATCH /api/occasions/{occasion_id} accept optional
+recurrence: NONE|ANNUAL. Default NONE preserves existing one-off behavior. Responses add
+the same recurrence field. Only active customers may access their own records.
+
+Example create:
+```json
+{
+  "title":"Birthday",
+  "occasion_date":"2020-02-29",
+  "recurrence":"ANNUAL",
+  "reminder_enabled":true,
+  "reminder_days_before":7
+}
+```
+Example 201 response:
+```json
+{
+  "id":"22222222-2222-4222-8222-222222222222",
+  "title":"Birthday",
+  "occasion_date":"2020-02-29",
+  "recurrence":"ANNUAL",
+  "reminder_enabled":true,
+  "reminder_days_before":7,
+  "timezone":"Asia/Riyadh",
+  "created_at":"2026-10-13T10:00:00Z",
+  "updated_at":"2026-10-13T10:00:00Z"
+}
+```
+The date remains the original Gregorian anchor. Annual occurrences preserve month/day and
+never precede that anchor. February 29 occurs only in leap years, including the Gregorian
+century rule; it is not substituted with February 28/March 1.
+
+GET /api/occasions retains its stored-record date filtering and UUID cursor unchanged.
+Use GET /api/occasions/occurrences for expanded calendar dates:
+- Required from_date/to_date: inclusive YYYY-MM-DD, 1..366 Gregorian days.
+- limit: 1..100, default 25.
+- cursor: returned opaque string, maximum 100 characters.
+- Ordering: occurrence_date ascending, then occasion_id.
+- No request body; private,no-store.
+
+Example:
+GET /api/occasions/occurrences?from_date=2028-02-01&to_date=2028-02-29&limit=25
+```json
+{
+  "items":[{
+    "occasion_id":"22222222-2222-4222-8222-222222222222",
+    "title":"Birthday",
+    "occurrence_date":"2028-02-29",
+    "recurrence":"ANNUAL",
+    "reminder_enabled":true,
+    "reminder_days_before":7,
+    "timezone":"Asia/Riyadh"
+  }],
+  "next_cursor":null
+}
+```
+Each item identifies a virtual date of the saved occasion, not a new occasion or order.
+Reset cursor when the date range changes; retain identical filters on subsequent pages.
+Empty ranges return items:[] and next_cursor:null. Malformed cursor:400 BAD_REQUEST;
+foreign/stale/out-of-range anchor:404 NOT_FOUND; malformed dates/reversed/oversized range:
+422. Authentication/role failures retain401/403.
+
+Reminders reuse the existing 09:00 Asia/Riyadh schedule, worker and durable inbox.
+New annual schedules select the next non-past reminder; missed years are not bulk replayed.
+A unique owner/occasion/occurrence-date event prevents duplicate inbox events.
+Push remains at-least-once; permission/provider configuration is required for real delivery.
+Changing anchor, recurrence, reminder offset or enabled state invalidates old leases.
+reminder_enabled:false disables delivery only. recurrence:NONE restores the original
+one-off anchor; change occasion_date separately if a different one-off date is desired.
+DELETE removes future schedules; existing historical inbox entries can remain.
+
+### Informational wallet statement PDF
+
+GET /api/wallets/me/statement/pdf?from_date=2026-10-01&to_date=2026-10-13
+No request body, cursor or limit. Active customers and eligible active verified couriers
+may export their own wallet only; no client owner/wallet ID is accepted.
+
+Inclusive Asia/Riyadh bounds and the existing 1..366-day maximum match the JSON statement.
+The document includes currency, bounds, UTC-snapshot time displayed in GMT+3, exact IDs,
+signed amounts and whole-range decimal-string SQL totals. SETTLED, PENDING and REVERSED
+entries/totals are separate. It is a generated informational snapshot, not a legally
+specified document, invoice or earnings report. It does not invent opening/closing balances.
+
+200 returns PDF bytes:
+- Content-Type: application/pdf.
+- Content-Disposition: attachment; filename="giftly-statement-2026-10-01-2026-10-13.pdf".
+- Cache-Control: private, no-store; X-Content-Type-Options:nosniff.
+
+All selected entries are covered from one SQL snapshot, up to 5000 entries. Larger exports
+return422 VALIDATION_ERROR requesting a narrower range, never a partial PDF. English
+descriptions are abbreviated to120characters; unsupported non-English descriptions are
+explicitly omitted. IDs, amounts and entry counts remain complete.
+Two render slots per API process; read/release timeout25seconds, cooperative rendering
+deadline20seconds, maximum8MiB. Cancellation retains admission until the actual thread
+finishes. 503 STATEMENT_EXPORT_UNAVAILABLE denotes busy/expired rendering; no public cache
+or unauthenticated download URL is created. Existing401/403/404/422 envelopes apply.
+
+### Courier avatars: real storage selection
+
+Existing signed PUT -> POST /api/media/confirm -> PUT /api/users/me/courier-avatar remains
+unchanged. Only eligible couriers can attach/remove avatars; customer avatars are excluded.
+Use owned COURIER_AVATAR grants, JPEG/PNG, exact declared size and decoded image validation.
+Upload/read expiry is300seconds. Authorized GET /api/users/me renews private avatar access.
+No forged, reused, wrong-purpose or foreign object can attach.
+
+STORAGE_PROVIDER=s3 selects reachable public HTTPS S3-compatible origins even in development
+without enabling other real integrations. Configuration fails closed on missing S3 fields,
+localhost/private IP/internal hostnames, credentials in URL or invalid origins. This is
+configuration validation, not proof of DNS reachability or valid bucket credentials.
+Fake storage remains a local/test double with auto in non-production. Hosted mobile use
+must explicitly select s3 with real keys; do not use or rewrite localhost fake URLs.
+Storage keys are opaque server-issued references, never public access URLs.

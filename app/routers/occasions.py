@@ -9,15 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_settings, require_role
 from app.models.enums import UserRole
+from app.repositories.occasion_occurrence_repository import OccasionOccurrenceRepository
 from app.repositories.operation_repository import OperationRepository
 from app.repositories.planning_repository import PlanningRepository
-from app.schemas.date_range import DateRange, date_range
+from app.schemas.date_range import CalendarDate, DateRange, date_range
 from app.schemas.occasions import (
     CreateOccasionRequest,
+    OccasionOccurrencePage,
     OccasionPage,
     OccasionResponse,
     UpdateOccasionRequest,
 )
+from app.services.occasion_occurrence_service import OccasionOccurrenceService
 from app.services.occasion_service import OccasionService
 from app.services.operation_service import OperationService
 
@@ -71,6 +74,27 @@ async def list_occasions(
     )
     return OccasionPage(
         items=[OccasionResponse.model_validate(row) for row in rows], next_cursor=next_cursor
+    )
+
+
+@router.get("/occurrences", response_model=OccasionOccurrencePage)
+async def list_occurrences(
+    db: DbDep,
+    actor: CustomerDep,
+    response: Response,
+    from_date: Annotated[CalendarDate, Query()],
+    to_date: Annotated[CalendarDate, Query()],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    cursor: Annotated[str | None, Query(max_length=100)] = None,
+) -> OccasionOccurrencePage:
+    """Expand owned one-off/annual dates, oldest first, for at most 366 Gregorian days."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return await OccasionOccurrenceService(OccasionOccurrenceRepository(db)).list(
+        actor.id,
+        start=from_date,
+        end=to_date,
+        limit=limit,
+        cursor=cursor,
     )
 
 

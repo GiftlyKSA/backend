@@ -20,19 +20,8 @@ from botocore.auth import S3SigV4QueryAuth
 from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 from botocore.exceptions import ClientError
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 
 from tests.conftest import make_test_settings
-
-
-def _private_key_pem() -> str:
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    return key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode()
 
 
 class _S3Context:
@@ -99,15 +88,13 @@ async def test_real_push_send(monkeypatch: pytest.MonkeyPatch) -> None:
     await client.send_push(["tok"], "New message", "You have a new message")
 
 
-async def test_real_storage_signs_upload_length_and_cloudfront_read() -> None:
+async def test_real_storage_signs_upload_length_and_private_s3_read() -> None:
     client = S3StorageClient(
         bucket="private-bucket",
         region="eu-west-1",
         access_key_id="test-access-key",
         secret_access_key="test-secret-key",
-        cloudfront_domain="cdn.example.com",
-        cloudfront_key_pair_id="K123",
-        cloudfront_private_key=_private_key_pem(),
+        endpoint="https://objects.example.com",
     )
 
     upload = await client.create_upload_url(
@@ -118,6 +105,7 @@ async def test_real_storage_signs_upload_length_and_cloudfront_read() -> None:
     )
     upload_query = parse_qs(urlparse(upload).query)
     assert "content-length" in upload_query["X-Amz-SignedHeaders"][0]
+    assert "content-type" in upload_query["X-Amz-SignedHeaders"][0]
     assert "if-none-match" in upload_query["X-Amz-SignedHeaders"][0]
     required_headers = {
         "Content-Type": "image/jpeg",
@@ -131,6 +119,12 @@ async def test_real_storage_signs_upload_length_and_cloudfront_read() -> None:
         )
         != upload_query["X-Amz-Signature"][0]
     )
+
+    for header, value in (("Content-Type", "image/png"), ("Content-Length", "1235")):
+        assert (
+            _upload_signature(upload, {**required_headers, header: value})
+            != (upload_query["X-Amz-Signature"][0])
+        )
 
     objects: dict[str, bytes] = {}
 
@@ -153,9 +147,10 @@ async def test_real_storage_signs_upload_length_and_cloudfront_read() -> None:
 
     read = client.signed_read_url("orders/proof/file.jpg", ttl_seconds=60)
     read_query = parse_qs(urlparse(read).query)
-    assert read.startswith("https://cdn.example.com/orders/proof/file.jpg?")
-    assert set(read_query) == {"Expires", "Signature", "Key-Pair-Id", "Hash-Algorithm"}
-    assert read_query["Hash-Algorithm"] == ["SHA256"]
+    assert read.startswith("https://objects.example.com/private-bucket/orders/proof/file.jpg?")
+    assert read_query["X-Amz-Expires"] == ["60"]
+    assert read_query["X-Amz-SignedHeaders"] == ["host"]
+    assert read_query["X-Amz-Algorithm"] == ["AWS4-HMAC-SHA256"]
     await client.aclose()
 
 
@@ -170,9 +165,7 @@ async def test_real_storage_only_treats_missing_object_as_absent(code: str, miss
         region="eu-west-1",
         access_key_id="test-access-key",
         secret_access_key="test-secret-key",
-        cloudfront_domain="cdn.example.com",
-        cloudfront_key_pair_id="K123",
-        cloudfront_private_key=_private_key_pem(),
+        endpoint="https://objects.example.com",
     )
     client._session = _S3Session(_HeadClient())  # type: ignore[assignment]  # noqa: SLF001
 
@@ -210,9 +203,7 @@ async def test_private_storage_read_is_bounded_and_closes_body(size: int) -> Non
         region="eu-west-1",
         access_key_id="test-access-key",
         secret_access_key="test-secret-key",
-        cloudfront_domain="cdn.example.com",
-        cloudfront_key_pair_id="K123",
-        cloudfront_private_key=_private_key_pem(),
+        endpoint="https://objects.example.com",
     )
     client._session = _S3Session(_ObjectClient())  # type: ignore[assignment]  # noqa: SLF001
     if size == 5:
@@ -242,9 +233,7 @@ async def test_real_storage_reuses_client_and_closes_after_active_operation() ->
         region="eu-west-1",
         access_key_id="test-access-key",
         secret_access_key="test-secret-key",
-        cloudfront_domain="cdn.example.com",
-        cloudfront_key_pair_id="K123",
-        cloudfront_private_key=_private_key_pem(),
+        endpoint="https://objects.example.com",
     )
     session = _S3Session(_HeadClient())
     client._session = session  # type: ignore[assignment]  # noqa: SLF001
@@ -281,9 +270,7 @@ async def test_real_storage_rejects_cross_loop_use_and_finishes_cancelled_close(
         region="eu-west-1",
         access_key_id="test-access-key",
         secret_access_key="test-secret-key",
-        cloudfront_domain="cdn.example.com",
-        cloudfront_key_pair_id="K123",
-        cloudfront_private_key=_private_key_pem(),
+        endpoint="https://objects.example.com",
     )
     session = _S3Session(_HeadClient())
     client._session = session  # type: ignore[assignment]  # noqa: SLF001
@@ -342,9 +329,7 @@ async def test_real_storage_releases_range_response_body() -> None:
         region="eu-west-1",
         access_key_id="test-access-key",
         secret_access_key="test-secret-key",
-        cloudfront_domain="cdn.example.com",
-        cloudfront_key_pair_id="K123",
-        cloudfront_private_key=_private_key_pem(),
+        endpoint="https://objects.example.com",
     )
     client._session = _S3Session(_GetClient())  # type: ignore[assignment]  # noqa: SLF001
     assert await client.verify_image_magic_bytes("one.jpg", "image/jpeg")
@@ -371,13 +356,12 @@ async def test_build_clients_returns_real_in_production() -> None:
         SUPABASE_URL="https://sb",
         SUPABASE_SERVICE_KEY="sk",
         SMS_PROVIDER_KEY="sms-key",
-        AWS_REGION="eu-west-1",
-        AWS_ACCESS_KEY_ID="access",
-        AWS_SECRET_ACCESS_KEY="secret",
-        S3_BUCKET_NAME="private-bucket",
-        CLOUDFRONT_DOMAIN="cdn.example.com",
-        CLOUDFRONT_KEY_PAIR_ID="K123",
-        CLOUDFRONT_PRIVATE_KEY=_private_key_pem(),
+        S3_REGION="eu-west-1",
+        S3_ENDPOINT="https://objects.example.com",
+        PUSH_PROVIDER="supabase",
+        S3_ACCESS_KEY_ID="access",
+        S3_SECRET_ACCESS_KEY="secret",
+        S3_BUCKET="private-bucket",
         INTEGRATION_HTTP_TIMEOUT_SECONDS=4,
     )
     clients = build_clients(settings)

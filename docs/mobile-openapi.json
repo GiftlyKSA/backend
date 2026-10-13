@@ -3925,6 +3925,148 @@
           }
         }
       }
+    },
+    "/api/occasions/occurrences": {
+      "get": {
+        "description": "Expand owned one-off/annual dates, oldest first, for at most 366 Gregorian days.",
+        "operationId": "list_occurrences_api_occasions_occurrences_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "From Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "To Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccasionOccurrencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Occurrences",
+        "tags": [
+          "occasions"
+        ]
+      }
+    },
+    "/api/wallets/me/statement/pdf": {
+      "get": {
+        "description": "Download a complete informational snapshot of at most 366 days and 5000 entries.",
+        "operationId": "download_wallet_statement_api_wallets_me_statement_pdf_get",
+        "parameters": [
+          {
+            "description": "Inclusive Asia/Riyadh start day.",
+            "in": "query",
+            "name": "from_date",
+            "required": true,
+            "schema": {
+              "description": "Inclusive Asia/Riyadh start day.",
+              "format": "date",
+              "title": "From Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive Asia/Riyadh end day.",
+            "in": "query",
+            "name": "to_date",
+            "required": true,
+            "schema": {
+              "description": "Inclusive Asia/Riyadh end day.",
+              "format": "date",
+              "title": "To Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Wallet Statement",
+        "tags": [
+          "wallets"
+        ]
+      }
     }
   },
   "components": {
@@ -4589,6 +4731,15 @@
             "minimum": 0.0,
             "title": "Reminder Days Before",
             "default": 7
+          },
+          "recurrence": {
+            "default": "NONE",
+            "enum": [
+              "NONE",
+              "ANNUAL"
+            ],
+            "title": "Recurrence",
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -4652,7 +4803,7 @@
             "type": "array",
             "maxItems": 3,
             "title": "Request Media Keys",
-            "description": "Confirmed request-photo keys (0\u20133)."
+            "description": "Confirmed request-photo keys (0–3)."
           }
         },
         "additionalProperties": false,
@@ -5597,6 +5748,15 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "recurrence": {
+            "default": "NONE",
+            "enum": [
+              "NONE",
+              "ANNUAL"
+            ],
+            "title": "Recurrence",
+            "type": "string"
           }
         },
         "type": "object",
@@ -7483,6 +7643,21 @@
               }
             ],
             "title": "Reminder Days Before"
+          },
+          "recurrence": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NONE",
+                  "ANNUAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence"
           }
         },
         "additionalProperties": false,
@@ -8093,6 +8268,85 @@
         ],
         "title": "WithdrawalStatus",
         "description": "Courier withdrawal lifecycle."
+      },
+      "OccasionOccurrence": {
+        "description": "One virtual date, distinct from its saved occasion identity.",
+        "properties": {
+          "occasion_id": {
+            "format": "uuid",
+            "title": "Occasion Id",
+            "type": "string"
+          },
+          "occurrence_date": {
+            "format": "date",
+            "title": "Occurrence Date",
+            "type": "string"
+          },
+          "recurrence": {
+            "enum": [
+              "NONE",
+              "ANNUAL"
+            ],
+            "title": "Recurrence",
+            "type": "string"
+          },
+          "reminder_days_before": {
+            "title": "Reminder Days Before",
+            "type": "integer"
+          },
+          "reminder_enabled": {
+            "title": "Reminder Enabled",
+            "type": "boolean"
+          },
+          "timezone": {
+            "const": "Asia/Riyadh",
+            "default": "Asia/Riyadh",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occasion_id",
+          "title",
+          "occurrence_date",
+          "recurrence",
+          "reminder_enabled",
+          "reminder_days_before"
+        ],
+        "title": "OccasionOccurrence",
+        "type": "object"
+      },
+      "OccasionOccurrencePage": {
+        "description": "Bounded expanded dates ordered by occurrence date and occasion ID.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OccasionOccurrence"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "OccasionOccurrencePage",
+        "type": "object"
       }
     }
   }

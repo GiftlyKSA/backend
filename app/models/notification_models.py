@@ -1,11 +1,12 @@
 """Durable mobile inbox, status history and one-off reminder delivery."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -104,6 +105,7 @@ class OccasionReminder(Base):
     )
     version: Mapped[int] = mapped_column(Integer)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    occurrence_date: Mapped[date] = mapped_column(Date)
     enabled: Mapped[bool] = mapped_column(Boolean)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     push_completed_at: Mapped[datetime | None] = mapped_column(

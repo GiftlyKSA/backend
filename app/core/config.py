@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import base64
 import binascii
+import ipaddress
 import json
 import logging
+import re
 from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
@@ -84,14 +86,13 @@ class Settings(BaseSettings):
     FIELD_ENCRYPTION_KEYS: SecretStr
     FIELD_ENCRYPTION_KEY_VERSION: int
 
-    # Storage / CDN (required in production; validated by deploy config, not here)
-    AWS_REGION: str | None = None
-    AWS_ACCESS_KEY_ID: SecretStr | None = None
-    AWS_SECRET_ACCESS_KEY: SecretStr | None = None
-    S3_BUCKET_NAME: str | None = None
-    CLOUDFRONT_DOMAIN: str | None = None
-    CLOUDFRONT_KEY_PAIR_ID: str | None = None
-    CLOUDFRONT_PRIVATE_KEY: SecretStr | None = None
+    # Private S3-compatible storage
+    STORAGE_PROVIDER: Literal["auto", "s3", "fake"] = "auto"
+    S3_ENDPOINT: str | None = None
+    S3_BUCKET: str | None = None
+    S3_REGION: str = "auto"
+    S3_ACCESS_KEY_ID: SecretStr | None = None
+    S3_SECRET_ACCESS_KEY: SecretStr | None = None
 
     # sndr.sh (required only in production)
     SNDR_API_KEY: SecretStr | None = None
@@ -101,6 +102,8 @@ class Settings(BaseSettings):
     SNDR_INVOICE_PAID_TEMPLATE_KEY: str | None = None
 
     # SMS / Push
+    PUSH_PROVIDER: Literal["auto", "fake", "expo", "supabase"] = "auto"
+    EXPO_ACCESS_TOKEN: SecretStr | None = None
     SMS_PROVIDER_KEY: SecretStr | None = None
     SUPABASE_URL: str | None = None
     SUPABASE_SERVICE_KEY: SecretStr | None = None
@@ -198,7 +201,108 @@ class Settings(BaseSettings):
         self._validate_payments()
         if self.is_production:
             self._validate_production_interlock()
+        else:
+            self._validate_storage()
+            self._validate_push()
         return self
+
+    @property
+    def storage_provider(self) -> str:
+        """Resolve storage independently from other integrations."""
+        if self.STORAGE_PROVIDER == "auto":
+            return "s3" if self.is_production else "fake"
+        return self.STORAGE_PROVIDER
+
+    @property
+    def push_provider(self) -> str:
+        """Default production push to Expo and development to fake delivery."""
+        if self.PUSH_PROVIDER == "auto":
+            return "expo" if self.is_production else "fake"
+        return self.PUSH_PROVIDER
+
+    def _validate_storage(self) -> None:
+        if self.storage_provider == "fake":
+            if self.is_production:
+                raise ValueError("Production must not select fake storage.")
+            return
+        for name in (
+            "S3_ENDPOINT",
+            "S3_BUCKET",
+            "S3_REGION",
+            "S3_ACCESS_KEY_ID",
+            "S3_SECRET_ACCESS_KEY",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, SecretStr):
+                value = value.get_secret_value()
+            if not value or not value.strip():
+                raise ValueError(f"{name} is required for S3 storage.")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", self.S3_BUCKET or ""):
+            raise ValueError("S3_BUCKET must be a valid bucket name.")
+
+        self._validate_storage_endpoint()
+
+    def _validate_storage_endpoint(self) -> None:
+        endpoint = self.S3_ENDPOINT or ""
+        try:
+            parsed = urlsplit(endpoint)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("S3_ENDPOINT must be a public HTTPS origin.") from exc
+        if (
+            endpoint != endpoint.strip()
+            or any(character.isspace() for character in endpoint)
+            or "?" in endpoint
+            or "#" in endpoint
+            or parsed.scheme != "https"
+            or not host
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or port not in {None, 443}
+        ):
+            raise ValueError("S3_ENDPOINT must be a public HTTPS origin.")
+        self._validate_storage_host(host)
+
+    @staticmethod
+    def _validate_storage_host(host: str) -> None:
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            if (
+                "." not in host
+                or host.endswith(
+                    (".localhost", ".localdomain", ".local", ".internal", ".lan", ".home", ".arpa")
+                )
+                or not all(
+                    re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                    for label in host.split(".")
+                )
+                or all(label.isdigit() for label in host.split("."))
+            ):
+                raise ValueError("S3_ENDPOINT must have a public hostname.") from None
+        else:
+            if not address.is_global:
+                raise ValueError("S3_ENDPOINT must have a public address.")
+
+    def _validate_push(self) -> None:
+        if self.push_provider == "fake" and self.is_production:
+            raise ValueError("Production must not select fake push.")
+        if self.push_provider == "supabase":
+            self._require_production_fields("SUPABASE_URL", "SUPABASE_SERVICE_KEY")
+            parsed = urlsplit(self.SUPABASE_URL or "")
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("SUPABASE_URL must be an HTTPS base URL without credentials.")
 
     @property
     def payment_provider(self) -> str:
@@ -362,17 +466,11 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ALLOWED_ORIGINS must be set in production.")
         if "*" in self.cors_origins:
             raise ValueError("CORS_ALLOWED_ORIGINS must not contain a wildcard in production.")
+        self._validate_storage()
+        self._validate_push()
         self._require_production_fields(
-            "AWS_REGION",
-            "AWS_ACCESS_KEY_ID",
-            "AWS_SECRET_ACCESS_KEY",
-            "S3_BUCKET_NAME",
-            "CLOUDFRONT_DOMAIN",
-            "CLOUDFRONT_KEY_PAIR_ID",
-            "CLOUDFRONT_PRIVATE_KEY",
             "SMS_PROVIDER_KEY",
             "SUPABASE_URL",
-            "SUPABASE_SERVICE_KEY",
             "SNDR_API_KEY",
             "SNDR_BASE_URL",
             "SNDR_FROM_EMAIL",
@@ -408,25 +506,18 @@ class WorkerSettings(Settings):
         self._validate_encryption_keys()
         self._validate_rates()
         self._validate_payments()
+        self._validate_storage()
+        self._validate_push()
         if self.is_production:
             if self.DEBUG:
                 raise ValueError("DEBUG must be False in production.")
             self._require_production_fields(
-                "AWS_REGION",
-                "AWS_ACCESS_KEY_ID",
-                "AWS_SECRET_ACCESS_KEY",
-                "S3_BUCKET_NAME",
-                "CLOUDFRONT_DOMAIN",
-                "CLOUDFRONT_KEY_PAIR_ID",
-                "CLOUDFRONT_PRIVATE_KEY",
-                "SUPABASE_URL",
-                "SUPABASE_SERVICE_KEY",
                 "SNDR_API_KEY",
                 "SNDR_BASE_URL",
                 "SNDR_FROM_EMAIL",
                 "SNDR_FROM_NAME",
             )
-            for name in ("SUPABASE_URL", "SNDR_BASE_URL"):
+            for name in ("SNDR_BASE_URL",):
                 parsed = urlsplit(getattr(self, name))
                 if (
                     parsed.scheme != "https"

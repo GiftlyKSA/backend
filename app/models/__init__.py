@@ -4,6 +4,7 @@ from app.models.account_change import AccountChangeChallenge, AccountRequest, Ac
 from app.models.base import Base
 from app.models.courier_avatar import CourierAvatar
 from app.models.courier_report_settings import CourierReportSettings
+from app.models.expo_push_receipt import ExpoPushReceipt
 from app.models.notification_models import (
     InboxNotification,
     OccasionReminder,
@@ -50,6 +51,7 @@ from app.models.tables import (
 from app.models.write_operation import WriteOperation
 
 __all__ = [
+    "ExpoPushReceipt",
     "CourierAvatar",
     "CourierReportSettings",
     "InboxNotification",

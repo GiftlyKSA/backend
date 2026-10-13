@@ -15,6 +15,13 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Expo Push Receipts": "إيصالات إشعارات إكسبو",
+    "Ticket Id": "معرّف تذكرة الإشعار",
+    "Device Id": "معرّف الجهاز",
+    "Device Last Seen At": "آخر ظهور للجهاز عند الإرسال",
+    "Error Code": "رمز الخطأ",
+    "Recurrence": "التكرار",
+    "Occurrence Date": "تاريخ المناسبة المتكرر",
     "Account Change Challenges": "طلبات التحقق لتغيير الحساب",
     "Account Request Emails": "رسائل طلبات الحساب",
     "Account Requests": "طلبات الحساب",

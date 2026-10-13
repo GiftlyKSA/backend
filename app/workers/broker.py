@@ -38,6 +38,7 @@ for _module in (
     "account_requests",
     "chat_notifications",
     "expiry",
+    "expo_receipts",
     "gateway_reconciliation",
     "media_cleanup",
     "order_notifications",

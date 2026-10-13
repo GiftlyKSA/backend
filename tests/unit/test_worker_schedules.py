@@ -23,6 +23,7 @@ async def test_maintenance_tasks_registered_with_label_schedule_source() -> None
 
     expected = {
         "app.workers.occasion_reminders:deliver_occasion_reminders": "* * * * *",
+        "app.workers.expo_receipts:check_expo_receipts": "* * * * *",
         "app.workers.account_requests:deliver_account_request_emails": "* * * * *",
         "app.workers.auto_approve:run_auto_approve": "*/15 * * * *",
         "app.workers.chat_notifications:deliver_chat_notifications": "* * * * *",

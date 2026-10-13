@@ -106,13 +106,11 @@ def test_short_dedicated_otp_key_refuses_boot(key: str) -> None:
 def test_production_provider_urls_require_https(name: str) -> None:
     production = _base_env(
         ENVIRONMENT="production",
-        AWS_REGION="test-region",
-        AWS_ACCESS_KEY_ID="test-key",
-        AWS_SECRET_ACCESS_KEY="test-secret",
-        S3_BUCKET_NAME="test-bucket",
-        CLOUDFRONT_DOMAIN="media.example.test",
-        CLOUDFRONT_KEY_PAIR_ID="test-id",
-        CLOUDFRONT_PRIVATE_KEY="test-key",
+        S3_REGION="test-region",
+        S3_ENDPOINT="https://objects.example.com",
+        S3_ACCESS_KEY_ID="test-key",
+        S3_SECRET_ACCESS_KEY="test-secret",
+        S3_BUCKET="test-bucket",
         SMS_PROVIDER_KEY="test-key",
         SUPABASE_URL="https://api.example.test",
         SUPABASE_SERVICE_KEY="test-key",
@@ -144,7 +142,7 @@ def test_production_with_debug_refuses_boot() -> None:
 
 
 def test_production_missing_storage_config_refuses_boot() -> None:
-    with pytest.raises(ValueError, match="AWS_REGION"):
+    with pytest.raises(ValueError, match="S3_ENDPOINT"):
         Settings(  # type: ignore[call-arg]
             _env_file=None,
             **_base_env(ENVIRONMENT="production", DEBUG="false"),

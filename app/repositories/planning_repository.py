@@ -38,6 +38,7 @@ class PlanningRepository:
         reminder_days_before: int,
         featured_gift_id: uuid.UUID | None,
         reminder_enabled: bool = False,
+        recurrence: str = "NONE",
     ) -> Occasion:
         """Create an occasion owned by the authenticated user ID supplied by the service."""
         occasion = Occasion(
@@ -47,6 +48,7 @@ class PlanningRepository:
             reminder_days_before=reminder_days_before,
             featured_gift_id=featured_gift_id,
             reminder_enabled=reminder_enabled,
+            recurrence=recurrence,
         )
         self._session.add(occasion)
         await self._session.flush()
@@ -95,6 +97,7 @@ class PlanningRepository:
         occasion_date: date | None,
         reminder_days_before: int | None,
         reminder_enabled: bool | None = None,
+        recurrence: str | None = None,
     ) -> Occasion:
         """Update explicit editable fields on an ownership-locked row."""
         if title is not None:
@@ -103,6 +106,8 @@ class PlanningRepository:
             occasion.occasion_date = occasion_date
         if reminder_days_before is not None:
             occasion.reminder_days_before = reminder_days_before
+        if recurrence is not None:
+            occasion.recurrence = recurrence
         if reminder_enabled is not None:
             occasion.reminder_enabled = reminder_enabled
         occasion.updated_at = datetime.now(UTC)

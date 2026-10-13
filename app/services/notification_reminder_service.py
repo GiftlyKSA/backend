@@ -86,6 +86,7 @@ async def send_occasion_reminders(
         async with factory() as session:
             repository = NotificationReminderRepository(session)
             now = datetime.now(UTC)
+            await repository.advance_annual(now=now)
             await repository.materialize_due(now=now)
             await repository.retire_pending(now=now)
             await session.commit()

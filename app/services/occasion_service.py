@@ -23,6 +23,7 @@ class OccasionService:
         occasion_date: date,
         reminder_days_before: int,
         reminder_enabled: bool = False,
+        recurrence: str = "NONE",
     ) -> Occasion:
         """Always derive ownership from the authenticated customer."""
         return await self._repository.create_occasion(
@@ -32,6 +33,7 @@ class OccasionService:
             reminder_days_before=reminder_days_before,
             featured_gift_id=None,
             reminder_enabled=reminder_enabled,
+            recurrence=recurrence,
         )
 
     async def get(self, actor_id: UUID, occasion_id: UUID, *, lock: bool = False) -> Occasion:
@@ -70,6 +72,7 @@ class OccasionService:
         occasion_date: date | None,
         reminder_days_before: int | None,
         reminder_enabled: bool | None = None,
+        recurrence: str | None = None,
     ) -> Occasion:
         """Lock current ownership before modifying an occasion."""
         occasion = await self.get(actor_id, occasion_id, lock=True)
@@ -79,6 +82,7 @@ class OccasionService:
             occasion_date=occasion_date,
             reminder_days_before=reminder_days_before,
             reminder_enabled=reminder_enabled,
+            recurrence=recurrence,
         )
 
     async def delete(self, actor_id: UUID, occasion_id: UUID) -> None:
