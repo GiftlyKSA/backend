@@ -55,7 +55,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
-| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Open - 3N calls reproduced at N=1 and N=5 |
+| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
 | [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Optional proposal - not a confirmed defect |
 | [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
 | [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
@@ -275,7 +275,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Batch snapshots and ordered locked reads; add a confirmed-only batch claim returning keys; reject partial claims atomically. Do not reuse a helper that implicitly confirms uploads. Five keys can use three grant statements |
 | Severity /10 | 3 |
 | Urgency /10 | 3 |
-| Status | Open - 3N calls reproduced at N=1 and N=5 |
+| Status | Fixed - constant three-statement prepared media flow |
 
 <a id="aud-11-task-record"></a>
 
@@ -1020,3 +1020,53 @@ Full native PostgreSQL/Redis suite: **1,583 passed, zero skips, 89.76% coverage*
 one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high
 review passed. Original audit evidence is retained. Publication is checked separately
 from deployment. **Next:** AUD-10, bounded media grant reads and conditional claims.
+
+
+### AUD-10 — batch order/proof media reads and claims
+
+**Implemented:** 2026-10-15. **Category:** SQL optimization. **Original severity:** 3/10.
+
+The normal order/request-photo and delivery-proof flow now loads all bounded grant
+snapshots once, validates each object's actual content outside the attachment
+critical section, and then loads/locks all current grants once in storage-key order.
+The existing populate_existing refresh is retained. Ownership, key allowlist, avatar
+expiry/storage restrictions where relevant, issued purpose, confirmed state,
+unattached/not-deleting state and validated metadata are checked again before the
+single conditional batch claim. Claimed keys must exactly match the requested set.
+Duplicate keys and more than five keys fail before grant access; empty batches issue
+no SQL. Per-file HEAD/byte/decoder validation remains necessary and was not bypassed.
+
+The new repository operation is deliberately confirmed-only. It requires owner,
+purpose, confirmed_at, unattached and not-deleting predicates and returns the keys
+actually consumed. It does not reuse chat's confirm-and-claim operation, which has
+different semantics, and never implicitly confirms an upload. Caller transaction
+rollback still covers all claims and order/proof writes. Lock acquisition is stable,
+so opposing client key order cannot invert locks. Direct unprepared service callers
+use a bounded snapshot read and object validation before the fresh locking read;
+there are no storage waits while those grant locks are held. Normal HTTP preparation
+still releases read transactions before storage I/O and reauthenticates afterward.
+Single-grant confirmation/claims and their existing avatar flow remain compatible.
+
+Native query counting reproduced fifteen statements for five attachments before the
+change. The prepared flow now uses three statements for either one or five files:
+one snapshot SELECT, one ordered SELECT FOR UPDATE and one conditional UPDATE
+RETURNING. The unprepared fallback likewise uses a constant bounded three statements.
+This removes round-trip amplification without claiming to remove per-row PostgreSQL
+constraints or audit work. No production latency/capacity measurement is claimed.
+All validation loops/maps are bounded to five entries; no unbounded collection or
+quadratic algorithm was introduced.
+
+Thirty-two focused checks pass. New native regressions cover query counts at one/five,
+ordered lock SQL, partial-claim rollback and refusal to confirm unconfirmed grants.
+Existing stale metadata/owner/purpose/confirmation/cleanup/consumed tests now exercise
+both single and batch paths. Cross-account, revoked-session, independent cleanup and
+opposing concurrent key-order checks retain their assertions. Test doubles now supply
+batch reads, and the pausing concurrency repository pauses after the actual ordered
+lock batch; no application validation bypass or weakened assertions were introduced.
+
+No migration, dependency, environment variable, API response/schema or mobile update
+is needed. Rollback is a code revert and restores bounded per-item query cost. Full native
+PostgreSQL/Redis suite: **1,594 passed, zero skips, 89.78% coverage**, one unchanged
+upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed.
+Publication is checked separately from deployment. **Next:** AUD-11, conditional
+public catalog cache assessment. Historical audit details remain intact.

@@ -66,6 +66,8 @@ async def test_revoked_actor_cannot_consume_prepared_order_upload():
         deleting_at=None,
     )
 
+    uploads.get_many.return_value = [uploads.get.return_value]
+
     async def head(storage_key):
         assert db.commit.await_count == 1
         return ObjectHead(True, 12, "image/jpeg")

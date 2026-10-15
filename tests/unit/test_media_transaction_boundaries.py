@@ -32,7 +32,8 @@ async def test_presign_finishes_before_quota_lock_is_acquired():
 @pytest.mark.parametrize(
     "race", [None, "metadata", "owner", "purpose", "confirmation", "cleanup", "consumed"]
 )
-async def test_prepared_claim_rechecks_grant_without_storage_waits(race, monkeypatch):
+@pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+async def test_prepared_claim_rechecks_grant_without_storage_waits(race, monkeypatch, batch):
     actor = uuid4()
     row = SimpleNamespace(
         storage_key=f"orders/pending/{uuid4()}.jpg",
@@ -46,7 +47,9 @@ async def test_prepared_claim_rechecks_grant_without_storage_waits(race, monkeyp
     )
     uploads, storage = AsyncMock(), AsyncMock()
     uploads.get.return_value = row
+    uploads.get_many.return_value = [row]
     uploads.claim.return_value = True
+    uploads.claim_confirmed_many.return_value = {row.storage_key}
     released = False
 
     async def release():
@@ -65,23 +68,32 @@ async def test_prepared_claim_rechecks_grant_without_storage_waits(race, monkeyp
         [row.storage_key], actor_id=actor, purpose="ORDER_REQUEST", release_reads=release
     )
     storage.head_object.side_effect = AssertionError("S3 wait inside attachment transaction")
-    if race == "metadata":
-        row.byte_size = 13
-    elif race == "owner":
-        row.owner_user_id = uuid4()
-    elif race == "purpose":
-        row.purpose = "DELIVERY_PROOF"
-    elif race == "confirmation":
-        row.confirmed_at = None
-    elif race == "cleanup":
-        row.deleting_at = datetime.now(UTC)
+    changes = {
+        "metadata": ("byte_size", 13),
+        "owner": ("owner_user_id", uuid4()),
+        "purpose": ("purpose", "DELIVERY_PROOF"),
+        "confirmation": ("confirmed_at", None),
+        "cleanup": ("deleting_at", datetime.now(UTC)),
+    }
+    if race in changes:
+        name, value = changes[race]
+        setattr(row, name, value)
     elif race == "consumed":
         uploads.claim.return_value = False
+        uploads.claim_confirmed_many.return_value = set()
+
+    async def claim():
+        if batch:
+            return (
+                await service.claim_many([row.storage_key], actor_id=actor, purpose="ORDER_REQUEST")
+            )[row.storage_key]
+        return await service.claim(row.storage_key, actor_id=actor, purpose="ORDER_REQUEST")
+
     if race:
         with pytest.raises((BadRequestError, ConflictError)):
-            await service.claim(row.storage_key, actor_id=actor, purpose="ORDER_REQUEST")
+            await claim()
     else:
-        result = await service.claim(row.storage_key, actor_id=actor, purpose="ORDER_REQUEST")
+        result = await claim()
         assert result == ObjectHead(True, 12, "image/jpeg")
 
 

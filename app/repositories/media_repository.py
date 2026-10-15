@@ -109,6 +109,26 @@ class MediaRepository:
             )
         )
 
+    async def claim_confirmed_many(
+        self, storage_keys: list[str], actor_id: uuid.UUID, purpose: str
+    ) -> set[str]:
+        """Consume only confirmed, owned, unclaimed grants under caller-held ordered locks."""
+        return set(
+            await self._session.scalars(
+                update(MediaUpload)
+                .where(
+                    MediaUpload.storage_key.in_(storage_keys),
+                    MediaUpload.owner_user_id == actor_id,
+                    MediaUpload.purpose == purpose,
+                    MediaUpload.confirmed_at.is_not(None),
+                    MediaUpload.attached_at.is_(None),
+                    MediaUpload.deleting_at.is_(None),
+                )
+                .values(attached_at=datetime.now(UTC))
+                .returning(MediaUpload.storage_key)
+            )
+        )
+
     async def claim(self, storage_key: str, actor_id: uuid.UUID, purpose: str) -> bool:
         """Atomically consume a confirmed grant once for its issued purpose."""
         updated_key = await self._session.scalar(

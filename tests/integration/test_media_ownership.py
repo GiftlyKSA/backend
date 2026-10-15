@@ -32,19 +32,21 @@ def _settings() -> Settings:
 
 
 class _PausingMediaRepository(MediaRepository):
-    """Give a competing transaction time to lock its first client-ordered key."""
+    """Keep ordered grant locks held while the opposing transaction competes."""
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)
         self._paused = False
 
-    async def claim(self, storage_key: str, actor_id: uuid.UUID, purpose: str) -> bool:
-        """Pause after the first successful database claim."""
-        claimed = await super().claim(storage_key, actor_id, purpose)
-        if claimed and not self._paused:
+    async def get_many(
+        self, storage_keys: list[str], *, for_update: bool = False
+    ) -> list[MediaUpload]:
+        """Pause after ordered grant locks are held so the opposing request competes."""
+        grants = await super().get_many(storage_keys, for_update=for_update)
+        if for_update and not self._paused:
             self._paused = True
             await asyncio.sleep(0.2)
-        return claimed
+        return grants
 
 
 async def _user(session: AsyncSession) -> User:

@@ -203,8 +203,8 @@ class MediaService:
         if len(storage_keys) > 5 or len(storage_keys) != len(set(storage_keys)):
             raise ConflictError("Provide at most five unique media keys.")
         snapshots = []
-        for key in sorted(storage_keys):
-            grant = await self._owned_grant(key, actor_id)
+        for grant in await self._owned_grants(storage_keys, actor_id):
+            key = grant.storage_key
             if grant.purpose != purpose or grant.confirmed_at is None:
                 raise BadRequestError("The media is not confirmed for this purpose.")
             if grant.attached_at is not None or grant.deleting_at is not None:
@@ -222,18 +222,66 @@ class MediaService:
         self, storage_keys: list[str], *, actor_id: uuid.UUID, purpose: str
     ) -> dict[str, ObjectHead]:
         """Claim unique keys in stable order to avoid opposing row-lock orders."""
-        if len(storage_keys) != len(set(storage_keys)):
-            raise ConflictError("Duplicate media keys are not allowed.")
-        heads: dict[str, ObjectHead] = {}
-        for storage_key in sorted(storage_keys):
-            heads[storage_key] = await self.claim(storage_key, actor_id=actor_id, purpose=purpose)
+        if len(storage_keys) > 5 or len(storage_keys) != len(set(storage_keys)):
+            raise ConflictError("Provide at most five unique media keys.")
+        if not storage_keys:
+            return {}
+        keys = sorted(storage_keys)
+        heads = {
+            key: self._prepared[(actor_id, purpose, key)]
+            for key in keys
+            if (actor_id, purpose, key) in self._prepared
+        }
+        if len(heads) != len(keys):
+            snapshots = []
+            for grant in await self._owned_grants(keys, actor_id):
+                self._check_claimable(grant, purpose)
+                snapshots.append(
+                    _UploadSnapshot(grant.storage_key, grant.content_type, grant.byte_size)
+                )
+            for snapshot in snapshots:
+                if snapshot.storage_key not in heads:
+                    heads[snapshot.storage_key] = await self._verify_object(snapshot)
+        for grant in await self._owned_grants(keys, actor_id, for_update=True):
+            self._check_claimable(grant, purpose)
+            head = heads[grant.storage_key]
+            if (grant.content_type, grant.byte_size) != (head.content_type, head.byte_size):
+                raise ConflictError("The upload changed during validation.")
+        claimed = await self._uploads.claim_confirmed_many(keys, actor_id, purpose)
+        if claimed != set(keys):
+            raise ConflictError("This media has already been attached.")
         return heads
+
+    @staticmethod
+    def _check_claimable(grant: MediaUpload, purpose: str) -> None:
+        if grant.purpose != purpose or grant.confirmed_at is None:
+            raise BadRequestError("The media is not confirmed for this purpose.")
+        if grant.attached_at is not None or grant.deleting_at is not None:
+            raise ConflictError("This media has already been attached.")
+
+    async def _owned_grants(
+        self, keys: list[str], actor_id: uuid.UUID, *, for_update: bool = False
+    ) -> list[MediaUpload]:
+        for key in keys:
+            self.validate_key(key)
+        if not keys:
+            return []
+        grants = {
+            grant.storage_key: grant
+            for grant in await self._uploads.get_many(keys, for_update=for_update)
+        }
+        return [self._check_owned_grant(grants.get(key), key, actor_id) for key in sorted(keys)]
 
     async def _owned_grant(
         self, storage_key: str, actor_id: uuid.UUID, *, for_update: bool = False
     ) -> MediaUpload:
         self.validate_key(storage_key)
         grant = await self._uploads.get(storage_key, for_update=for_update)
+        return self._check_owned_grant(grant, storage_key, actor_id)
+
+    def _check_owned_grant(
+        self, grant: MediaUpload | None, storage_key: str, actor_id: uuid.UUID
+    ) -> MediaUpload:
         if grant is None or grant.owner_user_id != actor_id:
             raise BadRequestError("The upload key is not available to this account.")
         if storage_key.startswith("couriers/avatars/"):
