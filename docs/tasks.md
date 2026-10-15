@@ -47,7 +47,7 @@ Do not mistake old local code or unpublished features for the current release.
 | Finding | Task | Category | Severity /10 | Urgency /10 | Status |
 | --- | --- | --- | --- | --- | --- |
 | [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:72) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
-| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:93) | Use a forward migration for local reward enums | opt | **5** | 6 | Open - local-only release risk |
+| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:93) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
 | [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Open - malformed JPEG/PNG reproduced |
 | [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Open - confirmed connection hold |
 | [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Open - bounded per-item SQL amplification |
@@ -107,7 +107,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Restore published migration history; add a reviewed new migration and guarded rollback before publishing the pending reward feature |
 | Severity /10 | 5 |
 | Urgency /10 | 6 |
-| Status | Open - local-only release risk |
+| Status | Fixed - forward migration and rollback verified |
 
 <a id="aud-03-task-record"></a>
 
@@ -689,3 +689,32 @@ would reintroduce the race, so a security rollback should retain equivalent lock
 
 The original audit narratives above describe the 2026-10-14 baseline. They remain
 unchanged as evidence; current task status and this log describe subsequent fixes.
+
+### AUD-02 — forward reward transaction enum migration
+
+**Implemented:** 2026-10-15. **Original severity:** 5/10; local-only release risk.
+
+Applied migration 0020 remains unchanged in the release. Its two unpublished reward
+additions and reward-only rollback check were removed from the primary copy only
+once the remaining content matched the published file exactly. All other pending
+reward implementation changes remain untouched and unreleased.
+
+New migration 0035_reward_transaction_types follows 0034 and adds GIVEAWAY and
+PROMO_CREDIT idempotently to the existing transaction_type. Existing databases upgrade
+without replaying 0020. This migration exposes no reward endpoint and enables no
+financial operation by itself. The primary checkout is still an older unpublished
+snapshot; reconcile that pending feature onto current master, which contains 0035,
+before releasing it. Do not copy 0035 alone onto the old 0028 migration chain.
+
+Rollback locks transactions and refuses if either reward type appears in retained
+history, regardless of transaction status. With no reward rows it moves the Alembic
+revision back while retaining unused labels: PostgreSQL cannot safely drop individual
+enum labels without replacing the financial type. This additive residue is deliberate,
+allows older code to run on old-type rows and supports idempotent re-upgrade. Stop
+reward writers before rolling back; never delete retained reward rows to bypass the guard.
+
+The schema regression first failed on the already-migrated 0034 database. Native
+PostgreSQL upgrade to 0035 then passed all four focused cases, including both reward
+rollback guards and unused-label rollback. Downgrade to 0034 and re-upgrade to 0035
+also passed on the disposable full schema. A separate fresh database migrated from empty through 0035 and passed all four focused cases. Final full suite: **1,542 passed, zero skips, 89.61% coverage**, one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed. Publication is checked against origin/master after this commit; deployment is not inferred.
+No public response, mobile contract, credentials or production data was changed.
