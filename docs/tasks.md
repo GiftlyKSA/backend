@@ -54,7 +54,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
 | [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
-| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Open - native Redis clock-skew reproduction |
+| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Open - 3N calls reproduced at N=1 and N=5 |
 | [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Optional proposal - not a confirmed defect |
 | [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
@@ -254,7 +254,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Read Redis TIME inside the same Lua store operation and use that clock for scoring and pruning |
 | Severity /10 | 3 |
 | Urgency /10 | 3 |
-| Status | Open - native Redis clock-skew reproduction |
+| Status | Fixed - atomic Redis-time pruning and expiry scores |
 
 <a id="aud-10-task-record"></a>
 
@@ -984,3 +984,39 @@ Full native PostgreSQL/Redis suite: **1,581 passed, zero skips, 89.74% coverage*
 one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high
 review passed. Publication is verified separately from deployment.
 **Next:** AUD-09, Redis-clock-based invoice PDF cache eviction. No public/mobile contract, environment setting or dependency changed.
+
+
+### AUD-09 — use Redis time for PDF cache eviction
+
+**Implemented:** 2026-10-15. **Category:** performance/cache resource safety.
+**Original severity:** 3/10.
+
+The atomic invoice PDF storage Lua now reads Redis TIME once and uses that clock
+for expiry-index pruning and newly stored document scores. Redis's own EX expiry
+and the eviction index therefore use the same clock domain. Fractional seconds
+retain ordering between successive writes. The API server no longer supplies its
+wall time or influences cache eviction. The Lua call's private argument list was
+updated with its direct-script regression; no public endpoint or response changed.
+
+A native Redis reproduction exercised the actual cache service with capacity two
+and three different invoice documents. Before the fix, a two-hour forward API-clock
+jump pruned the index while all three blobs remained live. After the fix, capacity
+stays at two and index scores remain approximately one hour after Redis time.
+Coverage includes backward skew as well as the existing oldest-entry eviction,
+exact TTL/no hit-extension, status/item fingerprint changes, outage fallback,
+render coalescing, bounded thread capacity, cancellation and immutable inputs.
+The initial 16 focused PDF checks passed before adding the backward-skew variant;
+that variant is included in the final full-suite evidence below.
+
+The 128-entry/256-KiB-document bounds, one-hour TTL, fresh authorization/current
+invoice reads, private responses and content/status invalidation remain unchanged.
+Existing blobs already orphaned by old code still expire under their original TTL;
+this patch does not scan Redis or claim immediate reclamation of preexisting orphan
+keys. Roll out all API instances so old scripts no longer write skewed index scores.
+The index/cache keys remain compatible; no migration, dependency, environment change
+or mobile update is needed. Rollback is a code revert, restoring clock-skew exposure.
+No production Redis inspection, key deletion or deployment verification was done.
+Full native PostgreSQL/Redis suite: **1,583 passed, zero skips, 89.76% coverage**,
+one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high
+review passed. Original audit evidence is retained. Publication is checked separately
+from deployment. **Next:** AUD-10, bounded media grant reads and conditional claims.

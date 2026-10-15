@@ -6,7 +6,6 @@ import binascii
 import hashlib
 import json
 import logging
-import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -43,10 +42,12 @@ _ITEM_FIELDS = (
     "line_total_amount",
 )
 _STORE = """
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[3])
+local clock = redis.call('TIME')
+local now = tonumber(clock[1]) + tonumber(clock[2]) / 1000000
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
 redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
-redis.call('ZADD', KEYS[1], tonumber(ARGV[3]) + tonumber(ARGV[2]), KEYS[2])
-local excess = redis.call('ZCARD', KEYS[1]) - tonumber(ARGV[4])
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[2]), KEYS[2])
+local excess = redis.call('ZCARD', KEYS[1]) - tonumber(ARGV[3])
 if excess > 0 then
     local oldest = redis.call('ZPOPMIN', KEYS[1], excess)
     for i = 1, #oldest, 2 do redis.call('DEL', oldest[i]) end
@@ -150,7 +151,6 @@ class InvoicePdfCache:
                             key,
                             f"{fingerprint}:{base64.b64encode(document).decode('ascii')}",
                             _TTL_SECONDS,
-                            time.time(),
                             _MAX_ENTRIES,
                         )
                 except Exception:  # noqa: BLE001 - document generation already succeeded
