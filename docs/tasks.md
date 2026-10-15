@@ -780,3 +780,34 @@ Final full suite on fresh disposable PostgreSQL/Redis: **1,561 passed, zero skip
 new dependency or mobile change is needed. Rollback is a code revert; it restores the
 connection-hold and ORM-lifetime behavior, so preserve equivalent release/snapshotting
 in any operational rollback. Original audit evidence above remains dated to its baseline.
+
+
+### Execution checkpoint — 2026-10-15
+
+The first four tasks were implemented, independently reviewed, checked and pushed
+separately in the requested order. Each remote commit was verified before work began
+on the next task.
+
+| Completed task | Published implementation commit | Final full-suite evidence |
+| --- | --- | --- |
+| AUD-01 — moderation/resubmission locking | bc05e9f8c306f476ee0a1f7d02e0c157baa98048 | 1,538 passed; zero skips; 89.63% coverage |
+| AUD-02 — forward reward enum migration | 3fffa4b9ada7920eaa91abb0da32c075d4ae4477 | 1,542 passed; zero skips; 89.61% coverage |
+| AUD-03 — full order image decoding | d1cfd072b3b9d0c68c42bd404902b9481de51261 | 1,555 passed; zero skips; 89.65% coverage |
+| AUD-04 — release PDF read connections | 45947b6afe03e019c3352c6ccb1dac0fba78b1da | 1,561 passed; zero skips; 89.69% coverage |
+
+All four also passed the commit/push gates and focused security review. Public API
+fields and endpoints remain compatible; no mobile code or UI-agent change is required.
+Migration 0035 is additive and must run through the usual deployment bootstrap.
+Pushed commits are not a claim that any specific deployment has rolled out.
+
+**Next:** AUD-05, bounded reminder-inbox batching. AUD-05 through AUD-10 remain
+unfinished; AUD-08 still needs measured index justification. AUD-11 through AUD-13
+remain conditional cache proposals, requiring evidence and safe invalidation rather
+than indiscriminate caching. All five previously postponed backend items and all
+accepted/excluded risks retain their earlier disposition.
+
+At this checkpoint the account's five-hour usage window reported 89% used, about 11%
+remaining. Work stopped before starting the next task's implementation/test cycle
+to preserve the user's earlier approximately 10% reserve. No incomplete AUD-05 changes
+are staged or published. The dated 2026-10-14 publication limitations above are historical;
+the implementations and consolidated review through AUD-04 are now published as listed.
