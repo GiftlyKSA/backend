@@ -6,6 +6,7 @@ from uuid import uuid4
 from app.main import create_app
 from httpx import ASGITransport, AsyncClient
 
+from tests.image_fixtures import record_image
 from tests.integration.test_orders_api import _phone, _register, _settings
 
 
@@ -115,6 +116,7 @@ async def test_retry_that_observed_missing_operation_then_consumed_media_replays
             )
             assert grant.status_code == 201, grant.text
             key = grant.json()["storage_key"]
+            await record_image(app.state.clients.storage, key)
             confirmed = await client.post(
                 "/api/media/confirm", headers=headers, json={"storage_key": key}
             )

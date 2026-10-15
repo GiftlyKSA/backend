@@ -1,7 +1,7 @@
 """HTTP tests for the media endpoints and order creation with request photos.
 
 Uses the FakeStorageClient: requesting an upload URL registers the key, so a later
-confirm (and order creation) sees it as uploaded — mirroring a completed client PUT.
+confirm (and order creation) validates recorded image bytes, mirroring a completed PUT.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
+from tests.image_fixtures import record_image
 
 
 def _settings() -> Settings:
@@ -73,7 +74,7 @@ async def test_media_upload_confirm_and_order_with_photo() -> None:
             key = up.json()["storage_key"]
             assert key.startswith("orders/pending/")
 
-            # Confirm succeeds (the fake registered the object on URL creation).
+            await record_image(app.state.clients.storage, key)
             conf = await client.post(
                 "/api/media/confirm", headers=headers, json={"storage_key": key}
             )

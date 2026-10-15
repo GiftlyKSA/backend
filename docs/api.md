@@ -346,7 +346,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - **Before:** Successful direct PUT from `POST /api/media/upload-urls`.
 - **Then / dependent API:** `POST /api/orders` or `POST /api/orders/{order_id}/deliver`.
 
-**When/how (61 words):** Confirm an uploaded object by its server-generated storage key after the direct PUT completes. The backend checks ownership, declared type and size, actual object presence, and image magic bytes. Only confirmed keys may be attached, and each can be claimed once for its original purpose. A local file URI or an unconfirmed key is not a durable order or delivery attachment.
+**When/how:** Confirm an uploaded object by its server-generated storage key after the direct PUT completes. The backend checks ownership, declared type and size, actual object presence, and full isolated image decoding with a 20-million-pixel ceiling. JPEG/PNG order photos and proof use the same bounded decoder as avatars and HEIF; file headers alone do not establish validity. Only confirmed keys may be attached, and each can be claimed once for its original purpose. A local file URI or an unconfirmed key is not a durable order or delivery attachment.
 
 ## Orders and fulfillment
 

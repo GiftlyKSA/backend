@@ -32,7 +32,7 @@ async def test_presign_finishes_before_quota_lock_is_acquired():
 @pytest.mark.parametrize(
     "race", [None, "metadata", "owner", "purpose", "confirmation", "cleanup", "consumed"]
 )
-async def test_prepared_claim_rechecks_grant_without_storage_waits(race):
+async def test_prepared_claim_rechecks_grant_without_storage_waits(race, monkeypatch):
     actor = uuid4()
     row = SimpleNamespace(
         storage_key=f"orders/pending/{uuid4()}.jpg",
@@ -58,7 +58,8 @@ async def test_prepared_claim_rechecks_grant_without_storage_waits(race):
         return ObjectHead(True, 12, "image/jpeg")
 
     storage.head_object.side_effect = head
-    storage.verify_image_magic_bytes.return_value = True
+    storage.read_bounded_object.return_value = b"x" * 12
+    monkeypatch.setattr("app.services.media_service.verify_image_isolated", AsyncMock())
     service = MediaService(storage, make_test_settings(), uploads)
     await service.prepare_claims(
         [row.storage_key], actor_id=actor, purpose="ORDER_REQUEST", release_reads=release
@@ -96,7 +97,7 @@ async def test_failed_storage_presign_does_not_reserve_upload_quota():
 
 
 @pytest.mark.asyncio
-async def test_confirm_releases_reads_before_storage_and_rechecks_before_mutation():
+async def test_confirm_releases_reads_before_storage_and_rechecks_before_mutation(monkeypatch):
     actor = uuid4()
     row = SimpleNamespace(
         storage_key=f"orders/pending/{uuid4()}.jpg",
@@ -120,7 +121,8 @@ async def test_confirm_releases_reads_before_storage_and_rechecks_before_mutatio
 
     resume.side_effect = reauthenticate
     storage.head_object.side_effect = head
-    storage.verify_image_magic_bytes.return_value = True
+    storage.read_bounded_object.return_value = b"x" * 12
+    monkeypatch.setattr("app.services.media_service.verify_image_isolated", AsyncMock())
     with pytest.raises(ConflictError):
         await MediaService(storage, make_test_settings(), uploads).confirm(
             row.storage_key, actor_id=actor, release_reads=release, resume_writes=resume

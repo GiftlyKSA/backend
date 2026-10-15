@@ -71,7 +71,7 @@ async def test_revoked_actor_cannot_consume_prepared_order_upload():
         return ObjectHead(True, 12, "image/jpeg")
 
     storage.head_object.side_effect = head
-    storage.verify_image_magic_bytes.return_value = True
+    storage.read_bounded_object.return_value = b"x" * 12
     request = SimpleNamespace(
         app=SimpleNamespace(
             state=SimpleNamespace(
@@ -82,6 +82,7 @@ async def test_revoked_actor_cannot_consume_prepared_order_upload():
     )
     with (
         patch("app.routers.orders.MediaRepository", return_value=uploads),
+        patch("app.services.media_service.verify_image_isolated", new=AsyncMock()),
         patch("app.routers.orders.mark_request_transaction", new=AsyncMock()),
         patch("app.routers.orders.require_auth", new=AsyncMock(side_effect=UnauthorizedError)),
     ):

@@ -16,6 +16,7 @@ import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
 from app.core.jwt import create_access_token
+from app.integrations.storage.fake import FakeStorageClient
 from app.main import create_app
 from app.models import CourierProfile, User
 from app.models.enums import UserRole, UserStatus
@@ -23,6 +24,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
+from tests.image_fixtures import record_image
 
 
 def _settings() -> Settings:
@@ -150,7 +152,7 @@ async def _paid_in_progress(
     return cust_h, cour_h, order_id
 
 
-async def _proof_key(client: AsyncClient, headers: dict) -> str:
+async def _proof_key(client: AsyncClient, headers: dict, storage: FakeStorageClient) -> str:
     up = await client.post(
         "/api/media/upload-urls",
         headers=headers,
@@ -158,6 +160,7 @@ async def _proof_key(client: AsyncClient, headers: dict) -> str:
     )
     assert up.status_code == 201, up.text
     key = up.json()["storage_key"]
+    await record_image(storage, key)
     confirmed = await client.post("/api/media/confirm", headers=headers, json={"storage_key": key})
     assert confirmed.status_code == 200, confirmed.text
     return key
@@ -170,7 +173,7 @@ async def test_full_lifecycle_deliver_approve_rate() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
             cust_h, cour_h, order_id = await _paid_in_progress(client, app, factory)
 
-            key2 = await _proof_key(client, cour_h)
+            key2 = await _proof_key(client, cour_h, app.state.clients.storage)
             delivered = await client.post(
                 f"/api/orders/{order_id}/deliver",
                 headers=cour_h,

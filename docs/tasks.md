@@ -48,7 +48,7 @@ Do not mistake old local code or unpublished features for the current release.
 | --- | --- | --- | --- | --- | --- |
 | [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:72) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
 | [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:93) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
-| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Open - malformed JPEG/PNG reproduced |
+| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
 | [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Open - confirmed connection hold |
 | [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Open - bounded per-item SQL amplification |
 | [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Open - overlapping retained files reproduced |
@@ -128,7 +128,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Reuse the bounded isolated decoder for order JPEG/PNG; retain exact size/type, ownership, create-only uploads, deadlines and claim fencing |
 | Severity /10 | 5 |
 | Urgency /10 | 5 |
-| Status | Open - malformed JPEG/PNG reproduced |
+| Status | Fixed - bounded full image decoding verified |
 
 <a id="aud-04-task-record"></a>
 
@@ -718,3 +718,34 @@ PostgreSQL upgrade to 0035 then passed all four focused cases, including both re
 rollback guards and unused-label rollback. Downgrade to 0034 and re-upgrade to 0035
 also passed on the disposable full schema. A separate fresh database migrated from empty through 0035 and passed all four focused cases. Final full suite: **1,542 passed, zero skips, 89.61% coverage**, one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed. Publication is checked against origin/master after this commit; deployment is not inferred.
 No public response, mobile contract, credentials or production data was changed.
+
+### AUD-03 — full order-photo and delivery-proof decoding
+
+**Implemented:** 2026-10-15. **Category:** security. **Original severity:** 5/10.
+
+JPEG/PNG order request photos and delivery proof now follow the same full-content
+validation path as courier avatars and HEIF. The service checks current metadata,
+reads no more than the declared byte size, requires the exact number of bytes and
+runs the isolated decoder for the declared format. Magic prefixes alone cannot
+confirm an object. The existing 20-million-pixel ceiling, two-slot image admission,
+25-second overall budget and decoder termination/reaping rules remain in force.
+Ownership, purpose, confirmation, cleanup fences, conditional PUT and reauthentication
+around storage waits remain unchanged. Valid image contracts and endpoints are unchanged;
+malformed, mislabeled or size-mismatched objects return the existing safe 400 error,
+and unavailable/timed-out validation returns the existing safe 503 error without
+confirming or claiming the grant. No new storage permissions or mobile changes are needed.
+
+Ten initial tests failed on the prefix-only implementation, then passed with full
+decoding. Thirteen image regressions now include valid JPEG/PNG for both purposes,
+malformed headers, wrong declared format, incomplete downloads, excessive dimensions,
+timeouts and oversized streams. Existing fake-storage integration fixtures explicitly
+record real image bytes; the application fake and production validation have no new
+bypass. Transaction-only tests mock the decoder boundary while retaining their
+authorization, cleanup and mutation assertions. Media-flow checks31 and decoder/avatar
+checks36 passed; the counts overlap and are not additive totals.
+
+Full decoding has an intentional CPU/I/O cost relative to reading a header. Admission,
+byte/pixel limits and isolated-process cancellation bound that cost. No production
+latency or capacity improvement is claimed. The additional delivery/idempotency fixtures also supply real bytes; all19 related lifecycle/ownership checks passed. Final native PostgreSQL/Redis suite: **1,555 passed, zero skips, 89.65% coverage**, one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high security review passed. No application fake bypass, Docker, production account/bucket changes, mobile edits or new dependencies were introduced. Source publication is verified separately from deployment.
+Rollback is a code revert, but it would restore acceptance of malformed image headers;
+retain full validation in any security rollback. No migration or data rewrite is needed.

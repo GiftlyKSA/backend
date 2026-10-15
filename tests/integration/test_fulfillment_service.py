@@ -35,6 +35,7 @@ from app.services.money_service import Leg, MoneyService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.image_fixtures import record_image
 from tests.integration.conftest import city_by_name
 
 
@@ -136,6 +137,7 @@ async def test_deliver_and_approve_releases_escrow(db_session: AsyncSession) -> 
     _url, key, _ttl = await svc._media.request_upload_url(  # type: ignore[attr-defined]
         actor_id=courier.id, purpose="DELIVERY_PROOF", content_type="image/jpeg", byte_size=1000
     )
+    await record_image(svc._media._storage, key)
     await svc._media.confirm(key, actor_id=courier.id)  # type: ignore[attr-defined]
     delivered = await svc.submit_delivery(
         order_id=order.id,

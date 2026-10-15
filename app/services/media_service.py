@@ -2,7 +2,7 @@
 
 The API never accepts bytes: it issues a pre-signed PUT URL with a SERVER-generated
 key, and the client uploads directly to S3. Confirm HEADs the object and verifies its
-real content type by magic bytes — a ``.jpg`` that is actually a script is rejected.
+actual type and contents through bounded isolated decoding; misleading image headers are rejected.
 Keys are validated against a strict allow-list (no ``../``, no absolute paths).
 """
 
@@ -263,29 +263,23 @@ class MediaService:
             or (avatar and head.content_type not in {"image/jpeg", "image/png"})
         ):
             raise BadRequestError("The uploaded file is not a permitted image.")
-        if grant.content_type in {"image/heic", "image/heif"} or storage_key.startswith(
-            "couriers/avatars/"
-        ):
-            try:
-                async with asyncio.timeout(25):
-                    async with _image_slots:
-                        body = await self._storage.read_bounded_object(
-                            storage_key, max_bytes=grant.byte_size
+        try:
+            async with asyncio.timeout(25):
+                async with _image_slots:
+                    body = await self._storage.read_bounded_object(
+                        storage_key, max_bytes=grant.byte_size
+                    )
+                    if len(body) != grant.byte_size:
+                        raise BadRequestError(
+                            "The uploaded file size does not match its upload grant."
                         )
-                        if len(body) != grant.byte_size:
-                            raise BadRequestError(
-                                "The uploaded file size does not match its upload grant."
-                            )
-                        await verify_image_isolated(body, grant.content_type)
-            except ValueError as exc:
-                raise BadRequestError("The uploaded file exceeds its declared size.") from exc
-            except TimeoutError as exc:
-                from app.core.exceptions import MediaValidationUnavailableError
+                    await verify_image_isolated(body, grant.content_type)
+        except ValueError as exc:
+            raise BadRequestError("The uploaded file exceeds its declared size.") from exc
+        except TimeoutError as exc:
+            from app.core.exceptions import MediaValidationUnavailableError
 
-                raise MediaValidationUnavailableError() from exc
-            return head
-        if not await self._storage.verify_image_magic_bytes(storage_key, grant.content_type):
-            raise BadRequestError("The uploaded file is not a valid image.")
+            raise MediaValidationUnavailableError() from exc
         return head
 
     @staticmethod

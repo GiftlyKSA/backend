@@ -21,6 +21,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
+from tests.image_fixtures import record_image
 
 
 def _settings() -> Settings:
@@ -56,13 +57,13 @@ async def _user(session: AsyncSession) -> User:
 async def test_upload_owner_purpose_and_one_time_claim(db_session: AsyncSession) -> None:
     owner = await _user(db_session)
     other = await _user(db_session)
-    media = MediaService(
-        FakeStorageClient(Environment.TEST), make_test_settings(), MediaRepository(db_session)
-    )
+    storage = FakeStorageClient(Environment.TEST)
+    media = MediaService(storage, make_test_settings(), MediaRepository(db_session))
     _url, key, _ttl = await media.request_upload_url(
         actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=1000
     )
 
+    await record_image(storage, key)
     with pytest.raises(BadRequestError):
         await media.confirm(key, actor_id=other.id)
     with pytest.raises(BadRequestError):
@@ -81,12 +82,12 @@ async def test_upload_owner_purpose_and_one_time_claim(db_session: AsyncSession)
 
 async def test_claim_rolls_back_with_failed_attachment(db_session: AsyncSession) -> None:
     owner = await _user(db_session)
-    media = MediaService(
-        FakeStorageClient(Environment.TEST), make_test_settings(), MediaRepository(db_session)
-    )
+    storage = FakeStorageClient(Environment.TEST)
+    media = MediaService(storage, make_test_settings(), MediaRepository(db_session))
     _url, key, _ttl = await media.request_upload_url(
         actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/png", byte_size=500
     )
+    await record_image(storage, key)
     await media.confirm(key, actor_id=owner.id)
     async with db_session.begin_nested() as savepoint:
         await media.claim(key, actor_id=owner.id, purpose="ORDER_REQUEST")
@@ -102,6 +103,7 @@ async def test_claim_rejects_changed_object_metadata(db_session: AsyncSession) -
     _url, key, _ttl = await media.request_upload_url(
         actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=1000
     )
+    await record_image(storage, key)
     await media.confirm(key, actor_id=owner.id)
     storage._objects[key] = storage._objects[key].__class__(  # noqa: SLF001
         exists=True, byte_size=1001, content_type="image/jpeg"
@@ -124,6 +126,7 @@ async def test_outstanding_upload_count_and_bytes(db_session: AsyncSession) -> N
         await media.request_upload_url(
             actor_id=owner.id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=1000
         )
+    await record_image(storage, keys[0])
     await media.confirm(keys[0], actor_id=owner.id)
     await media.claim(keys[0], actor_id=owner.id, purpose="ORDER_REQUEST")
     await media.request_upload_url(
@@ -174,6 +177,7 @@ async def test_cleanup_preserves_attached() -> None:
                 content_type="image/jpeg",
                 byte_size=1000,
             )
+            await record_image(storage, attached)
             await media.confirm(attached, actor_id=owner_id)
             await media.claim(attached, actor_id=owner_id, purpose="ORDER_REQUEST")
             await session.execute(
@@ -282,6 +286,7 @@ async def test_opposite_key_orders_finish_without_deadlock() -> None:
                     content_type="image/jpeg",
                     byte_size=1000,
                 )
+                await record_image(storage, key)
                 await media.confirm(key, actor_id=owner.id)
                 keys.append(key)
             await session.commit()

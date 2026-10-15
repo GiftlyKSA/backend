@@ -18,6 +18,7 @@ from app.services.media_service import MediaService
 from sqlalchemy import delete, select, update
 
 from tests.conftest import make_test_settings
+from tests.image_fixtures import record_image
 
 
 async def test_prepared_claim_loses_to_cleanup_in_independent_transaction(monkeypatch):
@@ -46,8 +47,12 @@ async def test_prepared_claim_loses_to_cleanup_in_independent_transaction(monkey
             await session.flush()
             media = MediaService(storage, settings, MediaRepository(session))
             _, key, _ = await media.request_upload_url(
-                actor_id=owner_id, purpose="ORDER_REQUEST", content_type="image/jpeg", byte_size=12
+                actor_id=owner_id,
+                purpose="ORDER_REQUEST",
+                content_type="image/jpeg",
+                byte_size=1000,
             )
+            await record_image(storage, key)
             await media.confirm(key, actor_id=owner_id)
             await session.commit()
 
