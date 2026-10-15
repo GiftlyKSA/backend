@@ -53,7 +53,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
 | [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
 | [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
-| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Proposal - index mismatch confirmed; benefit unmeasured |
+| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Open - native Redis clock-skew reproduction |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Open - 3N calls reproduced at N=1 and N=5 |
 | [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Optional proposal - not a confirmed defect |
@@ -233,7 +233,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Add only justified created_at/id indexes for these active paths through a new migration; retain keyset semantics and document index storage/insert cost |
 | Severity /10 | 4 |
 | Urgency /10 | 3 |
-| Status | Proposal - index mismatch confirmed; benefit unmeasured |
+| Status | Fixed - measured chronological indexes in migration 0036 |
 
 <a id="aud-09-task-record"></a>
 
@@ -919,3 +919,68 @@ is needed. Rollback is a code revert; versioned keys expire naturally. Full nati
 hook stages and focused GPT-6.1 Sol high review passed after the fallback fix.
 Publication is checked separately from deployment. **Next:** AUD-08, measured
 chronological financial browse indexes. Original audit evidence above is retained.
+
+
+### AUD-08 — support measured chronological financial browsing
+
+**Implemented:** 2026-10-15. **Category:** SQL optimization. **Original severity:** 4/10.
+
+The actual allowlisted admin browse query already applies filters and stable keyset
+pagination before returning 26/51/101 rows. Its global default created_at/id ordering
+lacked a matching unscoped index for invoices, transactions and wallet_topups. The
+existing owner/wallet/order-leading indexes cannot efficiently serve that global
+chronological prefix. Migration 0036 adds only (created_at DESC, id DESC) on those
+three tables; model metadata is aligned. Existing scoped indexes, SQL, authorization,
+financial invariants, ordering and response contracts remain unchanged.
+
+Reproducible benchmark: `uv run --locked python -m tests.admin_browse_query_plans`,
+with GIFTLY_PERF_DATABASE_URL set to an explicitly disposable loopback PostgreSQL16
+URL. It creates session-local temporary tables from the current model definitions,
+retains existing indexes and non-FK constraints, and seeds 100,000 synthetic rows per
+table with tied created_at timestamps. Foreign keys and application/audit triggers
+are deliberately absent; these are query/index cost measurements, not live ledger,
+production throughput or end-to-end latency benchmarks. It compares actual browse
+SQL for first/cursor/ascending pages at page sizes 25/100, four measured read samples,
+index sizes and four rolled-back 1,000-insert samples before/after each candidate.
+All 18 query shapes must return identical rows. Temporary data disappears on close.
+Raw EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) evidence is retained locally under
+.superpowers/audit-fix-08-plans.json; it contains synthetic data only.
+
+Each candidate changed scan/sort plans to direct index scans and occupied 4,079,616
+bytes (about 3.9 MiB) at 100,000 rows. There is one additional B-tree write per inserted
+financial row, extra storage and WAL, and timestamp/index maintenance cost on edits.
+Repeated sample timings are recorded below; results are specific to this synthetic
+history and local environment, not a deployment capacity promise. No indexes were
+added for arbitrary optional sorts, status filters or unrelated tables.
+
+Migration 0036 is a new forward revision; applied history is unchanged. It uses ordinary
+transactional index builds. Each lock wait is limited to 5 seconds and each CREATE
+INDEX statement to 60 seconds. Earlier table locks remain held until all three builds
+commit, so the first table's write-blocking interval can span three build budgets
+plus lock waits, not merely 60 seconds total. Run this revision during a low-traffic
+maintenance window. Contention or a build timeout rolls back the entire revision;
+retry after resolving contention. For substantially larger/busy installations,
+prepare a separately reviewed concurrent-index rollout instead of raising these
+limits or repeatedly blocking writes. No production migration was run here.
+
+Four initial regressions failed because the indexes and migration were missing.
+The focused native checks now confirm model/database definitions and reversible
+index removal/recreation. Full fresh-database bootstrap through 0036 and real Alembic
+downgrade to 0035 and upgrade to head also pass. Downgrade removes only the three read indexes,
+without altering financial rows; old code remains compatible, with slower admin
+chronological reads after rollback.
+
+Final four-sample medians, without the full suite running concurrently:
+
+| Table | First 25-row page before / after (ms) | 1,000 inserts before / after (ms) | Extra index bytes |
+| --- | --- | --- | --- |
+| invoices | 79.661 / 0.022 | 48.850 / 57.228 | 4,079,616 |
+| transactions | 60.839 / 0.021 | 42.376 / 50.367 | 4,079,616 |
+| wallet_topups | 51.708 / 0.020 | 40.049 / 42.071 | 4,079,616 |
+
+The first-page numbers measure 26 selected rows, including the pagination lookahead.
+Cursor and ascending shapes also use the new index, with identical row contents.
+Full native PostgreSQL/Redis suite: **1,581 passed, zero skips, 89.74% coverage**,
+one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high
+review passed. Publication is verified separately from deployment.
+**Next:** AUD-09, Redis-clock-based invoice PDF cache eviction. No public/mobile contract, environment setting or dependency changed.

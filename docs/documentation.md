@@ -1295,3 +1295,14 @@ keys, bucket contents and DB history. No migration or bucket/data deletion is re
 Real configured-bucket signature/header/reachability verification must be recorded separately
 from mocked signatures and local PostgreSQL tests. No production readiness claim follows
 from a source push or a successfully generated signature alone.
+
+
+### Migration 0036: financial admin chronology
+
+Migration 0036 adds measured (created_at DESC,id DESC) indexes to invoices,
+transactions and wallet_topups. Plan a low-traffic maintenance window: ordinary
+transactional builds block writes until all three commit. The 5-second lock timeout
+and 60-second per-statement timeout bound each operation; cumulative write blocking
+can span all three build budgets. Failure rolls back the revision. Large/busy
+installations need a separately reviewed concurrent rollout, rather than increased
+timeouts. Downgrade removes only these indexes and preserves financial data.

@@ -689,6 +689,7 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "OR (promo_id IS NOT NULL AND discount_amount > 0)",
             name="chk_invoice_promo_pairing",
         ),
+        Index("idx_invoices_created", text("created_at DESC"), text("id DESC")),
         Index("idx_invoices_order", "order_id", text("created_at DESC"), text("id DESC")),
         Index(
             "uq_invoices_one_active_per_order",
@@ -963,6 +964,7 @@ class WalletTopup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("amount >= 100.00 AND amount <= 20000.00", name="chk_topup_bounds"),
         UniqueConstraint("payment_intent_id", name="uq_wallet_topups_intent"),
+        Index("idx_wallet_topups_created", text("created_at DESC"), text("id DESC")),
         Index("idx_wallet_topups_user_created", "user_id", text("created_at DESC")),
     )
 
@@ -1232,6 +1234,7 @@ class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             text("created_at DESC"),
             text("id DESC"),
         ),
+        Index("idx_transactions_created", text("created_at DESC"), text("id DESC")),
         Index("idx_transactions_correlation", "correlation_id"),
         Index(
             "idx_transactions_intent",
