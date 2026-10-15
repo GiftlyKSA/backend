@@ -377,8 +377,8 @@ async def mark_read(
 async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
     """Live chat socket: pushes new messages and accepts sent messages.
 
-    Authenticated by ``?token=`` (same verification as the REST API). Only the
-    conversation's members may connect; anyone else is closed with policy violation.
+    Prefer a Bearer header or bearer-prefixed offered protocol; retain legacy query
+    authentication. Only eligible conversation members may connect.
     """
     settings = websocket.app.state.settings
     origin = websocket.headers.get("origin")

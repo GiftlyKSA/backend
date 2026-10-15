@@ -22,6 +22,8 @@ _SENSITIVE_KEYS = (
     "secret",
     "token",
     "authorization",
+    "sec-websocket-protocol",
+    "sec_websocket_protocol",
     "jwt",
     "refresh",
     "national_id",
@@ -42,7 +44,7 @@ _SENSITIVE_KEYS = (
 
 # Value patterns to redact even when the key is innocuous.
 _JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b")
-_BEARER_RE = re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]+")
+_BEARER_RE = re.compile(r"(?i)\bbearer(?:\s+|\.)[^\s,;]+")
 _PHONE_RE = re.compile(r"\+9665\d{8}")
 _LONG_DIGITS_RE = re.compile(r"\b\d{9,}\b")
 

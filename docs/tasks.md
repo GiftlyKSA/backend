@@ -1421,3 +1421,67 @@ Apply 0039 after 0038 before starting the new API. Roll back to uncached order-l
 code before dropping these triggers. Runtime roles need the version-table privileges
 described above. No Docker, production records, provider deliveries or storage
 writes were used.
+
+
+### Chat authentication compatibility — 2026-10-15
+
+**Scope:** authentication compatibility and credential-log protection only. No mobile
+edits, message payload/history/event changes, duplicate-message behavior or retry
+flag changes. Existing query-free authentication was already implemented in
+`5c2cec4`; it was reused rather than replaced.
+
+The route remains GET /api/ws/conversations/{conversation_id} with WebSocket
+upgrade. Native Authorization Bearer without query parameters or subprotocols
+works. Browser offers giftly.chat and bearer.<access token>; only giftly.chat is
+selected. Legacy query credentials remain compatible. Precedence stays header
+(including malformed headers), then first bearer-prefixed protocol, then legacy
+query. Current JWT/revocation/account/role, conversation membership and connection
+limits remain authoritative; no authentication result is cached.
+
+One confirmed logging gap was reproduced: an opaque malformed bearer-prefixed
+protocol, or a separately structured Sec-WebSocket-Protocol field, could survive
+the scrubber when it did not resemble a JWT. Sensitive protocol-header key variants
+now redact completely, and free-form bearer-dot values are scrubbed. This changes
+logging only, not credential selection or client contracts. Regression first failed
+before the fix and now passes.
+
+Actual local Uvicorn TCP tests use dedicated disposable PostgreSQL/Redis fixtures,
+short-lived synthetic credentials and the real HTTP refresh endpoint. Native
+customer/courier, browser, legacy and refreshed reconnections succeed; selected
+protocols are safe. Missing, malformed, expired, revoked, foreign-account,
+unverified-courier and conflicting-credential connections are rejected. Existing
+unit tests recheck active connections before delivery and on idle revocation.
+Application diagnostics redact credentials; no real providers or production
+accounts were used.
+
+**Live evidence, separately limited:** six invalid/missing-credential TLS upgrades
+against backend.giftly.sa and backend-production-vqwolm.cranl.net all returned HTTP
+403. Public readiness returned 200 with PostgreSQL/Redis healthy. CranL's request
+records show exactly six GET/403 entries with method/path/status/timing/host fields;
+the public invalid canary is absent from those records and the 56 available runtime
+log lines. This is sampled evidence, not proof of all proxy logging configuration.
+The provider documentation did not establish raw ingress header/query redaction.
+
+CranL still reports the app as deploying despite successful GitHub builds. A
+read-only runtime source fingerprint command failed with unreadable output.
+Therefore the running release cannot be matched to this pushed source, and no
+successful authenticated deployed handshake/refresh was established. No production
+fixtures or actual user credentials were created/extracted to bypass that limit.
+Full proxy configuration/header forwarding and raw ingress redaction remain
+UNCONFIRMED. These are verification limits, not added testing-task rows.
+
+**Safe to enable EXPO_PUBLIC_CHAT_HEADER_AUTH=true on the verified deployment: NO.**
+Activation remains blocked until authenticated native and
+browser upgrades, refresh reconnect, running-release identity and proxy credential
+redaction are verified on the target deployment. No recommendation to enable
+EXPO_PUBLIC_CHAT_RETRY_SAFE is made.
+
+The mobile wire schema is unchanged. api.md now documents exact precedence,
+negotiation, pre-upgrade HTTP 403 versus established socket close codes, and bounded
+reconnect behavior. The exact final fresh native PostgreSQL/Redis suite passed:
+**1,621 tests, zero skips, 89.87% coverage**, with one unchanged warning. All 48
+focused authentication/logging checks, published mobile contract drift checks,
+both hook stages and independent review passed. All 13 finding links and four
+maintained UTF-8 Markdown files were verified. No migration/dependency/environment
+change is required for the chat patch. Source publication is checked separately
+from deployment; the NO activation verdict remains in effect.

@@ -33,3 +33,10 @@ def test_scrub_value_recurses() -> None:
     scrubbed = scrub_value({"outer": {"jwt": "x", "keep": "ok"}})
     assert scrubbed["outer"]["jwt"] == "***REDACTED***"
     assert scrubbed["outer"]["keep"] == "ok"
+
+
+def test_websocket_credential_protocols_are_scrubbed_even_without_jwt_shape():
+    credential = "synthetic-opaque!ws^credential"
+    for key in ("Sec-WebSocket-Protocol", "sec_websocket_protocol"):
+        assert credential not in str(scrub_value({key: "giftly.chat, bearer." + credential}))
+    assert credential not in scrub_text("offered giftly.chat, bearer." + credential)

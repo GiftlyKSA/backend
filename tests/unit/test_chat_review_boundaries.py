@@ -52,3 +52,23 @@ def test_chat_token_transport_supports_safe_headers_and_legacy_clients(transport
     else:
         socket.query_params["token"] = "fake-not-a-real-token"
     assert _socket_token(socket) == "fake-not-a-real-token"
+
+
+@pytest.mark.parametrize(
+    "header,protocols,query,expected",
+    [
+        ("Basic invalid", ["bearer.protocol"], "legacy", ""),
+        ("Bearer header", ["bearer.protocol"], "legacy", "header"),
+        (None, ["giftly.chat", "bearer.first", "bearer.second"], "legacy", "first"),
+        (None, ["giftly.chat"], "legacy", "legacy"),
+    ],
+)
+def test_socket_credential_precedence_is_deterministic(header, protocols, query, expected):
+    from app.routers.chat import _socket_token
+
+    socket = SimpleNamespace(
+        headers={} if header is None else {"authorization": header},
+        scope={"subprotocols": protocols},
+        query_params={"token": query},
+    )
+    assert _socket_token(socket) == expected
