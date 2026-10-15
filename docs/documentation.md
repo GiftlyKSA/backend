@@ -145,6 +145,10 @@ checks, transactional money invariants or authenticated callbacks.
 
 ## 4. Administration and activity
 
+Audit action/entity dropdown labels are cached per activity tab for 30 seconds.
+Activity rows and actor details remain fresh; Redis failures use database discovery.
+New label choices may take up to 30 seconds to appear.
+
 ### Database export
 
 Open **Database backup** on the admin homepage. Download plain `giftly.sql` or

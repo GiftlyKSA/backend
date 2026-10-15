@@ -52,7 +52,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
 | [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
 | [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
-| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Open - repeated history-dependent queries |
+| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Proposal - index mismatch confirmed; benefit unmeasured |
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Open - native Redis clock-skew reproduction |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Open - 3N calls reproduced at N=1 and N=5 |
@@ -212,7 +212,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Use a small category-scoped cache with an explicit short TTL and safe DB fallback; retain exclusion rules and dynamic stored choices; consider narrow supporting indexes only when plans justify write cost |
 | Severity /10 | 4 |
 | Urgency /10 | 3 |
-| Status | Open - repeated history-dependent queries |
+| Status | Fixed - bounded 30-second category label cache |
 
 <a id="aud-08-task-record"></a>
 
@@ -880,3 +880,42 @@ hook stages and focused GPT-6.1 Sol high review passed. Source publication is
 verified separately from deployment. **Next:** AUD-07, audit dropdown catalogs.
 No migration, environment variable, public API or mobile change is required.
 Rollback is a code revert and restores the retained-file exposure.
+
+
+### AUD-07 — cache audit dropdown catalogs safely
+
+**Implemented:** 2026-10-15. **Category:** optimization. **Original severity:** 4/10.
+
+Authenticated admin activity reads now reuse a Redis catalog containing only the
+selected tab's distinct action/entity labels. The three supported tab combinations
+map to three fixed keys; arbitrary category combinations bypass caching. Each key
+expires after 30 seconds. Values are validated for shape, string type, label lengths,
+200 choices per field and bounded serialized length before use. Optional Redis reads
+and writes each have a 100 ms budget and fall back to the original database query on
+connection failure, timeout or invalid cached content. Cache logs contain no payload.
+
+The original repository remains authoritative on a miss and retains category scope,
+HTTP/WS/system-job exclusions, sorting and choice limits. No activity records, actor
+identities, entity values, authorization decisions or private responses are cached.
+Admin session checks still run before this service call. New, edited or removed label
+choices can remain stale for at most 30 seconds; this does not hide new activity rows
+or prevent an already selected action filter from running against current data.
+
+The initial regression reproduced repeated repository calls on identical reads.
+Native PostgreSQL/Redis query counting now observes two discovery statements on the
+first read, zero on the next read and two after removal/expiry refresh. Twenty-two
+focused checks cover category separation, bounded key count, cache reuse, refresh,
+malformed/oversized values, invalid UTF-8 and outage fallback alongside existing
+filter tests. Focused review found the Redis decode error bypassed fallback; its
+new regression failed before the narrow exception fix and passed afterward.
+No production latency measurement is claimed. Concurrent cold misses may still
+repeat the original bounded discovery reads; no distributed refresh lock or new
+infrastructure was added for this low-traffic admin-only label hint. Database errors
+remain visible rather than being converted to empty/successful activity results.
+
+No new environment variable, dependency, migration, public contract or mobile change
+is needed. Rollback is a code revert; versioned keys expire naturally. Full native PostgreSQL/Redis suite:
+**1,577 passed, zero skips, 89.75% coverage**, one unchanged upstream warning. Both
+hook stages and focused GPT-6.1 Sol high review passed after the fallback fix.
+Publication is checked separately from deployment. **Next:** AUD-08, measured
+chronological financial browse indexes. Original audit evidence above is retained.

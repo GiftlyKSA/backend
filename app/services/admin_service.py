@@ -35,6 +35,7 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
+from app.services.audit_choice_cache import audit_filter_choices
 from app.services.city_service import CityService
 from app.services.invoice_pdf import render_invoice_pdf
 
@@ -268,7 +269,7 @@ class AdminService:
 
     async def audit_filter_choices(self, categories: tuple[str, ...]) -> AuditFilterChoices:
         """Provide stored dropdown choices for the current activity tab."""
-        return await self._audit.filter_choices(categories)
+        return await audit_filter_choices(self._redis, self._audit, categories)
 
     async def audit_entities(self, logs: list[AuditLog]) -> dict[tuple[str, uuid.UUID], str]:
         """Resolve current safe labels without storing personal-data snapshots."""
