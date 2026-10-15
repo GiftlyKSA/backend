@@ -156,3 +156,15 @@ async def test_occasions_cache_uses_one_hour_maximum_ttl():
         )
     )
     assert redis.ttls == [3600]
+
+
+async def test_order_cache_uses_short_ttl_and_catalog_dependency():
+    redis = MemoryRedis()
+    repo = SimpleNamespace(versions=AsyncMock(return_value=("owner", "orders", "catalog")))
+    await ResultCache(redis).read(
+        **arguments(
+            repo, AsyncMock(return_value=[]), domain="orders", owner=uuid4(), role="COURIER"
+        )
+    )
+    assert redis.ttls == [30]
+    assert repo.versions.await_args.args[0][-1][0] == "catalog"

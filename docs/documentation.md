@@ -1328,3 +1328,15 @@ relevant owner pages. HTTP responses are private/no-store. Roll back to uncached
 calendar code before removing these triggers. Restricted runtime database identities
 must have SELECT/INSERT/UPDATE on the internal version table; triggers use invoker
 privileges. No cache secrets or additional environment variables are introduced.
+
+
+Private GET /api/orders summaries use a 30-second cache after migration 0039.
+Every hit retains fresh authentication and courier eligibility checks. Owner,
+role, credential version and every status/search/date/limit/cursor filter scope
+the key. Committed order/participant/rating changes invalidate both affected
+participants; catalog versions invalidate city labels. Available orders, order
+detail, claim eligibility and financial authority stay uncached. API/admin/worker
+writes share deferred commit-time invalidation with the calendar cache. Keep these
+constraints deferred in application transactions; only short final invalidation
+is serialized, with no external calls inside it. Deployment commit throughput is
+unmeasured. All cached HTTP responses remain private/no-store.

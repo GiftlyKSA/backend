@@ -58,7 +58,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
 | [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
 | [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
-| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Approved - order-summary cache implementation pending |
+| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
 
 <a id="detailed-task-records"></a>
 
@@ -338,7 +338,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Only if justified, cache summaries briefly, about 15-30 seconds, with actor/role/current authorization and data version plus all filters/cursors. Invalidate committed order/participant/rating/admin changes and cap cardinality/bytes. Never cache claim eligibility, balances or unresolved payment authority |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Approved - order-summary cache implementation pending |
+| Status | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
 
 
 Open findings are real backend implementation work. Optional cache proposals are not
@@ -1355,3 +1355,69 @@ triggers; otherwise future writes could stop invalidating pages. Worker/API data
 identities need the version-table SELECT/INSERT/UPDATE privileges used by invoker
 triggers; standard same-owner deployments already have them. No production fixtures,
 notifications, storage writes or Docker were used.
+
+
+### AUD-13 — short private order-summary caching
+
+**Implemented:** 2026-10-15. **Category:** optimization. **Original severity:** 2/10.
+The user's request supersedes the earlier conditional deferral; that assessment
+remains above as historical evidence.
+
+Only GET /api/orders uses the existing bounded result cache, with a 30-second TTL.
+Available-order discovery, individual order details, acceptance/claim authorization,
+wallets, balances and unresolved payments remain authoritative uncached operations.
+The existing eligibility dependency runs before every cache access: JWT signature,
+expiry/revocation, current account/role and current courier verification still apply.
+
+Keys include owner, role, validated credential version, status, exact search text,
+inclusive date bounds, limit and cursor. Current owner/global version tokens and
+the catalog token cover serialized city names. Response schema, chronological
+ordering, cursor semantics, customer-only search and date validation stay unchanged.
+HTTP responses are private/no-store; clients and shared HTTP caches receive no
+permission to retain private pages.
+
+Migration 0039 uses deferred constraint triggers on orders and ratings, rotating
+old/new participant epochs in the same commit. Rating changes resolve participants
+through at most two indexed order IDs, without per-list-row calls. Old/new raters
+also invalidate independently of that lookup, covering a concurrent transfer back
+to a historical rater even when the participant lookup preceded the transfer commit. API, worker,
+generic-admin and ordinary SQL mutations are covered. Deletes/reassignments
+invalidate the losing participant, and existing empty pages for the gaining
+participant also expire by version. TRUNCATE rotates the separate orders_all token.
+A seeded random namespace prevents downgrade/re-upgrade from reviving stale keys.
+
+The migration shares 0038's advisory gate for short final invalidation work.
+Application transactions must retain deferred constraints until commit; cache
+loaders run only on read-only GET paths. There are no provider/Redis calls while
+the gate is held. This trades a serialized commit phase for deadlock-safe owner
+epochs; production throughput is unmeasured. Each historical affected participant
+adds at most one version row; filters and pages never create metadata rows.
+
+All AUD-11 cache protections remain: validated serialized DTOs only, 256 shared
+entries, 256 KiB per entry, bounded coalescing/waits, 100 ms Redis budgets, mixed-TTL
+index lifetime and SQL fallback on malformed entries or Redis failure. Fresh SQL
+epochs remain necessary on hits. No stale result authorizes a business mutation,
+and no complete collection is loaded before pagination.
+
+The initial regressions failed because identical customer/courier requests issued
+two collection queries. They now issue one across the pair. HTTP regressions cover
+both roles, ownership, status/search/range keys, successive pages, literal text,
+city label invalidation, rating enrichment, old/new participant transfer, cached
+empty results and immediate rejection after courier verification is removed.
+An explicit unit regression requires the 30-second TTL and catalog dependency.
+Native migration downgrade/re-upgrade passes. A historical-rater regression failed
+before the correction and passes afterward; a second real two-transaction regression
+forces rating deletion to wait behind ownership transfer and verifies the restored
+owner's epoch changes after deletion commits. The final fresh native PostgreSQL/Redis
+suite passed: **1,615 tests, zero skips, 89.88% coverage**, one unchanged warning.
+Both hook stages, published mobile wire-contract checks, all 13 navigation links
+and independent final review passed. Earlier full1613 evidence was superseded by
+this complete run after the historical-rater fix and added concurrency regressions.
+All AUD-01 through AUD-13 now have completed implementations; postponed and
+accepted/excluded work remains explicitly listed, and deployment is separate.
+
+No endpoint, payload, environment variable, dependency or mobile change is needed.
+Apply 0039 after 0038 before starting the new API. Roll back to uncached order-list
+code before dropping these triggers. Runtime roles need the version-table privileges
+described above. No Docker, production records, provider deliveries or storage
+writes were used.

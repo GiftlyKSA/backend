@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import JsonValue, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,7 @@ from app.repositories.message_repository import MessageWriter
 from app.repositories.operation_repository import OperationRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.rating_repository import RatingRepository
+from app.repositories.read_cache_repository import ReadCacheRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.schemas.date_range import DateRange, date_range
@@ -51,6 +52,7 @@ from app.services.operation_service import OperationService
 from app.services.order_realtime_service import publish_order_change
 from app.services.order_service import NewOrderInput, OrderService, OrderView
 from app.services.rating_service import RatingService
+from app.services.result_cache import ResultCache
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -215,6 +217,7 @@ async def create_order(
 @router.get("", response_model=OrderListResponse)
 async def list_orders(
     request: Request,
+    response: Response,
     db: DbDep,
     actor: Annotated[Actor, Depends(_eligible_participant)],
     dates: Annotated[DateRange, Depends(date_range)],
@@ -228,18 +231,39 @@ async def list_orders(
     Use Gregorian YYYY-MM-DD bounds. Reset the cursor when dates or status change,
     and retain identical filters on subsequent pages. Responses remain unchanged.
     """
-    service = _service(request, db)
-    views = await service.list_views_for_actor(
-        actor_id=actor.id,
-        role=actor.role,
-        status=status,
-        limit=limit,
-        before_id=cursor,
-        from_date=dates.from_date,
-        to_date=dates.to_date,
-        **({"search": q} if q is not None else {}),
+    response.headers["Cache-Control"] = "private, no-store"
+
+    async def load() -> OrderListResponse:
+        views = await _service(request, db).list_views_for_actor(
+            actor_id=actor.id,
+            role=actor.role,
+            status=status,
+            limit=limit,
+            before_id=cursor,
+            from_date=dates.from_date,
+            to_date=dates.to_date,
+            **({"search": q} if q is not None else {}),
+        )
+        return _page(views, limit)
+
+    cache: ResultCache = request.app.state.result_cache
+    return await cache.read(
+        repository=ReadCacheRepository(db),
+        domain="orders",
+        owner=actor.id,
+        role=actor.role.value,
+        auth_version=getattr(request.state, "auth_version", 0),
+        filters={
+            "status": status.value if status else None,
+            "q": q,
+            "from_date": dates.from_date.isoformat() if dates.from_date else None,
+            "to_date": dates.to_date.isoformat() if dates.to_date else None,
+            "limit": limit,
+            "cursor": str(cursor) if cursor else None,
+        },
+        adapter=TypeAdapter(OrderListResponse),
+        load=load,
     )
-    return _page(views, limit)
 
 
 @router.get("/available", response_model=OrderListResponse)
