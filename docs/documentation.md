@@ -156,8 +156,12 @@ and ownership/privilege statements; cluster roles must already exist when restor
 Redis state, S3 files, deployment secrets and PostgreSQL cluster roles are separate
 backups. Preserve field encryption keys separately to read encrypted data after restore.
 
-Exports require an active admin session and CSRF validation. One export runs at a
-time across replicas. A 60-second dump timeout and 512 MiB limit fail explicitly;
+Exports require an active admin session and CSRF validation. One export is generated
+at a time across replicas, and one completed download holds a separate shared slot.
+A download must finish within two minutes; its three-minute token-owned Redis lease
+leaves cleanup margin. The generation may temporarily coexist with that download.
+A competing completed export fails with the existing conflict error and is removed.
+A 60-second dump timeout and 512 MiB limit fail explicitly;
 there is no successful partial download. Temporary files are private and removed
 after response completion/disconnection or handled failure. Hard process termination
 can leave temporary files until the ephemeral container storage is removed.

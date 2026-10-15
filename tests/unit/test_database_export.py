@@ -124,16 +124,35 @@ async def test_admin_export_checks_csrf_and_cleans_download(monkeypatch, tmp_pat
     monkeypatch.setattr(backup_router, "verify_csrf", verify)
     monkeypatch.setattr(backup_router, "get_redis_from", lambda request: None)
 
+    held = set()
+
     @asynccontextmanager
-    async def lock(*args, **kwargs):
-        yield "lock"
+    async def lock(redis, key, **kwargs):
+        held.add(key)
+        try:
+            yield "lock"
+        finally:
+            held.remove(key)
 
     monkeypatch.setattr(backup_router, "redis_lock", lock)
     directory = tmp_path / "private"
     directory.mkdir()
     path = directory / "giftly.sql"
     path.write_bytes(b"SQL backup")
-    export = AsyncMock(return_value=path)
+
+    async def create(settings, password):
+        assert "lock:database_export" in held
+        return path
+
+    export = AsyncMock(side_effect=create)
+    original_send = backup_router.BackupResponse.__call__
+
+    async def check_lease(response, scope, receive, send):
+        assert "lock:database_export_download" in held
+        assert "lock:database_export" not in held
+        await original_send(response, scope, receive, send)
+
+    monkeypatch.setattr(backup_router.BackupResponse, "__call__", check_lease)
     monkeypatch.setattr(backup_router, "create_database_export", export)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -208,3 +227,30 @@ async def test_size_limit_kills_dump_and_removes_partial_file(monkeypatch, tmp_p
         await create_database_export(make_test_settings(), None)
     process.communicate.assert_awaited_once()
     assert not directory.exists()
+
+
+async def test_backup_timeout_cleans_file_and_releases_retained_slot(monkeypatch, tmp_path):
+    import asyncio
+    from contextlib import AsyncExitStack
+
+    directory = tmp_path / "private"
+    directory.mkdir()
+    path = directory / "giftly.sql"
+    path.write_bytes(b"SQL backup")
+    released = []
+    lease = AsyncExitStack()
+    lease.callback(lambda: released.append(True))
+    response = backup_router.BackupResponse(
+        path,
+        encrypted=False,
+        lease=lease,
+        deadline=asyncio.get_running_loop().time() + 0.02,
+    )
+
+    async def stalled_send(message):
+        await asyncio.Event().wait()
+
+    with pytest.raises(TimeoutError):
+        await response({"type": "http", "method": "GET", "headers": []}, AsyncMock(), stalled_send)
+    assert not directory.exists()
+    assert released == [True]

@@ -51,7 +51,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
 | [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
 | [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
-| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Open - overlapping retained files reproduced |
+| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
 | [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Open - repeated history-dependent queries |
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Proposal - index mismatch confirmed; benefit unmeasured |
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Open - native Redis clock-skew reproduction |
@@ -191,7 +191,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Apply admission and an aggregate byte/file ceiling through response cleanup, plus a bounded download lifetime or renewable token-owned lease; retain disconnect cleanup |
 | Severity /10 | 4 |
 | Urgency /10 | 4 |
-| Status | Open - overlapping retained files reproduced |
+| Status | Fixed - shared retained-download admission and deadline |
 
 <a id="aud-07-task-record"></a>
 
@@ -840,3 +840,43 @@ above remain intact as historical evidence. Full native PostgreSQL/Redis suite: 
 one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high
 review passed. No Docker, production writes or provider calls were used. Publishing
 is verified separately from deployment. **Next:** AUD-06, retained export downloads.
+
+
+### AUD-06 — bound retained database export downloads
+
+**Implemented:** 2026-10-15. **Category:** performance/resource safety. **Original severity:** 4/10.
+
+The existing global generation lock, admin authorization, CSRF verification,
+read-transaction release, 60-second dump timeout, 512 MiB SQL limit, private files,
+password encryption and no-store attachment headers remain. While the generation
+lock is still held, a completed export now acquires a separate global Redis download
+slot. The slot remains held after the route returns and is released only after
+response cleanup. Competing completed exports receive the existing conflict error;
+only their own generated temporary directory is removed.
+
+Streaming has a two-minute deadline from download admission. The token-owned Redis
+lease expires after three minutes, leaving a minute of cleanup margin. A cancelled,
+failed, disconnected or completed stream removes its file and releases admission.
+The ASGI deferred path-send optimization is disabled for these private snapshots so
+cleanup follows actual file streaming, rather than deleting before server file access.
+No response body or file is buffered in full in application memory.
+
+This bounds normal concurrent retention to one completed download plus one ongoing
+export generation across replicas. Encryption can temporarily retain both its SQL
+source and encrypted output; this is existing bounded generation storage, not an
+unlimited download queue. A competing request can still generate a snapshot before
+it discovers the download slot is busy. Hard process termination can leave a private
+orphan on ephemeral storage, as already documented; this change does not claim crash
+or Redis-state-loss guarantees for those orphaned files.
+
+The initial regression failed on admission ending before response streaming, and
+another failed on the missing deadline. Thirteen focused checks now pass, including
+real Redis overlapping admission, rejection cleanup, disconnect release, subsequent
+retry, timeout cleanup, ASGI path-send exclusion, CSRF, authorization, password
+validation, size rejection and byte-preserving export/encryption behavior.
+No production export or writes were performed. Full native PostgreSQL/Redis suite:
+**1,566 passed, zero skips, 89.69% coverage**, one unchanged upstream warning. Both
+hook stages and focused GPT-6.1 Sol high review passed. Source publication is
+verified separately from deployment. **Next:** AUD-07, audit dropdown catalogs.
+No migration, environment variable, public API or mobile change is required.
+Rollback is a code revert and restores the retained-file exposure.
