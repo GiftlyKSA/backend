@@ -1,8 +1,12 @@
 """Render stored invoice amounts in a professional English-only PDF."""
 
-from datetime import timedelta, timezone
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from html import escape
 from io import BytesIO
+from uuid import UUID
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -20,6 +24,72 @@ from reportlab.platypus import (
 
 from app.core.money import money_str
 from app.models import Invoice, InvoiceItem
+from app.models.enums import InvoiceStatus
+
+
+@dataclass(frozen=True, slots=True)
+class InvoicePdfSnapshot:
+    """Immutable authorized header values, independent of ORM session lifetime."""
+
+    id: UUID
+    order_id: UUID
+    status: InvoiceStatus
+    currency: str
+    issued_at: datetime | None
+    paid_at: datetime | None
+    items_net_amount: Decimal
+    courier_fee_amount: Decimal
+    service_fee_amount: Decimal
+    discount_amount: Decimal
+    total_amount: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class InvoicePdfItemSnapshot:
+    """Immutable stored line values used by rendering and cache fingerprints."""
+
+    position: int
+    title: str
+    quantity: int
+    unit_price_amount: Decimal
+    line_discount_amount: Decimal
+    line_total_amount: Decimal
+
+
+InvoicePdfSource = Invoice | InvoicePdfSnapshot
+InvoicePdfItemSource = InvoiceItem | InvoicePdfItemSnapshot
+
+
+def snapshot_invoice_pdf(
+    invoice: Invoice, items: Sequence[InvoiceItem]
+) -> tuple[InvoicePdfSnapshot, tuple[InvoicePdfItemSnapshot, ...]]:
+    """Capture all rendering values before releasing the authorized read transaction."""
+    header = InvoicePdfSnapshot(
+        id=invoice.id,
+        order_id=invoice.order_id,
+        status=invoice.status,
+        currency=invoice.currency,
+        issued_at=invoice.issued_at,
+        paid_at=invoice.paid_at,
+        items_net_amount=invoice.items_net_amount,
+        courier_fee_amount=invoice.courier_fee_amount,
+        service_fee_amount=invoice.service_fee_amount,
+        discount_amount=invoice.discount_amount,
+        total_amount=invoice.total_amount,
+    )
+    lines = tuple(
+        InvoicePdfItemSnapshot(
+            position=item.position,
+            title=item.title,
+            quantity=item.quantity,
+            unit_price_amount=item.unit_price_amount,
+            line_discount_amount=item.line_discount_amount,
+            line_total_amount=item.line_total_amount,
+        )
+        for item in items
+    )
+    return header, lines
+
 
 _COMMERCIAL_REGISTRATION_NAME = "Athar Al-Taqnia"
 _INVOICE_TIMEZONE = timezone(timedelta(hours=3))
@@ -43,7 +113,7 @@ def _footer(canvas: Canvas, document: BaseDocTemplate) -> None:
     canvas.restoreState()
 
 
-def render_invoice_pdf(invoice: Invoice, items: list[InvoiceItem]) -> bytes:
+def render_invoice_pdf(invoice: InvoicePdfSource, items: Sequence[InvoicePdfItemSource]) -> bytes:
     """Render a private document without fetching assets or recalculating prices."""
     output = BytesIO()
     document = SimpleDocTemplate(

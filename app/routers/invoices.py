@@ -37,7 +37,7 @@ from app.schemas.invoices import (
 )
 from app.schemas.payments import PayInvoiceRequest, PayInvoiceResponse
 from app.services.courier_eligibility_service import CourierEligibilityService
-from app.services.invoice_pdf import render_invoice_pdf
+from app.services.invoice_pdf import render_invoice_pdf, snapshot_invoice_pdf
 from app.services.invoice_promo_service import InvoicePromoService
 from app.services.invoice_service import InvoiceLineInput, InvoiceService, NewInvoiceInput
 from app.services.mobile_invoice_service import MobileInvoiceService
@@ -207,17 +207,21 @@ async def download_invoice_pdf(
     invoice, items = await _service(request, db).get_invoice_for_actor(
         invoice_id=invoice_id, actor_id=actor.id
     )
+    invoice_snapshot, item_snapshots = snapshot_invoice_pdf(invoice, items)
+    await db.commit()
     cache = getattr(request.app.state, "invoice_pdf_cache", None)
     document = (
-        await cache.render(invoice, items)
+        await cache.render(invoice_snapshot, item_snapshots)
         if cache is not None
-        else await to_thread(render_invoice_pdf, invoice, items)
+        else await to_thread(render_invoice_pdf, invoice_snapshot, item_snapshots)
     )
     return Response(
         document,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="giftly-invoice-{invoice.id}.pdf"',
+            "Content-Disposition": (
+                f'attachment; filename="giftly-invoice-{invoice_snapshot.id}.pdf"'
+            ),
             "Cache-Control": "private, no-store",
         },
     )

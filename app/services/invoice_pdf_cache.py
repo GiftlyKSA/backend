@@ -7,12 +7,12 @@ import hashlib
 import json
 import logging
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 from redis.asyncio import Redis
 
-from app.models import Invoice, InvoiceItem
-from app.services.invoice_pdf import render_invoice_pdf
+from app.services.invoice_pdf import InvoicePdfItemSource, InvoicePdfSource, render_invoice_pdf
 
 _logger = logging.getLogger(__name__)
 _TTL_SECONDS = 3600
@@ -56,7 +56,7 @@ return 1
 """
 
 
-def _fingerprint(invoice: Invoice, items: list[InvoiceItem]) -> str:
+def _fingerprint(invoice: InvoicePdfSource, items: Sequence[InvoicePdfItemSource]) -> str:
     content = [
         _TEMPLATE_VERSION,
         [str(getattr(invoice, name)) for name in _INVOICE_FIELDS],
@@ -94,7 +94,9 @@ class InvoicePdfCache:
             _logger.warning("Invoice PDF cache read unavailable.")
         return None
 
-    async def render(self, invoice: Invoice, items: list[InvoiceItem]) -> bytes:
+    async def render(
+        self, invoice: InvoicePdfSource, items: Sequence[InvoicePdfItemSource]
+    ) -> bytes:
         """Reuse only identical rendered content; callers must authorize before calling."""
         fingerprint = _fingerprint(invoice, items)
         key = f"cache:invoice-pdf:v2:{invoice.id}"
@@ -123,7 +125,11 @@ class InvoicePdfCache:
             task.exception()
 
     async def _render_uncached(
-        self, invoice: Invoice, items: list[InvoiceItem], key: str, fingerprint: str
+        self,
+        invoice: InvoicePdfSource,
+        items: Sequence[InvoicePdfItemSource],
+        key: str,
+        fingerprint: str,
     ) -> bytes:
         await self._slots.acquire()
         render_task: asyncio.Task[bytes] | None = None

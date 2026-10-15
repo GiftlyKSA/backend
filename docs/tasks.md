@@ -49,7 +49,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:72) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
 | [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:93) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
 | [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
-| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Open - confirmed connection hold |
+| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
 | [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Open - bounded per-item SQL amplification |
 | [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Open - overlapping retained files reproduced |
 | [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Open - repeated history-dependent queries |
@@ -149,7 +149,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Capture an immutable authorized snapshot and release the read transaction before awaiting rendering; preserve fresh ownership/content checks on every cache hit |
 | Severity /10 | 5 |
 | Urgency /10 | 5 |
-| Status | Open - confirmed connection hold |
+| Status | Fixed - immutable PDF snapshot releases DB connection |
 
 <a id="aud-05-task-record"></a>
 
@@ -749,3 +749,34 @@ byte/pixel limits and isolated-process cancellation bound that cost. No producti
 latency or capacity improvement is claimed. The additional delivery/idempotency fixtures also supply real bytes; all19 related lifecycle/ownership checks passed. Final native PostgreSQL/Redis suite: **1,555 passed, zero skips, 89.65% coverage**, one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high security review passed. No application fake bypass, Docker, production account/bucket changes, mobile edits or new dependencies were introduced. Source publication is verified separately from deployment.
 Rollback is a code revert, but it would restore acceptance of malformed image headers;
 retain full validation in any security rollback. No migration or data rewrite is needed.
+
+### AUD-04 — release invoice PDF database reads before rendering
+
+**Implemented:** 2026-10-15. **Category:** performance. **Original severity:** 5/10.
+
+GET /api/invoices/{invoice_id}/pdf still performs current account/participant checks
+and current invoice/item reads on every request, including cache hits. It now copies
+only rendering/fingerprint fields into frozen slotted header/line records, then commits
+the read-only transaction before Redis lookup, render admission or thread work.
+Rendering receives immutable scalar values and an immutable line tuple, so cancellation,
+rollback or Session teardown cannot expire the document's input or start lazy DB reads.
+Existing worker/direct renderer callers remain compatible with stored ORM models.
+
+No totals are recalculated and all amounts remain Decimal. The snapshot produces the
+same actual PDF drawing streams and fingerprint as the original input. The one-hour
+cache, content/status invalidation, bounded rendering, branded English layout, GMT+3
+dates and private/no-store download headers remain unchanged. Fresh authorization is
+never replaced by cache authority. The renderer source hash changes once on rollout,
+which intentionally refreshes older cached documents without changing their layout.
+
+Four of five initial boundary cases failed before the fix. Native HTTP with a single
+PostgreSQL connection observed zero checked-out connections inside rendering after
+the fix; both customer/courier reads pass and an unrelated account still receives404
+without cache access. Unit regressions cover cached/fallback paths, commit failure,
+immutable independent inputs and real PDF/fingerprint equivalence. Focused15 checks
+passed. No production latency/capacity improvement is claimed from these local checks.
+
+Final full suite on fresh disposable PostgreSQL/Redis: **1,561 passed, zero skips, 89.69% coverage**, one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed. A reused test database had exposed an older order test assumption that its row was on the first page; the unchanged suite passed on the fresh database. No assertions or application filters were weakened. Source publication is checked against origin/master separately from deployment. No API schema, migration,
+new dependency or mobile change is needed. Rollback is a code revert; it restores the
+connection-hold and ORM-lifetime behavior, so preserve equivalent release/snapshotting
+in any operational rollback. Original audit evidence above remains dated to its baseline.
