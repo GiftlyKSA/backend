@@ -56,7 +56,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
-| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Optional proposal - not a confirmed defect |
+| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Assessed - cache deferred; no demonstrated traffic benefit |
 | [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
 | [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
 
@@ -296,7 +296,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Only if traffic warrants it, cache bounded catalog payloads for about 300 seconds with every real filter/limit and contract version in keys; invalidate on committed admin/catalog changes; keep active-city validation for writes authoritative |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Optional proposal - not a confirmed defect |
+| Status | Assessed - cache deferred; no demonstrated traffic benefit |
 
 <a id="aud-12-task-record"></a>
 
@@ -1070,3 +1070,40 @@ PostgreSQL/Redis suite: **1,594 passed, zero skips, 89.78% coverage**, one uncha
 upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed.
 Publication is checked separately from deployment. **Next:** AUD-11, conditional
 public catalog cache assessment. Historical audit details remain intact.
+
+
+### AUD-11 — assess a public catalog result cache
+
+**Assessed:** 2026-10-15. **Category:** optional optimization. **Severity:** 2/10.
+**Decision:** defer a new result cache; this was a conditional proposal, not a defect.
+
+Source inspection confirms GET /api/cities performs one current active-city query,
+ordered by name/id, without per-city database enrichment. CityService's write-time
+active ID/name lookups are separate authoritative checks used by onboarding, orders
+and admin operations. Those checks must not use stale cached choices. The featured
+gift repository operation is already SQL-limited and has an active/display-order
+index; current app source has no caller exposing that repository method as a mobile
+route. No duplicate route or cache for an unused operation was added.
+
+Read-only EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) of actual compiled queries against
+the disposable test database used five samples. The existing 20 active city rows
+returned in median 0.014 ms; the empty featured-gift catalog returned in 0.007 ms.
+These small warm samples establish neither real traffic frequency nor large-catalog
+capacity. They do not justify adding Redis reads, serialization, memory/cardinality
+limits and committed-write invalidation to an already cheap single SQL operation.
+The catalog has no per-row query amplification to fix.
+
+If traffic later justifies caching, retain the original proposal: serialize a bounded
+public DTO, version keys by contract and every real filter/limit, use at most about
+300 seconds, invalidate committed generic-admin and catalog changes, and fall back
+to SQL on cache failure. Never cache active-city write authorization. A hard payload
+bound must fail safely rather than silently truncate the existing city response.
+No reliable global catalog data-version invalidation currently exists; the normal
+audit commit hook logs events and is not a catalog invalidation guarantee.
+
+No runtime change, endpoint, migration, environment variable or mobile update was
+introduced. This assessment does not mark an unimplemented cache as implemented,
+pushed or deployed. The preceding application release remains at 1,594 passing
+checks/89.78% coverage; it was not rerun for this documentation-only decision.
+Both documentation/push gates and finding-link checks are required before this
+assessment is published. **Next:** AUD-12, private occasion cache assessment.
