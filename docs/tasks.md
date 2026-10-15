@@ -50,7 +50,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:93) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
 | [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
 | [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
-| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Open - bounded per-item SQL amplification |
+| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
 | [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Open - overlapping retained files reproduced |
 | [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Open - repeated history-dependent queries |
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Proposal - index mismatch confirmed; benefit unmeasured |
@@ -170,7 +170,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Insert the bounded inbox batch once and return event keys; preserve duplicate handling, expiry decisions, reminder versions and row locks; up to 100 insert statements become one |
 | Severity /10 | 4 |
 | Urgency /10 | 4 |
-| Status | Open - bounded per-item SQL amplification |
+| Status | Fixed - one bounded conflict-safe inbox insert |
 
 <a id="aud-06-task-record"></a>
 
@@ -811,3 +811,32 @@ remaining. Work stopped before starting the next task's implementation/test cycl
 to preserve the user's earlier approximately 10% reserve. No incomplete AUD-05 changes
 are staged or published. The dated 2026-10-14 publication limitations above are historical;
 the implementations and consolidated review through AUD-04 are now published as listed.
+
+
+### AUD-05 — batch due-reminder inbox inserts
+
+**Implemented:** 2026-10-15. **Category:** optimization. **Original severity:** 4/10.
+
+The repository still selects and locks the same bounded due-reminder page, with
+active customer, ownership relationship, enabled state and reminder-version checks.
+It now issues one PostgreSQL INSERT ON CONFLICT DO NOTHING for the complete selected
+page, returning the actually inserted event keys. A set lookup preserves the original
+per-reminder decision: existing inbox events suppress another push, newly inserted
+unexpired events remain pending, and events at least one day old retire their push.
+The inbox insert and reminder updates remain atomic in the caller transaction.
+Empty pages issue no insert. No network operation moved inside the transaction.
+
+Native PostgreSQL regressions reproduced 10 and 100 INSERT statements before the
+change and one afterward, with the same inbox contents and reminder decisions.
+The 1/10/100-item cases also cover existing events, exact expiry, pending events,
+delivered timestamps and repeated empty materialization. All 28 focused reminder
+and annual-recurrence tests passed. This reduces client/database round trips; it
+does not remove per-row database constraints or audit work, and no deployed latency
+or capacity improvement is claimed from this local evidence.
+
+No schema, migration, dependency, HTTP/WS contract or mobile change is required.
+Rollback is a code revert and restores the per-item SQL cost. Original audit details
+above remain intact as historical evidence. Full native PostgreSQL/Redis suite: **1,564 passed, zero skips, 89.69% coverage**,
+one unchanged upstream warning. Both hook stages and focused GPT-6.1 Sol high
+review passed. No Docker, production writes or provider calls were used. Publishing
+is verified separately from deployment. **Next:** AUD-06, retained export downloads.

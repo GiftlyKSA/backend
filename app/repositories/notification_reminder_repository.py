@@ -85,24 +85,33 @@ FROM next_dates n WHERE r.occasion_id=n.occasion_id
                 .with_for_update(skip_locked=True, of=(Occasion, OccasionReminder))
             )
         ).all()
-        for reminder, occasion in rows:
-            statement = (
+        if not rows:
+            return 0
+        notifications = [
+            {
+                "user_id": occasion.user_id,
+                "event_key": f"occasion:{occasion.id}:{reminder.occurrence_date.isoformat()}",
+                "notification_type": "OCCASION_REMINDER",
+                "destination_kind": "OCCASION",
+                "resource_id": occasion.id,
+                "created_at": now,
+            }
+            for reminder, occasion in rows
+        ]
+        inserted_keys = set(
+            await self._session.scalars(
                 insert(InboxNotification)
-                .values(
-                    user_id=occasion.user_id,
-                    event_key=f"occasion:{occasion.id}:{reminder.occurrence_date.isoformat()}",
-                    notification_type="OCCASION_REMINDER",
-                    destination_kind="OCCASION",
-                    resource_id=occasion.id,
-                    created_at=now,
-                )
+                .values(notifications)
                 .on_conflict_do_nothing(constraint="uq_inbox_notification_event")
-                .returning(InboxNotification.id)
+                .returning(InboxNotification.event_key)
             )
-            inserted = await self._session.scalar(statement)
+        )
+        for (reminder, _occasion), notification in zip(rows, notifications, strict=True):
             reminder.delivered_at = now
             reminder.next_attempt_at = now
-            if inserted is None or now >= reminder.scheduled_at + timedelta(days=1):
+            if notification[
+                "event_key"
+            ] not in inserted_keys or now >= reminder.scheduled_at + timedelta(days=1):
                 reminder.push_completed_at = now
         await self._session.flush()
         return len(rows)
