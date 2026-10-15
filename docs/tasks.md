@@ -57,7 +57,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
 | [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Assessed - cache deferred; no demonstrated traffic benefit |
-| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
+| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Assessed - cache deferred; indexed reads already inexpensive |
 | [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
 
 <a id="detailed-task-records"></a>
@@ -317,7 +317,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | If justified, use account/authorization-version/range/limit/cursor/recurrence-version keys, one-hour maximum TTL, bounded entries/bytes and reliable committed-write invalidation including admin edits; fall back to SQL and keep fresh authorization |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Optional proposal - benefit unmeasured |
+| Status | Assessed - cache deferred; indexed reads already inexpensive |
 
 <a id="aud-13-task-record"></a>
 
@@ -1107,3 +1107,46 @@ pushed or deployed. The preceding application release remains at 1,594 passing
 checks/89.78% coverage; it was not rerun for this documentation-only decision.
 Both documentation/push gates and finding-link checks are required before this
 assessment is published. **Next:** AUD-12, private occasion cache assessment.
+
+
+### AUD-12 — assess private occasion-page caching
+
+**Assessed:** 2026-10-15. **Category:** optional optimization. **Severity:** 2/10.
+**Decision:** defer a new result cache; retain current owned SQL and fresh settings.
+
+Saved occasion reads apply user ownership, inclusive date bounds, stable date/id
+ordering and SQL limit before materialization. A cursor adds one current owned-anchor
+read and preserves the same range checks. Annual occurrences use owner-scoped SQL
+expansion for a validated range of at most 366 days, at most two Gregorian years,
+then sort/limit before returning a page. A cursor is checked against the same owned
+occurrence set. There is no per-returned-row SQL lookup or Python full-history
+filtering. Editing/deleting still uses current ownership and the existing edit fence.
+
+Actual compiled repository SQL was measured with five EXPLAIN (ANALYZE, BUFFERS,
+FORMAT JSON) samples against a session-local copy of the current occasions schema
+and indexes. Synthetic data contained100,000 total rows across100 owners:1,000 rows
+for the selected owner, mixed one-off/annual recurrence and tied dates. The saved
+week returned15 matching rows in median0.031 ms. The annual month returned26 rows
+including lookahead in median1.003 ms. Raw synthetic plans remain locally in
+.superpowers/audit-fix-12-plans.json. No application tables, reminder schedules or
+production accounts were changed. These are warm query samples, not capacity or
+end-to-end mobile measurements; larger individual histories remain unmeasured.
+
+A one-hour private cache would add authorization/data-version coordination, payload
+memory limits and invalidation for API writes, generic admin edits/deletes/ownership
+changes and relevant recurrence/reminder changes. Current commit hooks log audit
+metadata; they are not complete per-owner cache invalidation/version hooks. Omitting
+those paths could hide edits or serve obsolete private calendar data. The measured
+query cost and absent repeat-read/traffic evidence do not justify that added risk.
+
+The original future proposal is retained in full above. Reconsider only with repeated
+account/range read evidence, capped key/payload budgets, every filter/cursor/limit and
+recurrence/data/auth version in keys, reliable committed-write invalidation and SQL
+fallback. Fresh authorization and owned cursor checks remain required on hits; one
+hour is a maximum, not permission to serve stale changed data for an hour.
+
+No runtime cache, endpoint, migration, configuration or mobile change was added.
+No unimplemented cache is described as deployed. The latest application suite is
+still1,594 passed/89.78% coverage; this documentation-only assessment does not require
+a new full application run. Both hook stages and finding-link checks gate publication.
+**Next:** AUD-13, private order-summary cache assessment.
