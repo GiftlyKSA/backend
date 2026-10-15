@@ -57,7 +57,7 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
 | [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
-| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Approved - occasion cache implementation pending |
+| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
 | [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Approved - order-summary cache implementation pending |
 
 <a id="detailed-task-records"></a>
@@ -317,7 +317,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | If justified, use account/authorization-version/range/limit/cursor/recurrence-version keys, one-hour maximum TTL, bounded entries/bytes and reliable committed-write invalidation including admin edits; fall back to SQL and keep fresh authorization |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Approved - occasion cache implementation pending |
+| Status | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
 
 <a id="aud-13-task-record"></a>
 
@@ -813,7 +813,7 @@ are staged or published. The dated 2026-10-14 publication limitations above are 
 the implementations and consolidated review through AUD-04 are now published as listed.
 
 
-### AUD-05 — batch due-reminder inbox inserts
+### AUD-05 â€” batch due-reminder inbox inserts
 
 **Implemented:** 2026-10-15. **Category:** optimization. **Original severity:** 4/10.
 
@@ -842,7 +842,7 @@ review passed. No Docker, production writes or provider calls were used. Publish
 is verified separately from deployment. **Next:** AUD-06, retained export downloads.
 
 
-### AUD-06 — bound retained database export downloads
+### AUD-06 â€” bound retained database export downloads
 
 **Implemented:** 2026-10-15. **Category:** performance/resource safety. **Original severity:** 4/10.
 
@@ -882,7 +882,7 @@ No migration, environment variable, public API or mobile change is required.
 Rollback is a code revert and restores the retained-file exposure.
 
 
-### AUD-07 — cache audit dropdown catalogs safely
+### AUD-07 â€” cache audit dropdown catalogs safely
 
 **Implemented:** 2026-10-15. **Category:** optimization. **Original severity:** 4/10.
 
@@ -921,7 +921,7 @@ Publication is checked separately from deployment. **Next:** AUD-08, measured
 chronological financial browse indexes. Original audit evidence above is retained.
 
 
-### AUD-08 — support measured chronological financial browsing
+### AUD-08 â€” support measured chronological financial browsing
 
 **Implemented:** 2026-10-15. **Category:** SQL optimization. **Original severity:** 4/10.
 
@@ -986,7 +986,7 @@ review passed. Publication is verified separately from deployment.
 **Next:** AUD-09, Redis-clock-based invoice PDF cache eviction. No public/mobile contract, environment setting or dependency changed.
 
 
-### AUD-09 — use Redis time for PDF cache eviction
+### AUD-09 â€” use Redis time for PDF cache eviction
 
 **Implemented:** 2026-10-15. **Category:** performance/cache resource safety.
 **Original severity:** 3/10.
@@ -1022,7 +1022,7 @@ review passed. Original audit evidence is retained. Publication is checked separ
 from deployment. **Next:** AUD-10, bounded media grant reads and conditional claims.
 
 
-### AUD-10 — batch order/proof media reads and claims
+### AUD-10 â€” batch order/proof media reads and claims
 
 **Implemented:** 2026-10-15. **Category:** SQL optimization. **Original severity:** 3/10.
 
@@ -1072,7 +1072,7 @@ Publication is checked separately from deployment. **Next:** AUD-11, conditional
 public catalog cache assessment. Historical audit details remain intact.
 
 
-### AUD-11 — assess a public catalog result cache
+### AUD-11 â€” assess a public catalog result cache
 
 **Assessed:** 2026-10-15. **Category:** optional optimization. **Severity:** 2/10.
 **Decision:** defer a new result cache; this was a conditional proposal, not a defect.
@@ -1109,7 +1109,7 @@ Both documentation/push gates and finding-link checks are required before this
 assessment is published. **Next:** AUD-12, private occasion cache assessment.
 
 
-### AUD-12 — assess private occasion-page caching
+### AUD-12 â€” assess private occasion-page caching
 
 **Assessed:** 2026-10-15. **Category:** optional optimization. **Severity:** 2/10.
 **Decision:** defer a new result cache; retain current owned SQL and fresh settings.
@@ -1152,7 +1152,7 @@ a new full application run. Both hook stages and finding-link checks gate public
 **Next:** AUD-13, private order-summary cache assessment.
 
 
-### AUD-13 — assess private order-summary caching
+### AUD-13 â€” assess private order-summary caching
 
 **Assessed:** 2026-10-15. **Category:** optional optimization. **Severity:** 2/10.
 **Decision:** defer a new result cache; preserve fresh ownership and order state.
@@ -1190,7 +1190,7 @@ latency or capacity. Date-filtered reads on this deliberately heavy owner cost m
 than unfiltered chronological reads; that alone does not establish repeated identical
 requests or justify a private cache.
 
-A 15–30-second result cache requires correct invalidation for committed order/status,
+A 15â€“30-second result cache requires correct invalidation for committed order/status,
 assignment/participant, rating and generic-admin changes, plus active account/role
 and authorization versions. Current SQL remains authoritative; there is no complete
 account/filter result-cache data-version mechanism to reuse. Adding partial
@@ -1210,7 +1210,7 @@ Both hook stages, navigation checks and scope review gate this documentation-onl
 publication. Latest complete application evidence remains **1,594 passed, zero skips,
 89.78% coverage** with the AUD-10 release; no new application edits occurred here.
 
-### Execution outcome — 2026-10-15 continuation
+### Execution outcome â€” 2026-10-15 continuation
 
 All ten confirmed defects/local migration risks from the dated audit are fixed.
 Each task was checked, reviewed and pushed to master before implementation of the
@@ -1218,12 +1218,12 @@ next began. This continuation published the following individual task releases:
 
 | Task | Published commit | Final full-suite result |
 | --- | --- | --- |
-| AUD-05 — batch reminder inbox inserts | 419ab569bd4a4c892151f2537f2e4baa255d0b9d | 1,564 passed; zero skips; 89.69% |
-| AUD-06 — bound retained export downloads | 113f45f566f2a44e7426bf79776752b8cc78ae52 | 1,566 passed; zero skips; 89.69% |
-| AUD-07 — cache audit dropdown catalogs | 2db089c37793617110cc4180d98a6e44f1652613 | 1,577 passed; zero skips; 89.75% |
-| AUD-08 — measured financial chronology indexes | 94f4bfbcfa2494cff1670a80a63a12202ef7e3d3 | 1,581 passed; zero skips; 89.74% |
-| AUD-09 — Redis-time PDF eviction | 3f63188c966d75269223c722e0d9c48c36cc7ede | 1,583 passed; zero skips; 89.76% |
-| AUD-10 — constant-query media claims | a98346dfe28b9b8a9f6586ab80717df52ebd6925 | 1,594 passed; zero skips; 89.78% |
+| AUD-05 â€” batch reminder inbox inserts | 419ab569bd4a4c892151f2537f2e4baa255d0b9d | 1,564 passed; zero skips; 89.69% |
+| AUD-06 â€” bound retained export downloads | 113f45f566f2a44e7426bf79776752b8cc78ae52 | 1,566 passed; zero skips; 89.69% |
+| AUD-07 â€” cache audit dropdown catalogs | 2db089c37793617110cc4180d98a6e44f1652613 | 1,577 passed; zero skips; 89.75% |
+| AUD-08 â€” measured financial chronology indexes | 94f4bfbcfa2494cff1670a80a63a12202ef7e3d3 | 1,581 passed; zero skips; 89.74% |
+| AUD-09 â€” Redis-time PDF eviction | 3f63188c966d75269223c722e0d9c48c36cc7ede | 1,583 passed; zero skips; 89.76% |
+| AUD-10 â€” constant-query media claims | a98346dfe28b9b8a9f6586ab80717df52ebd6925 | 1,594 passed; zero skips; 89.78% |
 
 AUD-01 through AUD-04 were published previously and their complete evidence remains
 above. AUD-11 was assessed/pushed in 8a677e644b1c3b92955b8ad5939709afc10a63a7;
@@ -1248,14 +1248,14 @@ from this dated review; it is not a claim that the codebase has no possible defe
 or vulnerabilities, nor a new deployed security audit.
 
 
-### Cache implementation resumed — user approval supersedes deferral
+### Cache implementation resumed â€” user approval supersedes deferral
 
 **Date:** 2026-10-15. The user explicitly requested all three proposed caches after
 reading the assessment. AUD-11 through AUD-13 are therefore reopened for sequential
 implementation; the historical measurements and deferral rationale remain above.
 No prior assessment is silently rewritten as implementation evidence.
 
-### AUD-11 — bounded catalog cache implementation
+### AUD-11 â€” bounded catalog cache implementation
 
 GET /api/cities now caches the existing response DTO for 300 seconds. No endpoint,
 request parameter or response field changed. The unused featured-gift repository
@@ -1303,3 +1303,55 @@ upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed.
 The final fresh-epoch migration guard was also checked by real downgrade/re-upgrade
 and the ten focused checks. Publication is verified separately from deployment.
 **Next:** AUD-12, one-hour private occasion pages.
+
+
+### AUD-12 â€” one-hour private calendar caching
+
+GET /api/occasions and GET /api/occasions/occurrences now reuse existing response DTOs
+for up to 3,600 seconds. They retain the same date bounds, limits, stable ordering,
+opaque/UUID cursor contracts and errors. Cached pages remain separate by saved versus
+expanded view, authenticated owner, role, validated credential version, all date
+bounds, limit and cursor, plus transactional owner/global data versions. Both return
+private/no-store HTTP headers; Redis caching does not authorize public/client caching.
+Fresh JWT/revocation/account/role checks precede cache access on every request.
+
+Migration 0038 invalidates the old and new owners when an occasion changes, including
+create/edit/delete, recurrence/reminder settings and admin ownership transfers.
+As requested earlier, order changes also invalidate that customer's calendar cache.
+Owner tokens rotate at commit through deferred constraint triggers. A shared
+transaction advisory lock serializes only this short final invalidation phase,
+preventing disjoint multi-owner batches from acquiring epoch locks in reverse order.
+Business transactions must not force these constraints immediate; cached reads use
+read-only transactions. Other customers' tokens are unchanged. Truncate rotates a global calendar token;
+normal writes do not contend on a global calendar version row. A fresh namespace
+seed prevents re-upgrade from reusing a prior installation's tokens. Metadata grows
+by at most one row per historical affected customer, not per filter/date/cursor.
+
+Reminder jobs that only update delivery progress do not change these response fields;
+actual occasion/order writes trigger invalidation regardless of writer. The existing
+one-off/annual semantics and reminder scheduling were not changed. PostgreSQL epoch
+reads remain authoritative on cache hits. All shared storage, JSON validation,
+coalescing, timeout, outage-fallback and memory bounds from AUD-11 still apply.
+No financial authority or data-modification decision is read from Redis.
+
+The two new endpoint regressions first failed because repeated calls performed two
+calendar queries. After caching, identical calls use one collection query, while
+foreign accounts receive their own data. Tests also verify literal text after edits,
+next pages, deletion invalidating an already cached cursor, and a banned account
+receiving 401 rather than its cached response. Native version checks cover owner
+transfers, unaffected customers and order-created invalidation. The explicit TTL
+regression requires 3,600 seconds. All 58 focused calendar/reminder/auth/cache checks
+passed. A further two native regressions verify real commit/rollback/truncate
+visibility and opposite-owner concurrent batches. The latter reproduced a real
+deadlock before the deferred-trigger correction and passes afterward. The complete
+fresh native PostgreSQL/Redis suite passed: **1,610 tests, zero skips, 89.86%
+coverage**, with one unchanged warning. Both hook stages and independent review
+passed. Migration 0038 downgrade/re-upgrade and all 13 finding links were verified.
+The gate serializes final invalidation commits; deployment throughput is unmeasured.
+
+No schema field, endpoint, environment variable, dependency or mobile change is
+needed. Apply 0038 after 0037. Revert to uncached calendar code before removing its
+triggers; otherwise future writes could stop invalidating pages. Worker/API database
+identities need the version-table SELECT/INSERT/UPDATE privileges used by invoker
+triggers; standard same-owner deployments already have them. No production fixtures,
+notifications, storage writes or Docker were used.

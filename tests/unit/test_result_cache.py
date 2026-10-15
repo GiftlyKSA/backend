@@ -145,3 +145,14 @@ async def test_bad_cache_json_and_loader_failure_do_not_leave_pending_entries():
     with pytest.raises(ValueError):
         await cache.read(**values)
     assert not cache._pending
+
+
+async def test_occasions_cache_uses_one_hour_maximum_ttl():
+    redis = MemoryRedis()
+    repo = SimpleNamespace(versions=AsyncMock(return_value=("owner", "calendar")))
+    await ResultCache(redis).read(
+        **arguments(
+            repo, AsyncMock(return_value=[]), domain="occasions", owner=uuid4(), role="CUSTOMER"
+        )
+    )
+    assert redis.ttls == [3600]

@@ -1318,3 +1318,13 @@ The shared result namespace is capped at 256 entries and 256 KiB per entry. Exis
 responses are preserved when too large to cache. Apply migrations before API startup;
 rollback to uncached code before removing version infrastructure. No additional
 cache environment variables or client integration changes are needed.
+
+
+Private saved and annual-occurrence calendar pages cache for up to one hour under
+migration 0038. Ownership, role and credentials remain checked for each request.
+All ranges/cursors/limits and the saved/expanded view are scoped into cache keys.
+Committed occasion/admin ownership changes and customer order changes invalidate
+relevant owner pages. HTTP responses are private/no-store. Roll back to uncached
+calendar code before removing these triggers. Restricted runtime database identities
+must have SELECT/INSERT/UPDATE on the internal version table; triggers use invoker
+privileges. No cache secrets or additional environment variables are introduced.

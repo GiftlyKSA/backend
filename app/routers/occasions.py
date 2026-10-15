@@ -13,6 +13,7 @@ from app.models.enums import UserRole
 from app.repositories.occasion_occurrence_repository import OccasionOccurrenceRepository
 from app.repositories.operation_repository import OperationRepository
 from app.repositories.planning_repository import PlanningRepository
+from app.repositories.read_cache_repository import ReadCacheRepository
 from app.schemas.date_range import CalendarDate, DateRange, date_range
 from app.schemas.occasions import (
     CreateOccasionRequest,
@@ -24,6 +25,7 @@ from app.schemas.occasions import (
 from app.services.occasion_occurrence_service import OccasionOccurrenceService
 from app.services.occasion_service import OccasionService
 from app.services.operation_service import OperationService
+from app.services.result_cache import ResultCache
 
 router = APIRouter(prefix="/api/occasions", tags=["occasions"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -74,6 +76,8 @@ async def list_occasions(
     db: DbDep,
     actor: CustomerDep,
     dates: Annotated[DateRange, Depends(date_range)],
+    request: Request,
+    response: Response,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     cursor: UUID | None = None,
 ) -> OccasionPage:
@@ -82,16 +86,38 @@ async def list_occasions(
     Use YYYY-MM-DD. Reset the cursor when bounds change and retain identical filters
     on subsequent pages. Malformed or reversed ranges return HTTP 422.
     """
-    rows, next_cursor = await _service(db).list(
-        actor.id, limit=limit, cursor=cursor, from_date=dates.from_date, to_date=dates.to_date
-    )
-    return OccasionPage(
-        items=[OccasionResponse.model_validate(row) for row in rows], next_cursor=next_cursor
+    response.headers["Cache-Control"] = "private, no-store"
+
+    async def load() -> OccasionPage:
+        rows, next_cursor = await _service(db).list(
+            actor.id, limit=limit, cursor=cursor, from_date=dates.from_date, to_date=dates.to_date
+        )
+        return OccasionPage(
+            items=[OccasionResponse.model_validate(row) for row in rows], next_cursor=next_cursor
+        )
+
+    cache: ResultCache = request.app.state.result_cache
+    return await cache.read(
+        repository=ReadCacheRepository(db),
+        domain="occasions",
+        owner=actor.id,
+        role=actor.role.value,
+        auth_version=getattr(request.state, "auth_version", 0),
+        filters={
+            "view": "saved",
+            "from_date": dates.from_date.isoformat() if dates.from_date else None,
+            "to_date": dates.to_date.isoformat() if dates.to_date else None,
+            "limit": limit,
+            "cursor": str(cursor) if cursor else None,
+        },
+        adapter=TypeAdapter(OccasionPage),
+        load=load,
     )
 
 
 @router.get("/occurrences", response_model=OccasionOccurrencePage)
 async def list_occurrences(
+    request: Request,
     db: DbDep,
     actor: CustomerDep,
     response: Response,
@@ -102,12 +128,28 @@ async def list_occurrences(
 ) -> OccasionOccurrencePage:
     """Expand owned one-off/annual dates, oldest first, for at most 366 Gregorian days."""
     response.headers["Cache-Control"] = "private, no-store"
-    return await OccasionOccurrenceService(OccasionOccurrenceRepository(db)).list(
-        actor.id,
-        start=from_date,
-        end=to_date,
-        limit=limit,
-        cursor=cursor,
+
+    async def load() -> OccasionOccurrencePage:
+        return await OccasionOccurrenceService(OccasionOccurrenceRepository(db)).list(
+            actor.id, start=from_date, end=to_date, limit=limit, cursor=cursor
+        )
+
+    cache: ResultCache = request.app.state.result_cache
+    return await cache.read(
+        repository=ReadCacheRepository(db),
+        domain="occasions",
+        owner=actor.id,
+        role=actor.role.value,
+        auth_version=getattr(request.state, "auth_version", 0),
+        filters={
+            "view": "occurrences",
+            "from_date": str(from_date),
+            "to_date": str(to_date),
+            "limit": limit,
+            "cursor": cursor,
+        },
+        adapter=TypeAdapter(OccasionOccurrencePage),
+        load=load,
     )
 
 

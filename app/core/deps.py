@@ -96,6 +96,7 @@ async def require_auth(request: Request, db: AsyncSession = Depends(get_db)) -> 
     except ValueError as exc:
         raise UnauthorizedError("Malformed token role.") from exc
     actor = Actor(id=uuid.UUID(claims.sub), role=role, jti=claims.jti)
+    request.state.auth_version = claims.auth_version
     request.state.audit_actor_id = actor.id
     request.state.audit_actor_category = role.value
     await set_audit_actor(db, category=role.value, actor_user_id=actor.id)
