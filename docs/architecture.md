@@ -5,7 +5,7 @@
 Giftly connects customers ordering gifts with verified couriers in their city. This
 document describes the current backend at a high level. It contains no credentials
 or sensitive deployment details. See [project documentation](documentation.md) for
-operations and [the current review](codebase_review.md) for known limitations.
+operations and [the current review](tasks.md#full-audit-evidence-and-analysis) for known limitations.
 
 ## System overview
 
@@ -118,7 +118,7 @@ risk. Existing controls do not establish that the system is free of vulnerabilit
 
 Live payment/vendor acceptance, deployed firewall settings, backup restoration and
 production load capacity are **UNCONFIRMED** here. These require deployment evidence
-and testing. The [current review](codebase_review.md) distinguishes confirmed defects,
+and testing. The [current review](tasks.md#full-audit-evidence-and-analysis) distinguishes confirmed defects,
 accepted risks and checks still required before broader production use.
 
 ## Mobile expansion and worker isolation — 2026-10-11

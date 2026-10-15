@@ -146,6 +146,21 @@ class UserRepository:
             courier_bio=row.bio,
         )
 
+    async def get_owned_with_courier_for_update(
+        self, actor_id: uuid.UUID
+    ) -> tuple[User, CourierProfile | None] | None:
+        """Refresh and lock owned moderation state in User-to-Profile order."""
+        user = await self.get_for_update(actor_id)
+        if user is None:
+            return None
+        profile: CourierProfile | None = await self._session.scalar(
+            select(CourierProfile)
+            .where(CourierProfile.user_id == actor_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return user, profile
+
     async def get_owned_with_courier(
         self, actor_id: uuid.UUID
     ) -> tuple[User, CourierProfile | None] | None:

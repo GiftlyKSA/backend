@@ -1,19 +1,691 @@
-# Giftly backend tasks
+# Giftly backend — audit and task register
 
-**Created:** 2026-10-11 | **Updated:** 2026-10-14
+**Implementation updated:** 2026-10-15 · See the implementation log at the end for fixes after the audit.
 
-Only outstanding backend implementation and runtime-configuration work is tracked here.
-All items below are postponed by the user; no task is currently active within the latest
-approved scope. Mobile work, completed work and testing/verification tasks are omitted.
+**Document organization updated:** 2026-10-15 · **Audit performed:** 2026-10-14
 
-| ID | Task | Short description | Status | Urgency | Created | Last updated | Note |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| PUSH-SETUP | Activate Expo push | Configure worker provider and Expo/EAS platform credentials. | Postponed | High7 | 2026-10-13 | 2026-10-14 | Adapter implemented; real delivery configuration still required. |
-| STORE-SETUP | Activate private S3 | Configure matching private bucket, endpoint and credentials on API and worker. | Postponed | High7 | 2026-10-13 | 2026-10-14 | Avatar backend fixes pushed in bb85fcd; scheduler needs no storage secrets. |
-| FIN-POLICY | Complete account closure and fund return | Implement final completion/refund/retention behavior after business and legal policy approval. | Postponed | High7 | 2026-10-11 | 2026-10-14 | Keep existing 14-day recovery and admin-review hold; no automatic erasure/refund. |
-| BANK-PROFILE | Saved courier bank profile | Add private saved bank details after validation, masking and verification rules are approved. | Postponed | Medium4 | 2026-10-07 | 2026-10-14 | Existing withdrawal IBAN input is not a saved bank-profile API. |
-| FIN-NOTIFY | Financial notification preferences | Implement preferences and actual delivery after covered financial events/channels are defined. | Postponed | Medium4 | 2026-10-07 | 2026-10-14 | Do not expose a functional switch before its delivery behavior exists. |
+This is the single maintained record for backend findings, task details, full review
+evidence, cache assessment, accepted risks, postponed work and verification limits.
+The original task fields and full audit content are retained; this reorganization
+does not implement fixes or establish a new deployment.
 
-Accepted security risks, excluded work, release evidence and unverified limitations remain
-in [codebase_review.md](codebase_review.md). Removing verification tasks does not establish
-that those checks passed or that all security risks are resolved.
+## Contents
+
+| Section | What it contains |
+| --- | --- |
+| [Priority register](#priority-register) | All 13 findings/proposals, ordered by severity and urgency. |
+| [Detailed task records](#detailed-task-records) | Every original task-table field, in readable two-column tables. |
+| [Previously postponed backend work](#previously-postponed-backend-work) | All five postponed backend tasks, status and dates. |
+| [Full audit evidence and analysis](#full-audit-evidence-and-analysis) | Complete original review, scope, evidence, mitigations and limitations. |
+| [Security findings](#security-findings) | Moderation race, image validation and inspected safeguards. |
+| [SQL and runtime findings](#sql-query-amplification-and-runtime-findings) | Query amplification, connections, exports, indexes and complexity assessment. |
+| [Cache correctness and inventory](#cache-correctness-and-inventory) | Existing caches, eviction defect and conditional cache proposals. |
+| [Local-only migration risk](#local-only-migration-risk-aud-02) | Unpublished reward enum migration risk. |
+| [Accepted risks and exclusions](#accepted-risks-and-exclusions-retained) | User-approved limitations and deferred external work. |
+| [Checks actually performed](#checks-actually-performed) | Historical check results and explicit verification limits. |
+
+---
+
+## Tracker scope and source baseline
+
+**Giftly backend audit tasks**
+
+**Audit date:** 2026-10-14 | **Source baseline:** published master `0ed5622`
+**Scope:** backend only. Security, runtime, SQL, query amplification and cache correctness.
+Severity and urgency are separate 1-10 engineering estimates, not CVSS. Rows are sorted
+by severity, then urgency/impact. Code locations refer to the published source unless
+marked PRIMARY ONLY. No fixes were implemented during this audit.
+
+The main workspace is on `e65072d` with unpublished changes; the reviewed published
+checkout is `C:/Users/PC/.codex/worktrees/remaining-api-performance/backend`.
+Do not mistake old local code or unpublished features for the current release.
+
+<a id="priority-register"></a>
+
+## Priority register
+
+| Finding | Task | Category | Severity /10 | Urgency /10 | Status |
+| --- | --- | --- | --- | --- | --- |
+| [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:72) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
+| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:93) | Use a forward migration for local reward enums | opt | **5** | 6 | Open - local-only release risk |
+| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:114) | Fully decode order request and delivery images | security | **5** | 5 | Open - malformed JPEG/PNG reproduced |
+| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:135) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Open - confirmed connection hold |
+| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:156) | Batch due-reminder inbox inserts | opt | **4** | 4 | Open - bounded per-item SQL amplification |
+| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Bound retained database export downloads | perf | **4** | 4 | Open - overlapping retained files reproduced |
+| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:198) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Open - repeated history-dependent queries |
+| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Proposal - index mismatch confirmed; benefit unmeasured |
+| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Open - native Redis clock-skew reproduction |
+| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Open - 3N calls reproduced at N=1 and N=5 |
+| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Optional proposal - not a confirmed defect |
+| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
+| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Optional proposal - benefit unmeasured |
+
+<a id="detailed-task-records"></a>
+
+### Detailed task records
+
+Every field from the original task table is retained below. Full supporting audit
+narratives, reproduced evidence, safeguards and verification limits follow these records.
+
+<a id="aud-01-task-record"></a>
+
+#### AUD-01 task record
+
+**Serialize courier verification resubmission**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-01 |
+| Task name | Serialize courier verification resubmission |
+| Purpose | Preserve administrative account restrictions |
+| Why important | An unlocked transition can overwrite a newer ban |
+| Impact | Moderation state changes from BANNED to PENDING_VERIFICATION; pending login becomes possible, but marketplace access remains restricted |
+| Type | security |
+| Code location | app/services/user_service.py:116; app/repositories/user_repository.py:149; app/services/admin_service.py:379 |
+| Current workflow | Read REJECTED without a lock; admin commits a ban; stale request writes PENDING_VERIFICATION |
+| Proposed solution | Lock and refresh User before checking status, then use consistent User-to-Profile lock order or a conditional REJECTED-to-PENDING update |
+| Severity /10 | 6 |
+| Urgency /10 | 7 |
+| Status | Fixed - full suite and security review verified |
+
+<a id="aud-02-task-record"></a>
+
+#### AUD-02 task record
+
+**Use a forward migration for local reward enums**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-02 |
+| Task name | Use a forward migration for local reward enums |
+| Purpose | Make pending wallet-reward code upgrade existing databases safely |
+| Why important | Editing applied migration 0020 does not rerun it on databases already at 0034 |
+| Impact | If the unpublished reward feature is released as-is, enum inserts fail; not a currently released reward endpoint |
+| Type | opt |
+| Code location | PRIMARY ONLY: app/migrations/versions/0020_pending_payment_ledger.py:46; app/models/enums.py; app/services/money_service.py:324 |
+| Current workflow | Local edits add GIVEAWAY/PROMO_CREDIT inside historical 0020; current released schema lacks those labels |
+| Proposed solution | Restore published migration history; add a reviewed new migration and guarded rollback before publishing the pending reward feature |
+| Severity /10 | 5 |
+| Urgency /10 | 6 |
+| Status | Open - local-only release risk |
+
+<a id="aud-03-task-record"></a>
+
+#### AUD-03 task record
+
+**Fully decode order request and delivery images**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-03 |
+| Task name | Fully decode order request and delivery images |
+| Purpose | Reject malformed or resource-exhausting JPEG/PNG content |
+| Why important | Magic bytes alone do not establish a valid image or apply decoding limits |
+| Impact | Authenticated owners can confirm unreadable photos/proof; downstream exploitation is unconfirmed |
+| Type | security |
+| Code location | app/services/media_service.py:266; app/integrations/storage/real.py:170; app/services/image_decoder.py |
+| Current workflow | Avatar/HEIF uses full isolated decoding; order JPEG/PNG checks only its prefix |
+| Proposed solution | Reuse the bounded isolated decoder for order JPEG/PNG; retain exact size/type, ownership, create-only uploads, deadlines and claim fencing |
+| Severity /10 | 5 |
+| Urgency /10 | 5 |
+| Status | Open - malformed JPEG/PNG reproduced |
+
+<a id="aud-04-task-record"></a>
+
+#### AUD-04 task record
+
+**Release invoice PDF read connections before rendering**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-04 |
+| Task name | Release invoice PDF read connections before rendering |
+| Purpose | Keep normal API queries responsive during cold PDF requests |
+| Why important | Database connection lifetime currently includes cache waits and render admission |
+| Impact | Slow renders can consume the per-process DB pool and delay unrelated requests |
+| Type | perf |
+| Code location | app/routers/invoices.py:206; app/core/deps.py:60; app/core/db.py:70 |
+| Current workflow | Read authorized invoice/items; await cache/render; request dependency commits only when the route returns |
+| Proposed solution | Capture an immutable authorized snapshot and release the read transaction before awaiting rendering; preserve fresh ownership/content checks on every cache hit |
+| Severity /10 | 5 |
+| Urgency /10 | 5 |
+| Status | Open - confirmed connection hold |
+
+<a id="aud-05-task-record"></a>
+
+#### AUD-05 task record
+
+**Batch due-reminder inbox inserts**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-05 |
+| Task name | Batch due-reminder inbox inserts |
+| Purpose | Reduce SQL round trips and time holding reminder locks |
+| Why important | Up to 100 inserts already run inside one transaction |
+| Impact | Avoidable database work delays scheduled reminder processing as due batches grow |
+| Type | opt |
+| Code location | app/repositories/notification_reminder_repository.py:63-111; app/workers/occasion_reminders.py |
+| Current workflow | Lock a bounded reminder page, then perform one INSERT ON CONFLICT RETURNING per reminder |
+| Proposed solution | Insert the bounded inbox batch once and return event keys; preserve duplicate handling, expiry decisions, reminder versions and row locks; up to 100 insert statements become one |
+| Severity /10 | 4 |
+| Urgency /10 | 4 |
+| Status | Open - bounded per-item SQL amplification |
+
+<a id="aud-06-task-record"></a>
+
+#### AUD-06 task record
+
+**Bound retained database export downloads**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-06 |
+| Task name | Bound retained database export downloads |
+| Purpose | Prevent aggregate temporary-disk exhaustion |
+| Why important | The creation lock does not cover the lifetime of downloaded snapshots |
+| Impact | Slow overlapping admin downloads retain multiple files of up to 512 MiB each |
+| Type | perf |
+| Code location | app/admin/backup_router.py:33-66; app/services/database_export_service.py:93-120 |
+| Current workflow | Serialize dump creation, release its lock, then keep the file until response cleanup |
+| Proposed solution | Apply admission and an aggregate byte/file ceiling through response cleanup, plus a bounded download lifetime or renewable token-owned lease; retain disconnect cleanup |
+| Severity /10 | 4 |
+| Urgency /10 | 4 |
+| Status | Open - overlapping retained files reproduced |
+
+<a id="aud-07-task-record"></a>
+
+#### AUD-07 task record
+
+**Cache audit dropdown catalogs safely**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-07 |
+| Task name | Cache audit dropdown catalogs safely |
+| Purpose | Avoid rediscovering action/entity choices across the full audit history |
+| Why important | Each activity page executes two category-scoped DISTINCT/ORDER queries |
+| Impact | Growing history increases recurring admin query work even though output is capped |
+| Type | opt |
+| Code location | app/repositories/audit_repository.py:58-74; app/admin/router.py:921 |
+| Current workflow | Read at most 200 distinct actions and entities from stored history for every page |
+| Proposed solution | Use a small category-scoped cache with an explicit short TTL and safe DB fallback; retain exclusion rules and dynamic stored choices; consider narrow supporting indexes only when plans justify write cost |
+| Severity /10 | 4 |
+| Urgency /10 | 3 |
+| Status | Open - repeated history-dependent queries |
+
+<a id="aud-08-task-record"></a>
+
+#### AUD-08 task record
+
+**Support chronological financial admin browsing**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-08 |
+| Task name | Support chronological financial admin browsing |
+| Purpose | Allow bounded pages to use ordered index access |
+| Why important | Existing indexes lead with owner/order/wallet IDs, not the global browse order |
+| Impact | Global invoices, transactions and top-up browsing can scan/sort growing history |
+| Type | opt |
+| Code location | app/repositories/admin_browse_query.py:113-131; app/models/tables.py:692,966,1229 |
+| Current workflow | Generic admin browser orders by created_at and id with a 26/51/101-row cap |
+| Proposed solution | Add only justified created_at/id indexes for these active paths through a new migration; retain keyset semantics and document index storage/insert cost |
+| Severity /10 | 4 |
+| Urgency /10 | 3 |
+| Status | Proposal - index mismatch confirmed; benefit unmeasured |
+
+<a id="aud-09-task-record"></a>
+
+#### AUD-09 task record
+
+**Use Redis time for PDF cache eviction**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-09 |
+| Task name | Use Redis time for PDF cache eviction |
+| Purpose | Make cache capacity accounting match actual blob expiry |
+| Why important | Application clock skew can remove live index references without deleting their blobs |
+| Impact | Actual retained PDFs can exceed the nominal 128-entry bound until their one-hour TTL expires |
+| Type | perf |
+| Code location | app/services/invoice_pdf_cache.py:46-48,147 |
+| Current workflow | Blob TTL uses Redis EX; index scores/pruning use application time.time() |
+| Proposed solution | Read Redis TIME inside the same Lua store operation and use that clock for scoring and pruning |
+| Severity /10 | 3 |
+| Urgency /10 | 3 |
+| Status | Open - native Redis clock-skew reproduction |
+
+<a id="aud-10-task-record"></a>
+
+#### AUD-10 task record
+
+**Batch order/proof media grant reads and claims**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-10 |
+| Task name | Batch order/proof media grant reads and claims |
+| Purpose | Remove reducible SQL amplification for multi-image requests |
+| Why important | Preparation and claims repeatedly read individual grant rows |
+| Impact | Five media keys cause 15 grant statements, excluding other request work |
+| Type | opt |
+| Code location | app/services/media_service.py:194-229; app/repositories/media_repository.py; app/routers/orders.py:115 |
+| Current workflow | Read N snapshots, reread N locked grants, execute N conditional claims |
+| Proposed solution | Batch snapshots and ordered locked reads; add a confirmed-only batch claim returning keys; reject partial claims atomically. Do not reuse a helper that implicitly confirms uploads. Five keys can use three grant statements |
+| Severity /10 | 3 |
+| Urgency /10 | 3 |
+| Status | Open - 3N calls reproduced at N=1 and N=5 |
+
+<a id="aud-11-task-record"></a>
+
+#### AUD-11 task record
+
+**Consider a small public catalog cache**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-11 |
+| Task name | Consider a small public catalog cache |
+| Purpose | Reuse rarely changed city/featured-gift responses |
+| Why important | Repeated public reads may share identical small payloads |
+| Impact | Potential DB/read savings; current latency benefit has not been established |
+| Type | opt |
+| Code location | app/services/city_service.py:25; app/repositories/city_repository.py:20; app/repositories/planning_repository.py:21 |
+| Current workflow | Read current active catalogs from SQL on each request |
+| Proposed solution | Only if traffic warrants it, cache bounded catalog payloads for about 300 seconds with every real filter/limit and contract version in keys; invalidate on committed admin/catalog changes; keep active-city validation for writes authoritative |
+| Severity /10 | 2 |
+| Urgency /10 | 2 |
+| Status | Optional proposal - not a confirmed defect |
+
+<a id="aud-12-task-record"></a>
+
+#### AUD-12 task record
+
+**Consider private occasion-page caching**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-12 |
+| Task name | Consider private occasion-page caching |
+| Purpose | Reuse unchanged calendar ranges |
+| Why important | Calendar screens can repeat identical owned range queries |
+| Impact | Potential read savings; extra invalidation/version complexity may outweigh the gain |
+| Type | opt |
+| Code location | app/services/occasion_service.py:46; app/services/occasion_occurrence_service.py; app/repositories/planning_repository.py:67 |
+| Current workflow | Read owned stored occasions or expand annual occurrences in SQL; no Redis result cache exists |
+| Proposed solution | If justified, use account/authorization-version/range/limit/cursor/recurrence-version keys, one-hour maximum TTL, bounded entries/bytes and reliable committed-write invalidation including admin edits; fall back to SQL and keep fresh authorization |
+| Severity /10 | 2 |
+| Urgency /10 | 2 |
+| Status | Optional proposal - benefit unmeasured |
+
+<a id="aud-13-task-record"></a>
+
+#### AUD-13 task record
+
+**Consider short-lived private order-summary caching**
+
+| Field | Full detail |
+| --- | --- |
+| ID | AUD-13 |
+| Task name | Consider short-lived private order-summary caching |
+| Purpose | Reuse frequent identical order-list requests |
+| Why important | List refreshes can repeat owner-scoped queries and batched enrichment |
+| Impact | Potential API read savings; stale status/ownership must never affect authorization or acceptance |
+| Type | opt |
+| Code location | app/services/order_service.py:239,286; app/repositories/order_repository.py |
+| Current workflow | Authorize current account, read filtered orders, then batch enrichment; no Redis order-result cache exists |
+| Proposed solution | Only if justified, cache summaries briefly, about 15-30 seconds, with actor/role/current authorization and data version plus all filters/cursors. Invalidate committed order/participant/rating/admin changes and cap cardinality/bytes. Never cache claim eligibility, balances or unresolved payment authority |
+| Severity /10 | 2 |
+| Urgency /10 | 2 |
+| Status | Optional proposal - benefit unmeasured |
+
+
+Open findings are real backend implementation work. Optional cache proposals are not
+claims of measured slowness and must not be implemented indiscriminately. Supporting
+evidence, cache inventory and accepted risks are in the [full audit](#full-audit-evidence-and-analysis) below.
+There are no testing-only or mobile tasks in this tracker.
+
+<a id="previously-postponed-backend-work"></a>
+
+## Previously postponed backend work
+
+| ID | Task | Purpose / dependency | Status | Urgency /10 | Created | Updated |
+| --- | --- | --- | --- | --- | --- | --- |
+| PUSH-SETUP | Activate Expo push | Configure worker provider and Expo/EAS platform credentials. | Postponed | 7 | 2026-10-13 | 2026-10-14 |
+| STORE-SETUP | Activate private S3 | Configure matching private bucket, endpoint and credentials on API/worker; scheduler needs none. | Postponed | 7 | 2026-10-13 | 2026-10-14 |
+| FIN-POLICY | Final account closure/fund return | Implement final behavior after business/legal retention policy approval; retain 14-day recovery/admin hold meanwhile. | Postponed | 7 | 2026-10-11 | 2026-10-14 |
+| BANK-PROFILE | Saved courier bank profile | Define validation/masking/verification, then implement private saved details. | Postponed | 4 | 2026-10-07 | 2026-10-14 |
+| FIN-NOTIFY | Financial notification preferences | Define covered events/channels and implement actual delivery before exposing switches. | Postponed | 4 | 2026-10-07 | 2026-10-14 |
+
+Accepted unrestricted admin CRUD risks, excluded work and unverified deployment/provider
+limits remain in the full audit below. They are not silently marked fixed or reopened as testing tasks.
+
+## Tracker publication status recorded on 2026-10-14
+
+Audit documents are saved locally. Commit/push is pending because automatic approval
+review reached its usage limit when accessing the managed release worktree.
+
+---
+
+<a id="full-audit-evidence-and-analysis"></a>
+
+## Full audit evidence and analysis
+
+**Giftly backend security and performance audit**
+
+**Date:** 2026-10-14, Asia/Riyadh
+**Published source reviewed:** `0ed562276ee5c36cd741c453877790afab235f3c`
+**Review model:** three independent GPT-6.1 Sol reviewers at high reasoning, with parent verification.
+**Result:** new implementation findings and conditional optimization proposals; no application fixes in this pass.
+
+### Scope and interpretation
+
+Reviewed authentication/OTP/JWT/refresh/logout, account-change proofs/recovery, moderation,
+ownership/role boundaries, order/invoice/payment/wallet/withdrawal transitions, HTTP and
+WebSocket authorization, storage/image validation, workers/outboxes, admin browsing and
+exports, Redis/PDF caches, SQL pagination, indexes, resource limits and shutdown behavior.
+
+The published checkout is `C:/Users/PC/.codex/worktrees/remaining-api-performance/backend`.
+The user's main workspace is on older `e65072d` with unrelated unpublished integration,
+schema and payout changes. Relevant local-only migration risk is explicitly labeled.
+Neither a pushed source file nor a passing mock establishes deployed/provider behavior.
+
+This is a comprehensive source/regression pass, not a security certification. Scores are
+engineering severity/urgency estimates, not CVSS. Production p95/p99, query plans at real
+cardinality, decoder RSS/CPU and capacity were not measured. Cache/index benefits remain
+unmeasured where stated. No Docker, mobile edits, real notifications, production fixtures
+or live bucket writes were used. Previously postponed work remains postponed.
+
+### Global priorities
+
+The complete severity-sorted task table, including purpose, importance, impact, type,
+code locations, current workflow, mitigation and urgency, is in [tasks.md](tasks.md).
+
+1. **AUD-01, security 6/10, urgency 7/10:** prevent stale verification resubmission from overwriting a ban.
+2. **AUD-02, local-only release risk 5/10, urgency 6/10:** migrate pending reward enums forward instead of changing applied history.
+3. **AUD-03, security 5/10:** fully decode order JPEG/PNG, not just avatar/HEIF.
+4. **AUD-04, performance 5/10:** release invoice PDF read connections before render/cache waits.
+5. **AUD-05 through AUD-10, 4/10 to 3/10:** batch reminder/media SQL, bound retained exports, reduce audit-choice scans, assess chronological browse indexes and correct cache eviction time.
+6. **AUD-11, AUD-12 and AUD-13, optional 2/10 proposals:** narrowly scoped public catalog, private occasion and short-lived order-summary caches if their benefit warrants complexity.
+
+<a id="security-findings"></a>
+
+### Security findings
+
+#### AUD-01 - Stale courier resubmission overwrites moderation
+
+`app/services/user_service.py:116-132` reads a rejected courier through the plain joined
+query in `app/repositories/user_repository.py:149-160`, checks REJECTED and later writes
+PENDING_VERIFICATION. `app/services/admin_service.py:379-386` bans under a user lock and
+revokes credentials. A ban committed between the resubmission read and write is then
+overwritten by the stale transition.
+
+A native PostgreSQL reproduction ran the actual UserService and AdminService in two
+sessions against a separate disposable database. After the admin ban committed first,
+resubmission committed and the final state was PENDING_VERIFICATION with auth_version=1.
+Credential revocation remained intact. The login status check in
+`app/services/auth_service.py:126-129` rejects BANNED/DELETED, so subsequent valid login
+is permitted by the resulting pending state. That login conclusion is source-derived;
+no real account login was performed. Pending/unverified marketplace access remains denied.
+
+**Mitigation:** lock and refresh the user before validating the transition, then acquire
+profile state in consistent User-to-Profile order, or use an atomic expected-status update.
+Retain the ban/revocation and reject the losing transition. No new endpoint is needed.
+A fix should preserve a native concurrent-ban/resubmission regression.
+
+#### AUD-03 - Order JPEG/PNG confirmation accepts invalid image contents
+
+`app/services/media_service.py:266-289` fully decodes HEIF and courier avatars. Order
+request/delivery JPEG/PNG takes the prefix-only validation in
+`app/integrations/storage/real.py:170-180`. A JPEG/PNG header alone is not a valid image.
+
+A synthetic provider probe used the actual S3 adapter and MediaService with stubbed
+transport, never a live bucket. JPEG-header-plus-garbage and PNG-header-plus-garbage both
+passed confirmation; the existing full decoder rejected both. Dimension/decompression
+guards do not run on that branch. This demonstrates unreadable media acceptance, not
+payment theft or a proven downstream decoder exploit.
+
+**Mitigation:** reuse existing bounded isolated decoding for order JPEG/PNG, preserving
+actual type/size, owner/purpose checks, create-only storage writes, admission, deadlines
+and claim fencing. Keep malformed/truncated and oversized-dimension cases as regressions.
+
+#### Controls inspected without an additional confirmed defect
+
+Ownership/role filters remain on participant reads; public/customer/courier boundaries
+are enforced server-side. OTPs/proofs are purpose-scoped and hashed, token issuer/audience/
+algorithm/expiry validation and refresh revocation are retained, and financial settlement
+uses exact Decimal arithmetic, row locks and idempotency. Provider callbacks do not trust
+browser redirects. Dynamic SQL identifiers are metadata-allowlisted; untrusted values use
+bind parameters. User text is literal/escaped rather than executed. Logging scrubs tokens,
+OTPs, personal data and signed URLs; storage failures use safe errors.
+
+These controls were inspected, not asserted to cover every possible attack. A suspected
+order-acceptance ban race was rejected after inspecting CourierRepository.lock: it joins
+current ACTIVE/nondeleted courier state after the account lock, and response eligibility
+is rechecked. That rejected hypothesis is not an implementation task.
+
+<a id="sql-query-amplification-and-runtime-findings"></a>
+
+### SQL, query amplification and runtime findings
+
+#### AUD-04 - Invoice rendering retains a database connection
+
+`app/routers/invoices.py:206-214` performs fresh authorized invoice/item reads, then
+awaits PDF cache lookup, render admission and thread work. The read-only request
+transaction in `app/core/deps.py:60-66` commits only when the route returns.
+Unlike wallet statement export, this path does not release its reads before rendering.
+
+Default per-process pool capacity is five persistent plus ten overflow connections;
+the PDF cache allows four renders and 128 distinct in-flight identities. Thus cold PDF
+requests can hold connections while waiting and interfere with unrelated API reads.
+
+**Mitigation:** capture authorized immutable rendering data, release the read transaction
+using the existing non-expiring session factory, then await cache/render. Never skip the
+fresh ownership/content checks before a cache hit. Production latency savings are unknown.
+
+#### AUD-05 - Due-reminder materialization performs one insert per reminder
+
+`app/repositories/notification_reminder_repository.py:63-111` locks up to 100 due rows,
+then issues one INSERT ON CONFLICT RETURNING for each, all in the same transaction.
+This is reducible bounded per-item SQL, not unavoidable per-item worker isolation.
+
+**Mitigation:** one bounded bulk inbox insert returning event keys, while retaining
+duplicate/expired decisions, reminder versions and locks. At 100 reminders, insertion
+round trips can fall from 100 to one; row-level audit/storage work still remains.
+
+#### AUD-06 - Retained export files have no aggregate download bound
+
+`app/admin/backup_router.py:56-66` releases its dump-creation lock before returning
+BackupResponse. The snapshot remains until response cleanup at lines 33–38. The 512 MiB
+per-dump limit in `database_export_service.py:93-120` does not limit simultaneously
+retained snapshots from slow downloads.
+
+Actual route calls with fake exports and tiny disposable files produced two retained
+snapshots while no creation lock remained; maximum simultaneous dump locks was one.
+Simulated send failure removed both files, so disconnect cleanup works.
+
+**Mitigation:** bound admission and retained bytes/files over creation and response
+lifetime, with a download deadline or renewable token-owned lease. Extending an unrenewed
+300-second lock over an arbitrary download is insufficient. This is authenticated-admin
+resource exposure; no public-user exploit was demonstrated.
+
+#### AUD-07 - Audit dropdown discovery repeats history-dependent work
+
+`app/repositories/audit_repository.py:58-74` runs two DISTINCT/ORDER/LIMIT 200 queries
+for each activity page at `app/admin/router.py:921`. Output is bounded but discovery
+work depends on stored history; current indexes serve other category/time/actor/entity
+paths.
+
+**Mitigation:** small category-scoped choice cache with a short explicit TTL and DB
+fallback, or justified narrow indexes/catalog maintenance. Preserve dynamic stored
+choices and HTTP-log exclusions. No actual scan plan or production speedup was measured.
+
+#### AUD-08 - Global financial admin browsing lacks matching chronological indexes
+
+Active generic browsing uses `app/repositories/admin_browse_query.py:113-131` with
+created_at/id ordering and bounded pages. Invoices, transactions and wallet_topups have
+owner/order/wallet-leading indexes in `app/models/tables.py:692-710,966,1229-1252`, not
+the unscoped chronological order.
+
+**Mitigation proposal:** only appropriate created_at/id indexes on growing active browse
+paths, through a new migration with rollback and write/storage cost analysis. This is a
+source-confirmed index mismatch; planner choice and benefit remain unmeasured. Do not add
+indexes for every arbitrary admin sort.
+
+#### AUD-10 - Order/proof media claims make 3N grant calls
+
+`app/services/media_service.py:194-229` prepares N grants, then rereads N locked grants
+and performs N conditional claims. A service-level probe counted 3 calls at N=1 and
+15 at N=5; the current repository executes one statement per such operation. This is
+bounded by five media keys, but reducible.
+
+**Mitigation:** batch snapshots and ordered locked reads, plus a confirmed-only batch
+claim returning keys. Reject partial claims atomically and preserve ownership, purpose,
+metadata comparisons and stable locking. Do not blindly reuse confirm_and_claim_many:
+it also confirms grants and does not require the existing confirmation condition.
+Per-object storage reads/decoding are still needed; this proposal batches SQL only.
+
+#### Existing efficient patterns and N-squared assessment
+
+Order ratings, chat attachments and admin relationship/actor labels are already batched.
+Hot list reads apply owner/status/date filters before bounded keyset pagination.
+Courier report totals use SQL aggregates, not full Python ledger collections.
+No confirmed unbounded O(n-squared) Python loop was found in the inspected mobile paths.
+A row-by-fixed-column serializer or a constant number of passes is not itself O(n-squared).
+
+Worker per-item transactions may deliberately isolate failures/retries. Do not replace
+them indiscriminately with a large transaction; the reminder finding concerns inserts
+that already share a single transaction. Shared Redis pools, bounded messages/uploads/
+decoder jobs and worker concurrency/shutdown controls are retained.
+
+<a id="cache-correctness-and-inventory"></a>
+
+### Cache correctness and inventory
+
+| Cache / reuse | Existing behavior | Assessment |
+| --- | --- | --- |
+| Invoice PDF Redis cache | One-hour absolute TTL; content/template fingerprint; fresh authorization/content reads on every hit; 128 indexed entries; 256 KiB decoded PDF cap; 100 ms Redis budgets; safe fallback on bad values or outage | Freshness/authorization controls are sound in inspected paths; AUD-04 connection hold and AUD-09 capacity accounting remain |
+| PDF rendering singleflight | Same-process identical misses share work; four render slots; 128 distinct identities; cancellation does not release a live render's slot | Bounded per process; cross-process duplicate rendering is possible, but no need for distributed coordination was measured |
+| Read-only request memoization | read_snapshot.py:21-37 caches rows and missing results for the exact read-only SessionTransaction | Mutation paths bypass it and new transactions invalidate reuse; no cached write authority found |
+| Prepared media heads | At most five actor/purpose/key snapshots per service instance, followed by fresh locked grant checks | Required attachment checks retained; batch the SQL instead of trusting the memoized head alone |
+| Settings and templates | Process-lifetime validated settings; compiled Jinja environments, not cached user responses | Restart for configuration changes; do not use these as shared session/authorization state |
+| Admin static assets | Content-hashed public assets have immutable caching; private admin HTML is no-store | Appropriate separation of static assets from private data |
+| Orders, occasions and financial balances | No Redis result cache found in published source | Earlier cache expectations are not implemented contracts; authoritative reads remain current |
+
+#### AUD-09 - PDF eviction uses a different clock from TTL expiry
+
+`app/services/invoice_pdf_cache.py:46-48,147` prunes/scores its index using application
+time.time(), while Redis EX controls actual blob expiry. A forward host-clock jump can
+remove live index references without deleting those blobs.
+
+A native Redis reproduction ran the actual store Lua script in an isolated temporary
+namespace with cap 2 and three tiny blobs. Advancing the third supplied clock by 3,601 seconds
+left index size 1 while all three blobs remained live. All probe keys were removed.
+The same accounting issue applies to the real 128-entry cap; blobs still expire after
+one hour. No cached ownership or financial-state bypass was found.
+
+**Mitigation:** Redis TIME inside the same Lua operation for both scoring and pruning.
+
+#### Conditional new caching proposals: AUD-11, AUD-12 and AUD-13
+
+Public catalogs are the simplest shared-cache candidate. Private occasion and order
+summary pages are possible but require every real filter/cursor plus actor/role/current
+authorization and reliable data-generation keys. Proposed starting TTLs are about 300 seconds
+for catalogs, a one-hour maximum for occasions, and 15–30 seconds for order summaries.
+
+Every candidate needs bounded entry count, bytes and key cardinality; short dependency
+timeouts; safe DB fallback; and invalidation after all relevant committed writes including
+admin/raw database changes and workers. Preserve current authorization before reuse.
+Caching does not replace SQL indexes, batching, connection release or ownership checks.
+
+Do not cache authoritative available balances, unresolved payments, OTPs, sessions or
+claim eligibility. Do not reuse private pages across accounts or publicly cache signed
+media/PDF downloads. Keep financial reports authoritative until a genuinely safe version/
+invalidation design and material benefit are established. No cache was added during this audit.
+
+<a id="local-only-migration-risk-aud-02"></a>
+
+### Local-only migration risk: AUD-02
+
+Primary unpublished changes add GIVEAWAY/PROMO_CREDIT to applied migration 0020 and to
+TransactionType/credit_wallet_reward. A read-only enum query on the freshly migrated
+released schema confirmed neither label exists. A database already at 0034 does not rerun
+0020 when the local feature is published.
+
+This is not a released wallet-reward endpoint defect. Restore applied migration history
+and introduce a forward migration with a safe downgrade/refusal policy before publishing
+the pending feature. Reconcile local edits with current master without overwriting unrelated
+work or regressing the released provider/runtime safeguards.
+
+<a id="accepted-risks-and-exclusions-retained"></a>
+
+### Accepted risks and exclusions retained
+
+| Existing ID / topic | Disposition | Remaining impact |
+| --- | --- | --- |
+| SEC-16 / privileged financial CRUD | Accepted by user, 9/10 | Authorized admins can directly alter posted financial state |
+| SEC-17 / audit CRUD | Accepted by user, 9/10 | Privileged history can be edited/deleted |
+| SEC-19 / published testing-default rejection | Excluded by user, 7/10 | Deployment operators must keep real secrets separate; no new rejection rule was added |
+| Ingress credential redaction and GitHub alert reconciliation | Previously excluded | Current remote guarantees/alert disposition remain unconfirmed |
+| Real SMS/email/push/Dhamen/storage integrations | Postponed/external scope | Fake/mock success is not live delivery or payment readiness |
+| Audit archival | Excluded for development | No automatic purge/archive was added |
+
+The locked production dependency audit reported no known vulnerabilities. GitHub previously
+reported a moderate alert; this pass did not reconcile that excluded alert. Those statements
+are not contradictory evidence of resolution. Production use must not expose development
+OTP/fake-provider behavior to real customer data; the intentionally deferred setup is not
+a claim of production readiness.
+
+<a id="checks-actually-performed"></a>
+
+### Checks actually performed
+
+- `uv run --locked pytest --cov=app --cov-report=term --cov-fail-under=85` on fresh disposable native PostgreSQL 16 and Redis: **1522 passed, zero skips, 89.44% coverage**, one unchanged Starlette/httpx deprecation warning.
+- Security reviewer: 117 focused unit checks; cache/runtime reviewer: 43 focused checks. These overlap the full suite and are not additive totals.
+- Locked production export plus `uvx pip-audit==2.10.1 --strict --no-deps --disable-pip`: no known vulnerabilities reported.
+- Native two-session moderation/resubmission probe reproduced the lost ban.
+- Actual store Lua/native Redis probe reproduced clock-skew capacity drift; temporary keys cleaned up.
+- Actual S3 adapter/MediaService with stubbed transport accepted malformed JPEG/PNG that the full decoder rejected.
+- Media orchestration probe confirmed 2N grant reads plus N conditional claims.
+- Backup route probe with fake exports confirmed simultaneous retained files and working failure cleanup.
+- Released-schema enum query confirmed local pending reward labels are absent.
+
+Existing tests passing does not prove the newly found failure cases are fixed. They require
+implementation and durable regression coverage as part of those fixes, not standalone
+testing tasks. No production load/latency/EXPLAIN measurement or live provider verification
+was performed. No application source, dependencies, migrations or public contract was changed.
+
+### Review publication status recorded on 2026-10-14
+
+Documents are saved in the permitted main workspace. Commit/push remains pending:
+automatic approval review hit its usage limit during a release-worktree operation.
+This was a review-service failure, not a finding that the requested Git action was unsafe.
+
+---
+
+## Implementation and publication log
+
+### AUD-01 — courier verification resubmission
+
+**Implemented:** 2026-10-15. **Category:** security. **Original severity:** 6/10.
+
+The service now reads moderation state through a dedicated repository operation that
+locks and refreshes User first, then locks and refreshes CourierProfile. Resubmission
+validates the current role, nondeleted account and REJECTED status under those locks.
+Normal profile edits acquire the same User-to-Profile locks before changing either row and reject newly banned/deleted accounts; this prevents the flush-order deadlock identified during review.
+A committed ban/deletion cannot be replaced by a stale request, and competing
+resubmissions produce one transition and one audit event. Existing success/error
+schemas and routes remain unchanged; no migration or mobile changes are required.
+
+The initial eight focused unit tests failed against the old implementation in seven relevant
+cases, then passed after the locking fix. Three additional unit regressions first failed for normal profile edits, then passed after that write path was aligned. Five native PostgreSQL tests cover stale
+banned/deleted state, a moderation lock held until commit and simultaneous
+resubmissions plus concurrent mixed profile edits. Existing mobile profile contracts also pass (22 combined focused checks).
+Final disposable PostgreSQL/Redis suite: **1,538 passed, zero skips, 89.63% coverage**; one unchanged upstream deprecation warning. Both pre-commit/pre-push gates passed, including strict mypy. Focused GPT-6.1 Sol high review identified the profile flush-order inversion, which was fixed and re-reviewed with no remaining actionable issue. No Docker, production writes, real provider delivery or mobile edits were used. Source publication is verified against origin/master after the push; this does not establish deployment.
+
+Rollback is a code revert; no persisted-schema or data backfill is needed. Reverting
+would reintroduce the race, so a security rollback should retain equivalent locking.
+
+The original audit narratives above describe the 2026-10-14 baseline. They remain
+unchanged as evidence; current task status and this log describe subsequent fixes.

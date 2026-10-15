@@ -91,7 +91,7 @@
 - Keep business rules in services, persistence in repositories, and transport/provider details at boundaries. Prefer explicit typed interfaces and dependency injection over global mutable state.
 - Preserve existing behavior and data contracts with minimal edits. Keep migrations, compatibility, rollback, operational visibility, and tests part of the same change when they are affected.
 - Review security, performance, scalability/reliability, maintainability, readability, and naming/style separately. Report concrete evidence; do not manufacture findings to fill categories.
-- Keep at most five maintained Markdown files in `docs/`. Record the dated current review in `docs/codebase_review.md` and its fresh outstanding tasks in `docs/tasks.md`; consolidate completed plans and obsolete notes into reference documentation. Use stable finding IDs, category, severity, status, source paths/lines, trigger/evidence, impact if unresolved, proposed minimal fix, expected system impact, and verification steps.
+- Keep at most five maintained Markdown files in `docs/`. Keep the dated current review, complete evidence and outstanding task tables together in `docs/tasks.md`; do not recreate a separate review file; consolidate completed plans and obsolete notes into reference documentation. Use stable finding IDs, category, severity, status, source paths/lines, trigger/evidence, impact if unresolved, proposed minimal fix, expected system impact, and verification steps.
 - Order findings by severity and then impact within each category; provide a global priority index. Separate confirmed defects, intentional limitations, and unverified risks. Report what was inspected/tested and what remains unverified.
 
 ## Data integrity, migrations, and performance

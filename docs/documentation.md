@@ -6,7 +6,7 @@
 | --- | --- |
 | [High-level architecture](architecture.md) | Components, boundaries, data flows and deployment overview. |
 | [API reference](api.md) | Non-admin endpoints, schemas, screens, flows and WebSockets. |
-| [Current review](codebase_review.md) | Findings, accepted risks, evidence and verification limits. |
+| [Current review](tasks.md#full-audit-evidence-and-analysis) | Findings, accepted risks, evidence and verification limits. |
 | [Task tracker](tasks.md) | Outstanding work from the current review. |
 | [Full OpenAPI](openapi.json) / [non-admin OpenAPI](mobile-openapi.json) | Machine-readable contracts. |
 | [Development rules](../AGENTS.md) | Security, performance, style and delivery constraints. |
@@ -934,7 +934,7 @@ query-plan measurements remain pending; local tests cannot establish production 
 
 ## Measured read optimizations — 2026-10-08
 
-Recordings stream in64KiB chunks into private temporary files before full decoding. Chat monitoring uses one fresh joined authorization query; cursor anchors use scalar projections. Identical invoice PDF misses share bounded per-worker rendering. Candidate migration0025 is retained locally but not released; prepared/generic query plans and write costs need further validation. Exact ratings and statement totals remain uncached. See codebase_review.md for measurements, tradeoffs and verification limits.
+Recordings stream in64KiB chunks into private temporary files before full decoding. Chat monitoring uses one fresh joined authorization query; cursor anchors use scalar projections. Identical invoice PDF misses share bounded per-worker rendering. Candidate migration0025 is retained locally but not released; prepared/generic query plans and write costs need further validation. Exact ratings and statement totals remain uncached. See tasks.md for measurements, tradeoffs and verification limits.
 
 ### Usage-limit checkpoint — 2026-10-08
 
@@ -973,7 +973,7 @@ Rollback requires stopping the updated services and deploying the prior applicat
 
 ### Local verification follow-up — 2026-10-09
 
-The complete local suite passed on Python3.13.7, disposable PostgreSQL16.15, Redis7.0.15 and native FFmpeg/ffprobe: 1,241 passed, zero skips and 89.35% coverage. Both hook stages and independent review passed. Repeated query plans and bounded Redis-pool measurements are recorded in [the review](codebase_review.md). No Docker or production database changes ran. Linux image/remote CI and public rollout remain unverified; the latest successful build still serves the older public contract. The user excluded audit archival for this development server, vendor validation, ingress-log validation and dependency-alert reconciliation. See [the tracker](tasks.md) for remaining work.
+The complete local suite passed on Python3.13.7, disposable PostgreSQL16.15, Redis7.0.15 and native FFmpeg/ffprobe: 1,241 passed, zero skips and 89.35% coverage. Both hook stages and independent review passed. Repeated query plans and bounded Redis-pool measurements are recorded in [the review](tasks.md#full-audit-evidence-and-analysis). No Docker or production database changes ran. Linux image/remote CI and public rollout remain unverified; the latest successful build still serves the older public contract. The user excluded audit archival for this development server, vendor validation, ingress-log validation and dependency-alert reconciliation. See [the tracker](tasks.md) for remaining work.
 
 
 ### Mobile reliability completion (2026-10-09)

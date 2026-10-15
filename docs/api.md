@@ -42,7 +42,7 @@ plans/integration behavior require disposable database verification, not Docker 
 
 Updated 2026-10-04. This is maintained API documentation, not an implementation prompt.
 
-[Project documentation](documentation.md) · [Current review](codebase_review.md) · [Tasks](tasks.md)
+[Project documentation](documentation.md) · [Current review](tasks.md#full-audit-evidence-and-analysis) · [Tasks](tasks.md)
 
 The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 62 supported
 mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.

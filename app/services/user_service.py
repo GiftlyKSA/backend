@@ -66,7 +66,12 @@ class UserService:
         supplied: set[str],
     ) -> tuple[User, CourierProfile | None]:
         """Update permitted fields on the verified actor's own rows."""
-        user, courier = await self.get_me(actor_id)
+        owned = await self._users.get_owned_with_courier_for_update(actor_id)
+        if owned is None:
+            raise NotFoundError("User not found.")
+        user, courier = owned
+        if user.status in {UserStatus.BANNED, UserStatus.DELETED} or user.deleted_at is not None:
+            raise ForbiddenError("This account cannot update its profile.")
         if "full_name" in supplied:
             user.full_name = full_name
         if "email" in supplied:
@@ -117,11 +122,15 @@ class UserService:
         self, *, actor_id: uuid.UUID
     ) -> tuple[User, CourierProfile]:
         """Move an owning rejected courier back to pending and audit the request."""
-        user, courier = await self.get_me(actor_id)
+        owned = await self._users.get_owned_with_courier_for_update(actor_id)
+        if owned is None:
+            raise NotFoundError("User not found.")
+        user, courier = owned
         if (
             user.role is not UserRole.COURIER
             or courier is None
             or user.status is not UserStatus.REJECTED
+            or user.deleted_at is not None
         ):
             raise ConflictError("Only a rejected courier may resubmit verification.")
         user.status = UserStatus.PENDING_VERIFICATION

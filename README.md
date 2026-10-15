@@ -16,12 +16,11 @@ production integration proof.
 | [architecture.md](docs/architecture.md) | High-level system design for product teams and technical advisers. |
 | [documentation.md](docs/documentation.md) | Architecture, data, security, configuration, deployment and operations. |
 | [api.md](docs/api.md) | Implemented non-admin HTTP/WebSocket contracts and screen coverage. |
-| [codebase_review.md](docs/codebase_review.md) | Current findings, accepted risks and actual verification limits. |
-| [tasks.md](docs/tasks.md) | Fresh outstanding work from the current review. |
+| [tasks.md](docs/tasks.md) | Complete review and task register: findings, full evidence, accepted risks, verification limits and implementation status. |
 
 [Full OpenAPI](docs/openapi.json) and [non-admin OpenAPI](docs/mobile-openapi.json)
 are machine-readable references. [AGENTS.md](AGENTS.md) defines development rules.
-Only these five Markdown references are maintained under `docs/`; UI-agent prompts
+Only these four Markdown references are maintained under `docs/`; UI-agent prompts
 are delivered in chat rather than saved as documents.
 
 ## Setup
