@@ -56,9 +56,9 @@ Do not mistake old local code or unpublished features for the current release.
 | [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:219) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
 | [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:240) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
 | [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
-| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Assessed - cache deferred; no demonstrated traffic benefit |
-| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Assessed - cache deferred; indexed reads already inexpensive |
-| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Assessed - cache deferred; invalidation cost not justified |
+| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:282) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
+| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:303) | Consider private occasion-page caching | opt | **2** | 2 | Approved - occasion cache implementation pending |
+| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:324) | Consider short-lived private order-summary caching | opt | **2** | 2 | Approved - order-summary cache implementation pending |
 
 <a id="detailed-task-records"></a>
 
@@ -296,7 +296,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Only if traffic warrants it, cache bounded catalog payloads for about 300 seconds with every real filter/limit and contract version in keys; invalidate on committed admin/catalog changes; keep active-city validation for writes authoritative |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Assessed - cache deferred; no demonstrated traffic benefit |
+| Status | Fixed - bounded five-minute catalog cache; committed invalidation verified |
 
 <a id="aud-12-task-record"></a>
 
@@ -317,7 +317,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | If justified, use account/authorization-version/range/limit/cursor/recurrence-version keys, one-hour maximum TTL, bounded entries/bytes and reliable committed-write invalidation including admin edits; fall back to SQL and keep fresh authorization |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Assessed - cache deferred; indexed reads already inexpensive |
+| Status | Approved - occasion cache implementation pending |
 
 <a id="aud-13-task-record"></a>
 
@@ -338,7 +338,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 | Proposed solution | Only if justified, cache summaries briefly, about 15-30 seconds, with actor/role/current authorization and data version plus all filters/cursors. Invalidate committed order/participant/rating/admin changes and cap cardinality/bytes. Never cache claim eligibility, balances or unresolved payment authority |
 | Severity /10 | 2 |
 | Urgency /10 | 2 |
-| Status | Assessed - cache deferred; invalidation cost not justified |
+| Status | Approved - order-summary cache implementation pending |
 
 
 Open findings are real backend implementation work. Optional cache proposals are not
@@ -1246,3 +1246,60 @@ push continues to report one moderate GitHub dependency alert; reconciliation wa
 excluded by the user and is not claimed solved. This completes the actionable fixes
 from this dated review; it is not a claim that the codebase has no possible defects
 or vulnerabilities, nor a new deployed security audit.
+
+
+### Cache implementation resumed — user approval supersedes deferral
+
+**Date:** 2026-10-15. The user explicitly requested all three proposed caches after
+reading the assessment. AUD-11 through AUD-13 are therefore reopened for sequential
+implementation; the historical measurements and deferral rationale remain above.
+No prior assessment is silently rewritten as implementation evidence.
+
+### AUD-11 — bounded catalog cache implementation
+
+GET /api/cities now caches the existing response DTO for 300 seconds. No endpoint,
+request parameter or response field changed. The unused featured-gift repository
+method has no mobile route to cache; none was invented. City and featured-gift
+mutations invalidate the catalog namespace for current/future supported responses.
+Active-city validation for writes still queries current PostgreSQL data.
+
+Migration 0037 installs an internal cache-version table and catalog row/truncate
+triggers. The version update commits or rolls back atomically with the catalog
+change, regardless of whether the writer is API, admin, a worker or ordinary SQL.
+No asynchronous Redis invalidation can be lost after a database commit. Every cache
+read checks indexed current versions. There remains a small PostgreSQL version read
+on hits; this is not query-free caching or a claim of improved deployed latency.
+Uncommitted versions are invisible to other transactions. A new random generation
+on migration upgrade prevents revival of snapshots from a previous installation.
+
+The shared DTO cache has at most 256 entries of at most 256 KiB each (64 MiB raw
+payload plus Redis/index overhead), 32 in-process coalesced fills, and a 250 ms maximum
+wait before an independent SQL fallback. Only immutable serialized results are
+shared, not request sessions, ORM objects or authorization decisions. Cross-replica
+cold fills can repeat a bounded query. Keys hash the domain, owner/role/auth version,
+all caller filters and transactional data versions. Future private caches use this
+same bounded namespace; no financial/write eligibility is cached.
+
+Redis lookups use bounded GETRANGE and 100 ms I/O budgets. Schema validation rejects
+malformed content. Redis failure falls back to SQL with safe payload-free warnings;
+PostgreSQL/version failure does not serve unverified cached data. A second version
+check prevents publication when data changed during loading. The atomic capacity
+script uses Redis TIME, and its index outlives the maximum one-hour payload lifetime,
+so 30-second writes cannot orphan one-hour entries. Oversized responses are returned
+normally but not cached. User text remains literal data, not rewritten or executed.
+
+Ten focused checks pass, covering SQL query reuse, edit invalidation, rollback,
+commit visibility, mixed-TTL capacity, account/filter/version separation, literal
+text, outages, cancellation and malformed/oversized content. Real Alembic downgrade
+to 0036 and upgrade to 0037 pass on disposable PostgreSQL. The version table is
+operational cache metadata, outside the application's editable entity registry,
+like Alembic metadata; it is not a new mobile or admin data feature. No secrets,
+Docker, production writes, provider delivery or storage operations were used.
+
+Rollback requires old uncached application code before downgrading 0037; the new
+reader requires the version table. Redis keys expire naturally. No new environment
+variable is required. Full native suite: **1,604 passed, zero skips, 89.83% coverage**, one unchanged
+upstream warning. Both hook stages and focused GPT-6.1 Sol high review passed.
+The final fresh-epoch migration guard was also checked by real downgrade/re-upgrade
+and the ten focused checks. Publication is verified separately from deployment.
+**Next:** AUD-12, one-hour private occasion pages.

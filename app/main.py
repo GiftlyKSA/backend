@@ -119,6 +119,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from app.services.invoice_pdf_cache import InvoicePdfCache
 
     app.state.invoice_pdf_cache = InvoicePdfCache(app.state.redis)
+    from app.services.result_cache import ResultCache
+
+    app.state.result_cache = ResultCache(app.state.redis)
 
     _install_middleware(app, settings)
 

@@ -1306,3 +1306,15 @@ and 60-second per-statement timeout bound each operation; cumulative write block
 can span all three build budgets. Failure rolls back the revision. Large/busy
 installations need a separately reviewed concurrent rollout, rather than increased
 timeouts. Downgrade removes only these indexes and preserves financial data.
+
+
+### Versioned read caching
+
+GET /api/cities uses a five-minute Redis DTO cache. Migration 0037 adds transactional
+catalog invalidation, including committed admin and SQL edits. Current active-city
+checks for writes stay in PostgreSQL. A small indexed version read remains on every
+cache lookup; Redis is never an authorization source. Redis outages fall back to SQL.
+The shared result namespace is capped at 256 entries and 256 KiB per entry. Existing
+responses are preserved when too large to cache. Apply migrations before API startup;
+rollback to uncached code before removing version infrastructure. No additional
+cache environment variables or client integration changes are needed.
