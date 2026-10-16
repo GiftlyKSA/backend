@@ -10,7 +10,8 @@ an implementation release. No application code, API contract or migration change
 
 The earlier AUD-01–13 records, complete evidence and implementation history below
 are retained without shortening. They remain closed. **AUD-14–29 are new findings
-and proposals**; they do not reverse those fixes. The five postponed backend items
+and proposals**; they do not reverse those fixes. A subsequent chat deployment
+check added **AUD-30**, an upstream logging mitigation, with evidence below. The five postponed backend items
 and previously accepted/excluded risks remain unchanged.
 
 The authoritative reviewed checkout is
@@ -28,22 +29,23 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 | Finding | Task / purpose | Type | Severity /10 | Urgency /10 | Evidence / status |
 | --- | --- | --- | --- | --- | --- |
-| [AUD-14](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:52) | Align phone-enabled ADMIN API authentication with the MFA policy | security | **7** | **7** | Token issuance reproduced; policy decision required |
-| [AUD-15](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:70) | Bound incomplete request-body reads and narrow throttle exemptions | security / scalability | **6** | **7** | Stalled-body retention reproduced; ingress exposure unverified |
-| [AUD-16](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:87) | Rate-limit WebSocket handshakes before repeated database authorization | security / perf | **5** | **5** | Rejected-handshake query amplification reproduced |
-| [AUD-17](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:123) | Prevent scheduled delivery drainers from consuming all worker capacity | scalability / reliability | **5** | **4** | Source-derived outage/backlog risk; no production load claim |
-| [AUD-19](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:140) | Add bounded SQL execution and lock-wait budgets | security / perf | **4** | **5** | Local driver/server defaults inspected; deployed limits unknown |
-| [AUD-18](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:104) | Fence reminder delivery against current ownership and role | security / correctness | **4** | **4** | Committed owner-transfer race reproduced on PostgreSQL |
-| [AUD-20](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:157) | Prevent permanently failing receipts from starving newer receipts | reliability | **4** | **4** | 101-invoice, two-sweep starvation reproduced |
-| [AUD-21](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:174) | Release admin invoice PDF connections before rendering | perf / scalability | **4** | **4** | Single-connection pool exhaustion reproduced |
-| [AUD-22](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:191) | Correct prepared-cache assumptions for the actual PostgreSQL pooler | reliability / opt | **4** | **3** | Cache mismatch confirmed; pooler failure conditional |
-| [AUD-24](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:244) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
-| [AUD-23](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:208) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
-| [AUD-25](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:261) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
-| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:278) | Avoid scanning closed order history for active-order quotas | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced |
-| [AUD-27](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:225) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
-| [AUD-28](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:296) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
-| [AUD-29](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:312) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
+| [AUD-14](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:54) | Align phone-enabled ADMIN API authentication with the MFA policy | security | **7** | **7** | Token issuance reproduced; policy decision required |
+| [AUD-15](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:72) | Bound incomplete request-body reads and narrow throttle exemptions | security / scalability | **6** | **7** | Stalled-body retention reproduced; ingress exposure unverified |
+| [AUD-30](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:331) | Stop upstream capture of legacy chat token queries | security / logging | **6** | **7** | Live non-secret canary retained in CranL request path; provider/configuration blocker |
+| [AUD-16](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:89) | Rate-limit WebSocket handshakes before repeated database authorization | security / perf | **5** | **5** | Rejected-handshake query amplification reproduced |
+| [AUD-17](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:125) | Prevent scheduled delivery drainers from consuming all worker capacity | scalability / reliability | **5** | **4** | Source-derived outage/backlog risk; no production load claim |
+| [AUD-19](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:142) | Add bounded SQL execution and lock-wait budgets | security / perf | **4** | **5** | Local driver/server defaults inspected; deployed limits unknown |
+| [AUD-18](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:106) | Fence reminder delivery against current ownership and role | security / correctness | **4** | **4** | Committed owner-transfer race reproduced on PostgreSQL |
+| [AUD-20](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:159) | Prevent permanently failing receipts from starving newer receipts | reliability | **4** | **4** | 101-invoice, two-sweep starvation reproduced |
+| [AUD-21](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:176) | Release admin invoice PDF connections before rendering | perf / scalability | **4** | **4** | Single-connection pool exhaustion reproduced |
+| [AUD-22](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:193) | Correct prepared-cache assumptions for the actual PostgreSQL pooler | reliability / opt | **4** | **3** | Cache mismatch confirmed; pooler failure conditional |
+| [AUD-24](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:246) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
+| [AUD-23](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:210) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
+| [AUD-25](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:263) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
+| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:280) | Avoid scanning closed order history for active-order quotas | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced |
+| [AUD-27](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:227) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
+| [AUD-28](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:298) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
+| [AUD-29](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:314) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
 
 ### Security and authorization
 
@@ -324,6 +326,55 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 | Expected system impact | Accurate operational inventory without unnecessary re-encryption of immutable history or weakening recovery guarantees. No new encryption primitive or broad schema refactor needed. |
 | Verification / rollback | Test old/new-version recovery snapshots, concurrent replay/rotation, bounded batches, retained historical fields and accurate dry-run/report coverage. Documentation-only correction needs no migration; any rotation implementation must remain restartable and preserve old keys for rollback. |
 
+<a id="aud-30-current"></a>
+
+#### AUD-30 — Upstream request history retains the legacy WebSocket token query
+
+| Field | Full detail |
+| --- | --- |
+| Purpose / why important | Prevent credential-bearing legacy chat URLs from becoming reusable credentials in separately collected ingress/request history, while preserving current clients during rollout. |
+| Type / severity / urgency | Security/logging; **6/10** severity; **7/10** urgency. Query capture confirmed with a non-secret canary; no real token leak was induced or claimed. |
+| Status / created | Open — upstream configuration/provider blocker; 2026-10-16 follow-up. This is a backend deployment mitigation task, not a verification-only backlog row. |
+| Evidence / location | Actual backend.giftly.sa TLS endpoint and CranL query_requests request metadata, path field; app/routers/chat.py:615–624 retains legacy token query compatibility; app/core/logging.py protects Python logs but does not control ingress collection. |
+| Current workflow | Existing legacy clients put an access token in the WebSocket URL query. The proxy records a request path independently of Python application logging. Preferred header/subprotocol methods keep credentials out of the URL, but legacy compatibility remains required during rollout. |
+| Trigger / reproduction | A bounded rejected legacy handshake sent only a synthetic invalid canary, not a valid credential. The exact canary was present in the path field of one CranL request-history record. Five negative test requests were visible; no canary appeared in the sampled application logs. Raw credential values and complete request URLs are deliberately omitted here. |
+| Impact if unresolved | A valid legacy token could be retained in upstream request history and exposed to readers of that history until expiry/revocation. This is not a claim that request history is public or that valid tokens were exposed by this test. It defeats the intended credential-redaction boundary for legacy URLs. |
+| Proposed minimal solution | Configure the ingress/request collector to omit query strings or redact token and other credential parameters before persistence; suppress Authorization and credential-bearing Sec-WebSocket-Protocol values in raw handshake logging. Limit access/retention and handle any genuinely exposed historical credentials according to incident policy. Preserve the legacy transport until rollout is approved. Do not expect an application formatter to rewrite upstream history. |
+| Deployment blocker | No suitable logging-redaction setting was exposed by the inspected CranL operations/documentation. Read-only container execution failed or returned blank output, so runtime source identity and effective raw proxy logging configuration remain unconfirmed. No deployment or provider setting was changed. |
+| Expected system impact | Removes credential capture at its source without changing socket events, message retry semantics, client_message_id, mobile flags or authenticated access rules. Redaction must happen before storage, not merely in the dashboard display. |
+| Verification / rollback | After a supported provider/configuration change, repeat header/protocol and legacy canaries and inspect both request metadata and raw ingress capture safely; confirm valid authorized clients still connect. Test missing/invalid/expired/revoked/nonmember restrictions and refreshed reconnection on authorized fixtures. Preserve useful non-sensitive path/status/correlation data; rollback must not restore secret logging. No database migration is proposed. |
+| Activation decision | **NO: Safe to enable EXPO_PUBLIC_CHAT_HEADER_AUTH=true has not been established.** Live positive member/refresh checks and complete proxy logging checks are unavailable. Query-free authentication already exists; no duplicate endpoint or message-contract change is needed. |
+
+### Chat authentication verification follow-up — 2026-10-16
+
+The explicit chat/proxy verification request resumes the earlier excluded ingress
+redaction check only for this endpoint; unrelated external vendor and dependency
+alert work remains excluded. AUD-14–29 statuses and the five postponed items are
+unchanged. AUD-30 adds a concrete upstream mitigation, not a testing task.
+
+- Public backend.giftly.sa readiness returned 200. Five TLS-verified missing/invalid
+  native, browser, conflicting-header and legacy handshakes returned 403. None proves
+  successful member authentication or header/subprotocol forwarding.
+- Local focused verification: 57 tests passed, zero skips. The expanded real TCP test
+  covers both customer/courier transports, invalid/expired/revoked/nonmember rejection,
+  first and second rotating refresh plus query-free reconnect, eight concurrent account
+  sockets and ninth rejection, lease release, ban/deletion and unverified courier.
+  Existing unit tests cover shared-cap rejection and revoked/membership data-delivery
+  prevention. Application credentials are synthetic and never included in this record.
+- Full required suite after the test extension: **1,621 passed, zero skips, one
+  unchanged upstream Starlette/httpx warning, 86.50 seconds**. No new coverage claim
+  is made. Independent Sol6.1 xhigh review found no blocking issue; browser-style
+  TCP negotiation is not an actual browser/mobile UI run.
+- Application source/authentication behavior did not change. Only compatibility tests
+  and documentation were extended. Existing messages, REST history, socket events and
+  retry semantics remain unchanged. No mobile repository or retry-safe flag was edited.
+- Actual deployment positive authentication, live rotating refresh and reconnect remain
+  UNCONFIRMED: authorized live credentials were not available and container execution
+  did not yield usable output. Build success and metadata still saying deploying do
+  not establish the running chat revision. No production fixtures/provider sends occurred.
+- Upstream query capture is confirmed as AUD-30. Absence from a sampled application log
+  does not establish raw proxy-header redaction. **Mobile header-auth activation: NO.**
+
 ### Current cache assessment and limits
 
 | Area | Assessment after this review | Recommended action |
@@ -446,19 +497,19 @@ Do not mistake old local code or unpublished features for the current release.
 
 | Finding | Task | Category | Severity /10 | Urgency /10 | Status |
 | --- | --- | --- | --- | --- | --- |
-| [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:472) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
-| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:493) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
-| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:514) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
-| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:535) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
-| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:556) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
-| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:577) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
-| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:598) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
-| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:619) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
-| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:640) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
-| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:661) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
-| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:682) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
-| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:703) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
-| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:724) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
+| [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:523) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
+| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:544) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
+| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:565) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
+| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:586) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
+| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:607) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
+| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:628) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
+| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:649) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
+| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:670) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
+| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:691) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
+| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:712) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
+| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:733) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
+| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:754) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
+| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:775) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
 
 <a id="detailed-task-records"></a>
 

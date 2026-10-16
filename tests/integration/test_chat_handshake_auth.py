@@ -3,6 +3,7 @@
 import asyncio
 import os
 import socket
+from contextlib import AsyncExitStack
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
@@ -12,9 +13,10 @@ from app.core.jwt import create_access_token, decode_access_token
 from app.core.security import sha256_hex
 from app.main import create_app
 from app.models import City, Conversation, CourierProfile, Order, RefreshToken, User
-from app.models.enums import OrderStatus, UserRole
+from app.models.enums import OrderStatus, UserRole, UserStatus
 from freezegun import freeze_time
 from httpx import AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from websockets.asyncio.client import connect
@@ -108,6 +110,10 @@ async def test_query_free_native_browser_legacy_and_refreshed_handshakes(db_conn
                 raise AssertionError("An unauthorized handshake was accepted.")
         assert failure.value.response.status_code == 403
 
+    async def rejected_credentials(token):
+        await rejected(headers={"Authorization": "Bearer " + token})
+        await rejected(protocols=["giftly.chat", "bearer." + token])
+
     try:
         async with asyncio.timeout(5):
             for _ in range(200):
@@ -117,9 +123,9 @@ async def test_query_free_native_browser_legacy_and_refreshed_handshakes(db_conn
                     await serving
                 await asyncio.sleep(0.01)
             assert server.started
-        await accepted(token=credentials[0], transport="header")
-        await accepted(token=credentials[1], transport="header")
-        await accepted(token=credentials[0], transport="protocol")
+        for member in credentials[:2]:
+            await accepted(token=member, transport="header")
+            await accepted(token=member, transport="protocol")
         await accepted(token=credentials[0], transport="legacy")
         await accepted(
             token=credentials[0],
@@ -127,25 +133,74 @@ async def test_query_free_native_browser_legacy_and_refreshed_handshakes(db_conn
             extra_protocol=["giftly.chat", "bearer.synthetic-invalid"],
         )
         await rejected()
-        await rejected(headers={"Authorization": "Bearer synthetic-invalid"})
+        await rejected_credentials("synthetic-invalid")
         await rejected(
             headers={"Authorization": "Basic invalid"},
             protocols=["giftly.chat", "bearer." + credentials[0]],
         )
-        await rejected(headers={"Authorization": "Bearer " + credentials[2]})
+        await rejected_credentials(credentials[2])
         await rejected(
             protocols=["giftly.chat", "bearer.synthetic-invalid", "bearer." + credentials[0]]
         )
         with freeze_time(datetime.now(UTC) - timedelta(hours=2)):
             expired = create_access_token(settings, user_id=owner_ids[0], role="CUSTOMER")[0]
-        await rejected(headers={"Authorization": "Bearer " + expired})
+        await rejected_credentials(expired)
         await app.state.redis.set(f"jwt:denylist:{revoked_jti}", "1", ex=60)
-        await rejected(protocols=["giftly.chat", "bearer." + credentials[0]])
+        await rejected_credentials(credentials[0])
         async with AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
             response = await client.post("/api/auth/refresh", json={"refresh_token": raw_refresh})
             assert response.status_code == 200
-            refreshed = response.json()["access_token"]
+            tokens = response.json()
+            refreshed = tokens["access_token"]
+            rotated_refresh = tokens["refresh_token"]
+            assert rotated_refresh != raw_refresh
+            assert tokens["role"] == "CUSTOMER"
         await accepted(token=refreshed, transport="header")
+        await accepted(token=refreshed, transport="protocol")
+        async with AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
+            successor = await client.post(
+                "/api/auth/refresh", json={"refresh_token": rotated_refresh}
+            )
+            assert successor.status_code == 200
+            assert successor.json()["refresh_token"] not in (raw_refresh, rotated_refresh)
+            refreshed = successor.json()["access_token"]
+        await accepted(token=refreshed, transport="header")
+        await accepted(token=refreshed, transport="protocol")
+
+        account_key = f"ws:connections:account:{owner_ids[0]}"
+
+        await _wait_for_released(app.state.redis, account_key)
+        async with AsyncExitStack() as connections:
+            for _ in range(8):
+                connection = await connections.enter_async_context(
+                    connect(
+                        url,
+                        additional_headers={"Authorization": "Bearer " + refreshed},
+                        open_timeout=5,
+                    )
+                )
+                assert connection.subprotocol is None
+            assert await app.state.redis.zcard(account_key) == 8
+            await rejected_credentials(refreshed)
+        await _wait_for_released(app.state.redis, account_key)
+        await accepted(token=refreshed, transport="header")
+
+        async with engine.begin() as change:
+            await change.execute(
+                update(User).where(User.id == owner_ids[0]).values(status=UserStatus.BANNED)
+            )
+        await rejected_credentials(refreshed)
+        async with engine.begin() as change:
+            await change.execute(
+                update(User)
+                .where(User.id == owner_ids[0])
+                .values(status=UserStatus.ACTIVE, deleted_at=datetime.now(UTC))
+            )
+        await rejected_credentials(refreshed)
+        async with engine.begin() as change:
+            await change.execute(
+                update(User).where(User.id == owner_ids[0]).values(deleted_at=None)
+            )
         await accepted(token=refreshed, transport="protocol")
         async with engine.begin() as change:
             await change.execute(
@@ -153,7 +208,7 @@ async def test_query_free_native_browser_legacy_and_refreshed_handshakes(db_conn
                 .where(CourierProfile.user_id == owner_ids[1])
                 .values(is_verified=False)
             )
-        await rejected(headers={"Authorization": "Bearer " + credentials[1]})
+        await rejected_credentials(credentials[1])
     finally:
         await app.state.redis.delete(f"jwt:denylist:{revoked_jti}")
         server.should_exit = True
@@ -165,3 +220,12 @@ async def test_query_free_native_browser_legacy_and_refreshed_handshakes(db_conn
             async with engine.begin() as cleanup:
                 await cleanup.execute(delete(Order).where(Order.id == order_id))
                 await cleanup.execute(delete(User).where(User.id.in_(owner_ids)))
+
+
+async def _wait_for_released(redis: Redis, account_key: str) -> None:
+    async with asyncio.timeout(5):
+        for _ in range(500):
+            if not await redis.zcard(account_key):
+                return
+            await asyncio.sleep(0.01)
+    raise AssertionError("Closed sockets retained account connection leases.")

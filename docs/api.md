@@ -1571,3 +1571,87 @@ Replacement/removal releases the old grant only within the successful DB transac
 The hourly separate worker fences and deletes abandoned objects after24hours; active
 avatars remain protected. Cleanup skips non-test fake storage instead of discarding real
 object metadata. The worker must use the same real endpoint/bucket/credentials as the API.
+
+## Chat authentication deployment check — 2026-10-16
+
+**Activation verdict: NO — Safe to enable EXPO_PUBLIC_CHAT_HEADER_AUTH=true has not
+been established for the configured deployment. Mobile activation remains blocked.**
+
+The existing operation is
+WS /api/ws/conversations/{conversation_id}, reached publicly at
+wss://backend.giftly.sa/api/ws/conversations/{conversation_id}. Header/protocol/query
+selection already exists in commit 5c2cec4; application credential-log hardening and
+the compatibility test were published in 8645301. This follow-up extends verification
+only. Message payloads, REST history, events, client_message_id and retry semantics
+are unchanged. No EXPO_PUBLIC_CHAT_RETRY_SAFE change is requested.
+Local browser-style negotiation was tested with a real TCP WebSocket client; this
+was not an actual browser UI or mobile application run.
+
+| Client | Existing connection method | Selected subprotocol |
+| --- | --- | --- |
+| React Native | Authorization: Bearer <access_token>; no token query and no offered subprotocol | None |
+| Browser | new WebSocket(url, ["giftly.chat", "bearer." + accessToken]) | Only giftly.chat; never bearer.<credential> |
+| Legacy rollout | Existing token query transport remains accepted by the application | Existing negotiation rules; do not introduce query tokens in new clients |
+
+An Authorization header takes precedence even when malformed; otherwise the first
+bearer-prefixed offered protocol wins; only then is the legacy query considered.
+Credentials from conflicting transports are never combined.
+Production browser clients also require their actual Origin in CORS_ALLOWED_ORIGINS.
+The ingress must preserve Authorization, Sec-WebSocket-Protocol, Upgrade and
+Connection handshake behavior; never log the credential-bearing values.
+
+The existing POST /api/auth/refresh accepts application/json:
+{"refresh_token":"<current refresh token>"}. On success the existing 200 response
+contains access_token: string, refresh_token: string and role: string. Replace both
+stored credentials atomically. Local verification used the returned rotating refresh
+token for a second successful refresh, then reconnected with the successor access
+token using both query-free transports. Never include these values in diagnostics.
+
+| Check | Actual deployment | Owned local PostgreSQL/Redis + real TCP |
+| --- | --- | --- |
+| Readiness | HTTP 200 | Application lifespan started |
+| Missing/invalid credentials | Five bounded TLS-verified attempts returned HTTP 403 | Rejected |
+| Valid customer and courier members, native/browser | NOT VERIFIED: no available authorized live credentials or usable container execution | Accepted; native selects no protocol, browser selects only giftly.chat |
+| Expired/revoked credentials and nonmembers | NOT VERIFIED with authenticated live fixtures | Both transports rejected |
+| Refresh rotation, returned successor token and reconnect | NOT VERIFIED on live accounts | Passed |
+| Banned/deleted customer, unverified courier | NOT VERIFIED on live accounts | Both transports rejected |
+| Eight-account-socket cap and ninth rejection | NOT VERIFIED live | Eight concurrent sockets accepted; ninth rejected for both transports; leases released |
+| Existing legacy valid client | NOT VERIFIED live | Accepted |
+| Credential logging | Legacy synthetic query value was retained in CranL request history; raw header/subprotocol capture configuration is unavailable | Application scrubbing tests passed |
+| Messages/history/events | No production messages sent or changed | Existing regression suite covers contracts; no application changes |
+
+Before an upgrade, the application requests 4401 for failed authentication, 4403 for
+origin/membership/eligibility rejection, 4429 for connection limits and 1013 for lease
+store failure. Uvicorn normally expresses a close before acceptance as HTTP 403.
+Therefore a rejected handshake is not an established WebSocket close frame, and
+HTTP 403 must not be labeled universally as an expired token. It can also indicate
+membership, origin or connection limits. After upgrade, lost authorization/membership
+uses 4401; transient subscription failure can use 1013; unexpected failures use 1011.
+Use bounded reconnect/backoff, fetch authorized history after reconnect and do not
+blindly refresh forever on every 403.
+
+CranL reported successful builds (including the audit-only 8d9ac19 build), but the
+application metadata still said deploying. Read-only source-fingerprint commands failed
+or returned unusable blank output, even for a harmless echo probe. The running chat
+implementation therefore could not be matched to the pushed source. No production
+accounts were created, no real OTPs/provider deliveries were requested, and no user
+credentials were extracted to work around that limitation.
+
+A non-secret synthetic canary in one rejected legacy URL appeared in the path field
+of CranL query_requests. It did not appear in the sampled application-log records;
+those records contained no detected JWT-shaped values. The available request metadata
+has no headers field, so it cannot prove that raw ingress Authorization or
+Sec-WebSocket-Protocol values are suppressed. This is a confirmed upstream query
+capture problem, not evidence that valid tokens were leaked during this check.
+
+Configure upstream logging to omit query strings or redact credential parameters
+before storage, and omit Authorization and credential-bearing Sec-WebSocket-Protocol.
+Application log scrubbing cannot sanitize separately collected ingress metadata.
+The currently exposed CranL tools/docs did not provide that setting. Retain legacy
+compatibility while fixing the logging boundary; do not weaken mobile HTTPS checks
+or change the chat authentication contract to hide this deployment issue.
+
+Activation requires successful authenticated native/browser upgrades, renewed-token
+reconnection, restriction/cap checks and verified safe proxy logging on the target
+deployment. A successful build, readiness response or local suite is insufficient.
+See AUD-30 in tasks.md for the upstream logging mitigation and current limitations.
