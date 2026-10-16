@@ -29,23 +29,24 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 | Finding | Task / purpose | Type | Severity /10 | Urgency /10 | Evidence / status |
 | --- | --- | --- | --- | --- | --- |
-| [AUD-14](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:54) | Align phone-enabled ADMIN API authentication with the MFA policy | security | **7** | **7** | Token issuance reproduced; policy decision required |
-| [AUD-15](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:72) | Bound incomplete request-body reads and narrow throttle exemptions | security / scalability | **6** | **7** | Stalled-body retention reproduced; ingress exposure unverified |
-| [AUD-30](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:331) | Stop upstream capture of legacy chat token queries | security / logging | **6** | **7** | Live non-secret canary retained in CranL request path; provider/configuration blocker |
-| [AUD-16](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:89) | Rate-limit WebSocket handshakes before repeated database authorization | security / perf | **5** | **5** | Rejected-handshake query amplification reproduced |
-| [AUD-17](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:125) | Prevent scheduled delivery drainers from consuming all worker capacity | scalability / reliability | **5** | **4** | Source-derived outage/backlog risk; no production load claim |
-| [AUD-19](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:142) | Add bounded SQL execution and lock-wait budgets | security / perf | **4** | **5** | Local driver/server defaults inspected; deployed limits unknown |
-| [AUD-18](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:106) | Fence reminder delivery against current ownership and role | security / correctness | **4** | **4** | Committed owner-transfer race reproduced on PostgreSQL |
-| [AUD-20](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:159) | Prevent permanently failing receipts from starving newer receipts | reliability | **4** | **4** | 101-invoice, two-sweep starvation reproduced |
-| [AUD-21](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:176) | Release admin invoice PDF connections before rendering | perf / scalability | **4** | **4** | Single-connection pool exhaustion reproduced |
-| [AUD-22](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:193) | Correct prepared-cache assumptions for the actual PostgreSQL pooler | reliability / opt | **4** | **3** | Cache mismatch confirmed; pooler failure conditional |
-| [AUD-24](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:246) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
-| [AUD-23](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:210) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
-| [AUD-25](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:263) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
-| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:280) | Avoid scanning closed order history for active-order quotas | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced |
-| [AUD-27](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:227) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
-| [AUD-28](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:298) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
-| [AUD-29](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:314) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
+| [AUD-14](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:55) | Align phone-enabled ADMIN API authentication with the MFA policy | security | **7** | **7** | Token issuance reproduced; policy decision required |
+| [AUD-15](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:73) | Bound incomplete request-body reads and narrow throttle exemptions | security / scalability | **6** | **7** | Stalled-body retention reproduced; ingress exposure unverified |
+| [AUD-30](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:332) | Stop upstream capture of legacy chat token queries | security / logging | **6** | **7** | Live non-secret canary retained in CranL request path; provider/configuration blocker |
+| [AUD-16](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:90) | Rate-limit WebSocket handshakes before repeated database authorization | security / perf | **5** | **5** | Rejected-handshake query amplification reproduced |
+| [AUD-17](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:126) | Prevent scheduled delivery drainers from consuming all worker capacity | scalability / reliability | **5** | **4** | Source-derived outage/backlog risk; no production load claim |
+| [AUD-19](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:143) | Add bounded SQL execution and lock-wait budgets | security / perf | **4** | **5** | Local driver/server defaults inspected; deployed limits unknown |
+| [AUD-18](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:107) | Fence reminder delivery against current ownership and role | security / correctness | **4** | **4** | Committed owner-transfer race reproduced on PostgreSQL |
+| [AUD-20](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:160) | Prevent permanently failing receipts from starving newer receipts | reliability | **4** | **4** | 101-invoice, two-sweep starvation reproduced |
+| [AUD-21](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Release admin invoice PDF connections before rendering | perf / scalability | **4** | **4** | Single-connection pool exhaustion reproduced |
+| [AUD-22](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:194) | Correct prepared-cache assumptions for the actual PostgreSQL pooler | reliability / opt | **4** | **3** | Cache mismatch confirmed; pooler failure conditional |
+| [AUD-24](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:247) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
+| [AUD-23](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:211) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
+| [AUD-25](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:264) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
+| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:281) | Avoid scanning closed order history for active-order quotas | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced |
+| [AUD-27](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:228) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
+| [AUD-28](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:299) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
+| [AUD-29](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:315) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
+| [AUD-31](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:381) | Translate registration uniqueness violations to controlled conflicts | quality / reliability | **2** | **2** | Source-confirmed error-contract defect; reproduction pending |
 
 ### Security and authorization
 
@@ -375,6 +376,70 @@ unchanged. AUD-30 adds a concrete upstream mitigation, not a testing task.
 - Upstream query capture is confirmed as AUD-30. Absence from a sampled application log
   does not establish raw proxy-header redaction. **Mobile header-auth activation: NO.**
 
+<a id="aud-31-current"></a>
+
+#### AUD-31 — Registration uniqueness failures escape as unexpected server errors
+
+| Field | Full detail |
+| --- | --- |
+| Purpose / why important | Translate expected account-creation conflicts into a stable domain error while retaining database constraints as the authority under races. |
+| Type / severity / urgency | Correctness / reliability / quality; **2/10** severity; **2/10** urgency. Source-confirmed missing error translation, not an account-takeover or duplicate-account vulnerability. |
+| Status / created | Open; 2026-10-16 deeper review of published b42c522. Review only; no implementation fix. |
+| Code locations | app/services/auth_service.py:157–165; app/repositories/auth_repository.py:39–60; app/models/tables.py:137–145; app/routers/auth.py:81–106; app/core/middleware.py:161–185. |
+| Current workflow | Registration verifies the signed phone handoff, checks whether that phone already exists and inserts the user. PostgreSQL enforces unique phone and non-null email values. The insert/flush does not translate the relevant IntegrityError into the domain conflict response. |
+| Trigger / evidence | Two concurrent requests using the same valid registration handoff can both pass the phone precheck; the losing unique insert then raises. Independently, a valid new-phone registration can provide an email already used by another account; there is no preceding email conflict check. The public registration path does not catch either database uniqueness failure, so the unexpected-error handler returns HTTP500. This conclusion comes from source tracing; the attempted reviewer probe did not execute successfully and no native concurrency reproduction is claimed. |
+| Impact if unresolved | A legitimate retry or conflicting profile input appears as an internal server outage. Clients cannot reliably distinguish a resolvable registration conflict from a transient infrastructure failure and may retry unnecessarily. The database rejects the duplicate and rolls back; no duplicate user/wallet or account takeover was demonstrated. |
+| Proposed minimal solution | Catch only the named phone/email uniqueness violations within the established transaction/savepoint pattern and return a safe, stable ConflictError/409. Preserve the unique constraints and avoid relying only on prechecks. Do not convert unrelated integrity failures into successful registration or expose another account's details. |
+| Expected system impact | Predictable error handling under ordinary conflicts and races; no new endpoint, account-merging behavior or ownership change. Verify compatibility of the documented409 envelope without weakening validation. |
+| Verification / rollback | Test existing-email registration and simultaneous same-phone registration for customer and courier, one committed winner, no orphan wallet/profile, and unrelated database failures remaining unexpected failures. Use disposable PostgreSQL; no migration is expected. Roll back only the targeted error translation if needed. |
+
+### Deeper audit continuation — 2026-10-16, source b42c522
+
+The user clarified that continuation means a full audit, not implementation. This
+pass therefore changed only this review document. Two independent Sol6.1 xhigh
+reviewers examined account lifecycle/permissions and cache/storage concurrency;
+the primary review traced financial settlement, hosted-payment recovery, expiry,
+withdrawal replay, reporting and template escaping. Existing AUD-14–30 remain open;
+closed AUD-01–13 and accepted/postponed decisions remain unchanged.
+
+Additional inspected safeguards, without claiming formal completeness:
+
+- Reauthentication proofs bind purpose, owner, phone, credential version, expiry and
+  consumed state, with row locking. Restore checks include deadline, request/account
+  state and deletion marker. New-phone uniqueness already has savepoint/conflict
+  handling. Owned inbox predicates and atomic admin TOTP replay claims are present.
+- DTO cache keys and migrations0037–0039 separate owner/version and invalidate on
+  committed changes. Media grants use atomic claims and cleanup fencing. Avatar
+  replacement does not release the active file before the replacement attaches.
+  S3/private stream paths have existing byte/pool bounds. No additional confirmed
+  N+1 or unbounded Python quadratic loop was established in these inspected paths.
+- Expired top-up selection already filters payment purpose before SQL LIMIT, so the
+  suspected cross-purpose starvation was rejected. Hosted checkout snapshots bind
+  amount/currency/owner/reference and ambiguous outcomes remain unresolved rather
+  than being treated as success. Ledger arithmetic remains exact Decimal.
+- Withdrawal replay returns the original owned request for a repeated key; no new
+  financial duplication defect was established. Fee-policy changes affecting future
+  settlement need an explicit product policy before being called a confirmed bug.
+
+**UNCONFIRMED lead, not a new task or confirmed vulnerability:** the image decoder
+loads the initial PNG frame and explicitly restricts multiple frames only for HEIF.
+Whether a corrupt later APNG frame can pass and creates an actual downstream risk
+needs a real-byte reproduction and inspection of consumers. The reviewer probe was
+blocked by local uv cache permissions; no result or exploit is claimed. Do not
+reopen closed image-decoding findings solely from this lead.
+
+No application fixes, mobile edits, Docker, production writes, provider deliveries,
+new migrations or deployment changes occurred. This read-only continuation did not
+rerun the full suite: the latest executed full suite remains **1,621 passed, zero
+skips, 86.50 seconds**, from the immediately preceding chat test change. Failed
+reviewer probe attempts are not test evidence. New documentation gates are recorded
+by the checkpoint commit; existing runtime/proxy limitations remain explicit.
+
+**Reserve checkpoint:** account usage was88% consumed when checked, near the user's
+10% reserve. Save/push the review and stop further exploratory execution. This is a
+bounded continuation of the broad audit, not proof that every possible issue has
+been found or that unresolved findings were fixed.
+
 ### Current cache assessment and limits
 
 | Area | Assessment after this review | Recommended action |
@@ -497,19 +562,19 @@ Do not mistake old local code or unpublished features for the current release.
 
 | Finding | Task | Category | Severity /10 | Urgency /10 | Status |
 | --- | --- | --- | --- | --- | --- |
-| [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:523) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
-| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:544) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
-| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:565) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
-| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:586) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
-| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:607) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
-| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:628) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
-| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:649) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
-| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:670) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
-| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:691) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
-| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:712) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
-| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:733) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
-| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:754) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
-| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:775) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
+| [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:588) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
+| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:609) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
+| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:630) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
+| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:651) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
+| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:672) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
+| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:693) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
+| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:714) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
+| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:735) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
+| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:756) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
+| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:777) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
+| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:798) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
+| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:819) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
+| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:840) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
 
 <a id="detailed-task-records"></a>
 
