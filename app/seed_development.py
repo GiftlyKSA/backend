@@ -26,7 +26,12 @@ _SEED_LOCK = 749283781
 _logger = logging.getLogger(__name__)
 
 
-async def seed_couriers_in_session(session: AsyncSession, settings: Settings) -> int:
+async def seed_couriers_in_session(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    couriers: tuple[tuple[str, str], ...] = DEVELOPMENT_COURIERS,
+) -> int:
     """Insert missing verified courier accounts and wallets in one transaction."""
     if settings.ENVIRONMENT is not Environment.DEVELOPMENT:
         return 0
@@ -49,14 +54,14 @@ async def seed_couriers_in_session(session: AsyncSession, settings: Settings) ->
                         "status": UserStatus.ACTIVE,
                         "full_name": f"Development Courier {cities[shortcut].name}",
                     }
-                    for phone, shortcut in DEVELOPMENT_COURIERS
+                    for phone, shortcut in couriers
                 ]
             )
             .on_conflict_do_nothing(index_elements=[User.phone])
             .returning(User)
         )
     )
-    city_by_phone = dict(DEVELOPMENT_COURIERS)
+    city_by_phone = dict(couriers)
     cipher = build_cipher(settings.encryption_keys(), settings.FIELD_ENCRYPTION_KEY_VERSION)
     for user in users:
         session.add(Wallet(user_id=user.id, type=WalletType.COURIER))

@@ -127,3 +127,46 @@ limitations are detailed in the API reference.
 Invoice downloads and paid-email attachments share the English Giftly purple PDF
 template with GMT+3 dates. One-hour private PDF reuse refreshes immediately when
 status, priced items, totals or template change. See docs/api.md for payment sessions.
+
+## Development demo data
+
+The API entrypoint creates only the two development couriers described above.
+To explicitly populate the larger synthetic dataset after migrations:
+
+```bash
+uv run --locked python -m app.seed_demo
+```
+
+In the deployment image, use its existing interpreter: `python -m app.seed_demo`.
+This command does nothing unless `ENVIRONMENT=development`. It creates missing
+accounts and deterministic orders atomically, preserves existing accounts and
+fixture edits, and can be rerun without repeating wallet credits or settlements.
+It makes no external provider calls and does not run in API handlers or job loops.
+No migration is required. It must not be used against real customer data.
+
+| Local phone | Role | City of sample orders / courier assignment |
+| --- | --- | --- |
+| 555555551 | Customer | Riyadh |
+| 555555552 | Customer | Jeddah |
+| 555555553 | Customer | Riyadh |
+| 555555555 | Courier | Riyadh |
+| 555555556 | Courier | Jeddah |
+| 555555557 | Courier | Riyadh |
+| 555555558 | Courier | Jeddah |
+| 555555559 | Courier | Riyadh |
+
+Phones are stored with the `+966` country prefix. Accounts have no email address;
+new couriers use encrypted fictional identity text and are ACTIVE and verified.
+Each customer receives ten orders across all lifecycle states in aggregate,
+a wallet with one explicitly simulated SAR 2,000 top-up, and priced invoices
+with issued, paid, expired and cancelled examples. Completed orders credit
+courier earnings through the regular balanced ledger; refunded orders return
+escrow to the customer. All amounts are synthetic, not real provider payments.
+The sample has 30 orders, 27 invoices (two items each), 27 conversations and
+four disputes. Read-only summaries use the existing APIs/admin queries.
+
+Existing phone conflicts or moderated/ineligible accounts are preserved, so a
+nonempty development database may receive fewer fixtures. The command reports
+the number of newly created orders. Historical demo records are not refreshed
+on reruns. Any rollback must target only this seed's deterministic records;
+do not reset the database or remove protected financial/audit history.
