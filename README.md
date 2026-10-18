@@ -51,6 +51,15 @@ Startup does not use `create_all`. Initial schema migration seeds system wallets
 20 active Saudi cities. `uv run --locked python -m app.seed_cities` repairs missing
 city defaults and refreshes Arabic names without reactivating existing inactive cities.
 
+In development only, API deployment initialization also creates missing verified
+couriers `555555555` (Riyadh) and `555555556` (Jeddah), with their wallets.
+Phone storage uses `+966` normalization. Existing accounts and moderation edits are
+never overwritten. Worker/scheduler entrypoints do not run this account seed.
+Run it explicitly after migrations with
+`uv run --locked python -m app.seed_development`. Test/production environments skip it.
+These fixtures use an encrypted, clearly fictional development identity and no email;
+they do not bypass OTP or send provider messages.
+
 Liveness: `/api/health`; dependency readiness: `/api/health/ready`.
 Interactive API docs are `/docs` in development and disabled in test/production.
 The authenticated admin dashboard is `/v1/admin/admin` when enabled; production

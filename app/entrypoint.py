@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -13,13 +14,6 @@ from app.core.logging import configure_logging
 def main() -> None:
     """Upgrade the database, then replace this process with its configured service."""
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
-    try:
-        upgrade_database()
-    except Exception:
-        logging.getLogger(__name__).exception(
-            "Database migrations failed; the service was not started"
-        )
-        raise
     command = sys.argv[1:] or [
         "gunicorn",
         "app.main:create_app()",
@@ -32,6 +26,17 @@ def main() -> None:
         "--timeout",
         os.getenv("GUNICORN_TIMEOUT", "80"),
     ]
+    try:
+        upgrade_database()
+        if os.getenv("ENVIRONMENT") == "development" and command[0] in {"gunicorn", "uvicorn"}:
+            from app.seed_development import seed_development_couriers
+
+            asyncio.run(seed_development_couriers())
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Database initialization failed; the service was not started"
+        )
+        raise
     os.execvp(command[0], command)  # noqa: S606, S607 - deployment command, no shell
 
 
