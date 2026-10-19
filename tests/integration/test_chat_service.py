@@ -210,3 +210,43 @@ async def test_message_cursor_must_belong_to_conversation(
         await svc.list_messages(
             conversation_id=conv.id, actor_id=customer.id, limit=10, before_id=uuid.uuid4()
         )
+
+
+async def test_read_receipts_and_inbox_counts_are_independent_for_both_parties(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    customer, courier, conversation = await _conversation(db_session)
+    service = _service(db_session, redis_client)
+    customer_message = await service.send_message(
+        conversation_id=conversation.id, sender_id=customer.id, text="Customer message"
+    )
+    courier_message = await service.send_message(
+        conversation_id=conversation.id, sender_id=courier.id, text="Courier message"
+    )
+    for actor in (customer, courier):
+        inbox = await service.list_inbox(user_id=actor.id, limit=20, before=None)
+        assert (
+            next(row for row in inbox if row.conversation_id == str(conversation.id)).unread_count
+            == 1
+        )
+    await service.mark_read(conversation_id=conversation.id, actor_id=customer.id)
+    for actor, expected in ((customer, 0), (courier, 1)):
+        inbox = await service.list_inbox(user_id=actor.id, limit=20, before=None)
+        assert (
+            next(row for row in inbox if row.conversation_id == str(conversation.id)).unread_count
+            == expected
+        )
+    messages = await service.list_messages(
+        conversation_id=conversation.id, actor_id=courier.id, limit=30, before_id=None
+    )
+    by_id = {message.id: message for message in messages}
+    assert by_id[courier_message.id].is_read is True
+    assert by_id[customer_message.id].is_read is False
+    await service.mark_read(conversation_id=conversation.id, actor_id=courier.id)
+    await service.mark_read(conversation_id=conversation.id, actor_id=courier.id)
+    messages = await service.list_messages(
+        conversation_id=conversation.id, actor_id=customer.id, limit=30, before_id=None
+    )
+    assert all(message.is_read for message in messages)
+    await db_session.refresh(conversation)
+    assert conversation.customer_unread_count == conversation.courier_unread_count == 0

@@ -3,10 +3,43 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import String, and_, cast, exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
-from app.models.notification_models import InboxNotification
+from app.models import Invoice, User
+from app.models.enums import InvoiceStatus, UserRole
+from app.models.notification_models import InboxNotification, OrderTimelineEvent
+
+
+def _visible(user_id: UUID) -> ColumnElement[bool]:
+    customer = exists().where(User.id == user_id, User.role == UserRole.CUSTOMER)
+    courier = exists().where(User.id == user_id, User.role == UserRole.COURIER)
+    paid_invoice = exists().where(
+        Invoice.order_id == InboxNotification.resource_id,
+        Invoice.status.in_([InvoiceStatus.PAID, InvoiceStatus.REFUNDED]),
+        Invoice.paid_at <= InboxNotification.created_at,
+    )
+    customer_action = exists().where(
+        OrderTimelineEvent.order_id == InboxNotification.resource_id,
+        InboxNotification.event_key == "order:" + cast(OrderTimelineEvent.id, String),
+        OrderTimelineEvent.status == InboxNotification.status,
+        OrderTimelineEvent.actor_role == UserRole.CUSTOMER.value,
+    )
+    return or_(
+        customer,
+        and_(
+            courier,
+            InboxNotification.notification_type == "ORDER_STATUS_CHANGED",
+            or_(
+                and_(InboxNotification.status == "IN_PROGRESS", paid_invoice),
+                and_(
+                    InboxNotification.status.in_(["CANCELLED", "COMPLETED"]),
+                    customer_action,
+                ),
+            ),
+        ),
+    )
 
 
 class NotificationInboxRepository:
@@ -20,7 +53,9 @@ class NotificationInboxRepository:
         """Read an anchor or item only for its owner."""
         result: InboxNotification | None = await self._session.scalar(
             select(InboxNotification).where(
-                InboxNotification.user_id == user_id, InboxNotification.id == identifier
+                InboxNotification.user_id == user_id,
+                InboxNotification.id == identifier,
+                _visible(user_id),
             )
         )
 
@@ -30,7 +65,9 @@ class NotificationInboxRepository:
         self, user_id: UUID, *, unread_only: bool, limit: int, after: InboxNotification | None
     ) -> list[InboxNotification]:
         """Filter and bound records before loading them."""
-        query = select(InboxNotification).where(InboxNotification.user_id == user_id)
+        query = select(InboxNotification).where(
+            InboxNotification.user_id == user_id, _visible(user_id)
+        )
         if unread_only:
             query = query.where(InboxNotification.read_at.is_(None))
         if after is not None:
@@ -52,7 +89,11 @@ class NotificationInboxRepository:
             await self._session.scalar(
                 select(func.count())
                 .select_from(InboxNotification)
-                .where(InboxNotification.user_id == user_id, InboxNotification.read_at.is_(None))
+                .where(
+                    InboxNotification.user_id == user_id,
+                    InboxNotification.read_at.is_(None),
+                    _visible(user_id),
+                )
             )
             or 0
         )
@@ -64,6 +105,7 @@ class NotificationInboxRepository:
             .where(
                 InboxNotification.user_id == user_id,
                 InboxNotification.id == identifier,
+                _visible(user_id),
                 InboxNotification.read_at.is_(None),
             )
             .values(read_at=func.clock_timestamp())
@@ -80,6 +122,7 @@ class NotificationInboxRepository:
                 InboxNotification.user_id == user_id,
                 InboxNotification.read_at.is_(None),
                 InboxNotification.created_at <= cutoff,
+                _visible(user_id),
             )
             .values(read_at=cutoff)
             .returning(InboxNotification.id)

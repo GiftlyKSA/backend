@@ -1655,3 +1655,52 @@ Activation requires successful authenticated native/browser upgrades, renewed-to
 reconnection, restriction/cap checks and verified safe proxy logging on the target
 deployment. A successful build, readiness response or local suite is insufficient.
 See AUD-30 in tasks.md for the upstream logging mitigation and current limitations.
+
+### Courier notification-center policy and chat unread counts
+
+Courier notification-center reads include only existing `ORDER_STATUS_CHANGED`
+events for these three cases:
+
+| `parameters.status` | Meaning in the courier center | Server evidence |
+| --- | --- | --- |
+| `IN_PROGRESS` | The customer's invoice was paid. | A paid/refunded invoice for that order with a payment timestamp at or before the event. |
+| `CANCELLED` | The customer cancelled the order. | The exact recorded timeline event attributes cancellation to a customer. |
+| `COMPLETED` | The customer confirmed that the order arrived. | The exact recorded timeline event attributes completion to a customer. |
+
+Courier-originated delivery/assignment/invoice creation, administrative or automatic
+cancellation/completion, withdrawals and other inbox events are hidden from this
+center. Customer notification behavior and separate city new-order/chat push delivery
+are unchanged. This is a read policy over committed history; it neither deletes past
+notifications nor invents missing historical events.
+
+The same SQL policy applies to `GET /api/notifications`, its `unread_count`,
+`GET /api/notifications/unread-count`, individual reads and mark-all. Ownership and
+current account eligibility remain enforced. Filtering precedes keyset pagination;
+the existing defaults (25, maximum 100), newest-first ordering, cursors and private
+no-store responses remain. An old cursor pointing to a now-hidden event returns the
+existing `404 NOT_FOUND`; restart the list without its cursor. Hidden/foreign
+notification identifiers also return 404. No schema migration or new endpoint is needed.
+
+Both eligible customers and couriers already have independent unread chat counts:
+
+- `GET /api/conversations?limit=20` returns each conversation's `unread_count`
+  for the authenticated caller, not the other participant. The existing limit is
+  1–100 and pagination uses the returned opaque cursor.
+- `GET /api/orders/{order_id}/conversation` resolves an accessible order to its
+  conversation, including historical orders.
+- `GET /api/conversations/{conversation_id}/messages?limit=30` returns
+  newest-first messages with `is_read:boolean`. For a message the caller sent,
+  true means the recipient has marked it read. Incoming messages become read when
+  the current user acknowledges them.
+- `POST /api/conversations/{conversation_id}/read` accepts no body and returns
+  `204` with no response body. It marks existing incoming messages read and resets
+  only the caller's counter; the other party's unread messages are unaffected.
+  Sends and reads serialize on the conversation so a later send remains unread.
+
+Opening history or connecting a WebSocket does not automatically acknowledge reads.
+Refresh inbox counts after acknowledgment and when new live messages arrive.
+Re-fetch authorized message history to refresh sent-message read indicators:
+there is currently no separate WebSocket read-receipt event. Read state and counts
+are server-owned; do not submit client-calculated counters or mark messages read
+just because a background push arrived. Existing 401/403 account restrictions and
+404 participant checks apply; a 429 response requires respecting Retry-After.

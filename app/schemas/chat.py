@@ -77,7 +77,7 @@ class MessageResponse(BaseModel):
     sender_id: str
     message_type: str
     content: str
-    is_read: bool
+    is_read: bool = Field(description="True when the recipient has marked this message read.")
     created_at: str
     attachments: list[ChatAttachmentResponse] = Field(default_factory=list)
 
@@ -104,7 +104,7 @@ class InboxItemResponse(BaseModel):
     order_id: str
     other_user_id: str
     last_message_preview: str | None
-    unread_count: int
+    unread_count: int = Field(description="Incoming unread messages for the authenticated user.")
     last_message_timestamp: str
 
 

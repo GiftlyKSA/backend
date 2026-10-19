@@ -42,21 +42,27 @@ async def list_notifications(
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     cursor: Annotated[str | None, Query(max_length=22)] = None,
 ) -> NotificationPage:
-    """Read owned neutral events newest first; reauthorize destinations when opening."""
+    """Read owned events newest first; couriers see paid, cancelled or confirmed orders.
+
+    Courier events retain type ORDER_STATUS_CHANGED: IN_PROGRESS requires a paid
+    invoice; CANCELLED and COMPLETED require a recorded customer action. Other
+    courier events are hidden before pagination. Customer feeds are unchanged.
+    Reauthorize destinations when opening them.
+    """
     response.headers["Cache-Control"] = "private, no-store"
     return await _service(db).list(actor.id, unread_only=unread_only, limit=limit, cursor=cursor)
 
 
 @router.get("/unread-count", response_model=UnreadCount)
 async def unread_count(response: Response, db: DbDep, actor: ActorDep) -> UnreadCount:
-    """Read the current database-backed owned unread count."""
+    """Count unread events visible in the caller's notification center."""
     response.headers["Cache-Control"] = "private, no-store"
     return await _service(db).unread_count(actor.id)
 
 
 @router.post("/read-all", response_model=ReadAllResponse)
 async def read_all(response: Response, db: DbDep, actor: ActorDep) -> ReadAllResponse:
-    """Mark the owned unread snapshot; later arrivals remain unread."""
+    """Mark visible owned unread events; hidden events and later arrivals stay unchanged."""
     response.headers["Cache-Control"] = "private, no-store"
     return await _service(db).read_all(actor.id)
 
@@ -65,6 +71,6 @@ async def read_all(response: Response, db: DbDep, actor: ActorDep) -> ReadAllRes
 async def read_notification(
     notification_id: UUID, response: Response, db: DbDep, actor: ActorDep
 ) -> NotificationResponse:
-    """Idempotently mark one owned event as read."""
+    """Mark one visible owned event as read; hidden or foreign identifiers return 404."""
     response.headers["Cache-Control"] = "private, no-store"
     return await _service(db).read(actor.id, notification_id)

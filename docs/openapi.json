@@ -1030,6 +1030,7 @@
             "type": "string"
           },
           "unread_count": {
+            "description": "Incoming unread messages for the authenticated user.",
             "title": "Unread Count",
             "type": "integer"
           }
@@ -1441,6 +1442,7 @@
             "type": "string"
           },
           "is_read": {
+            "description": "True when the recipient has marked this message read.",
             "title": "Is Read",
             "type": "boolean"
           },
@@ -5904,7 +5906,7 @@
     },
     "/api/notifications": {
       "get": {
-        "description": "Read owned neutral events newest first; reauthorize destinations when opening.",
+        "description": "Read owned events newest first; couriers see paid, cancelled or confirmed orders.\n\nCourier events retain type ORDER_STATUS_CHANGED: IN_PROGRESS requires a paid\ninvoice; CANCELLED and COMPLETED require a recorded customer action. Other\ncourier events are hidden before pagination. Customer feeds are unchanged.\nReauthorize destinations when opening them.",
         "operationId": "list_notifications_api_notifications_get",
         "parameters": [
           {
@@ -5977,7 +5979,7 @@
     },
     "/api/notifications/read-all": {
       "post": {
-        "description": "Mark the owned unread snapshot; later arrivals remain unread.",
+        "description": "Mark visible owned unread events; hidden events and later arrivals stay unchanged.",
         "operationId": "read_all_api_notifications_read_all_post",
         "responses": {
           "200": {
@@ -5999,7 +6001,7 @@
     },
     "/api/notifications/unread-count": {
       "get": {
-        "description": "Read the current database-backed owned unread count.",
+        "description": "Count unread events visible in the caller's notification center.",
         "operationId": "unread_count_api_notifications_unread_count_get",
         "responses": {
           "200": {
@@ -6021,7 +6023,7 @@
     },
     "/api/notifications/{notification_id}/read": {
       "post": {
-        "description": "Idempotently mark one owned event as read.",
+        "description": "Mark one visible owned event as read; hidden or foreign identifiers return 404.",
         "operationId": "read_notification_api_notifications__notification_id__read_post",
         "parameters": [
           {

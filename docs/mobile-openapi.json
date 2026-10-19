@@ -601,7 +601,7 @@
           "notifications"
         ],
         "summary": "List Notifications",
-        "description": "Read owned neutral events newest first; reauthorize destinations when opening.",
+        "description": "Read owned events newest first; couriers see paid, cancelled or confirmed orders.\n\nCourier events retain type ORDER_STATUS_CHANGED: IN_PROGRESS requires a paid\ninvoice; CANCELLED and COMPLETED require a recorded customer action. Other\ncourier events are hidden before pagination. Customer feeds are unchanged.\nReauthorize destinations when opening them.",
         "operationId": "list_notifications_api_notifications_get",
         "parameters": [
           {
@@ -674,7 +674,7 @@
           "notifications"
         ],
         "summary": "Unread Count",
-        "description": "Read the current database-backed owned unread count.",
+        "description": "Count unread events visible in the caller's notification center.",
         "operationId": "unread_count_api_notifications_unread_count_get",
         "responses": {
           "200": {
@@ -696,7 +696,7 @@
           "notifications"
         ],
         "summary": "Read All",
-        "description": "Mark the owned unread snapshot; later arrivals remain unread.",
+        "description": "Mark visible owned unread events; hidden events and later arrivals stay unchanged.",
         "operationId": "read_all_api_notifications_read_all_post",
         "responses": {
           "200": {
@@ -718,7 +718,7 @@
           "notifications"
         ],
         "summary": "Read Notification",
-        "description": "Idempotently mark one owned event as read.",
+        "description": "Mark one visible owned event as read; hidden or foreign identifiers return 404.",
         "operationId": "read_notification_api_notifications__notification_id__read_post",
         "parameters": [
           {
@@ -5077,7 +5077,8 @@
           },
           "unread_count": {
             "type": "integer",
-            "title": "Unread Count"
+            "title": "Unread Count",
+            "description": "Incoming unread messages for the authenticated user."
           },
           "last_message_timestamp": {
             "type": "string",
@@ -5489,7 +5490,8 @@
           },
           "is_read": {
             "type": "boolean",
-            "title": "Is Read"
+            "title": "Is Read",
+            "description": "True when the recipient has marked this message read."
           },
           "created_at": {
             "type": "string",
