@@ -45,11 +45,13 @@ including terminal history, matching the unfiltered courier order collection. �
 is a mobile presentation label, not a distinct backend status. `completed_orders_count`
 counts `COMPLETED` only; `DELIVERED` is not complete.
 
-`settled_earnings_total` uses the exact signed, settled courier-wallet `ESCROW_RELEASE`
+`settled_earnings_total` uses the exact signed, settled courier-account `ESCROW_RELEASE`
 ledger basis used by `GET /api/couriers/me/earnings`, including item reimbursement and
 applying the existing treatment of compensating entries. Pending and reversed ledger
-rows are excluded. Wallet balance and invoice totals are not substitutes. Empty accounts
-return integer zero counts and the decimal string `"0.00"`. The API returns `SAR` and
+rows are excluded. This is accrued order proceeds, not proof of a bank transfer; Dhamen's
+automatic weekly payout is provider-side. Courier balances are not exposed as wallets,
+and invoice totals are not substitutes. Empty accounts return integer zero counts and the
+decimal string `"0.00"`. The API returns `SAR` and
 `as_of` as the UTC timestamp at which the single SQL aggregate statement was evaluated.
 All values are calculated in one database statement without loading histories or using
 pagination; the response uses `Cache-Control: private, no-store`.
@@ -71,7 +73,7 @@ Updated 2026-10-04. This is maintained API documentation, not an implementation 
 
 [Project documentation](documentation.md) · [Current review](tasks.md#full-audit-evidence-and-analysis) · [Tasks](tasks.md)
 
-The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 83 supported
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 82 supported
 mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
@@ -121,8 +123,8 @@ Screens listed as gaps still need later backend work; do not build or guess rout
   HTML-decode text and then insert it as markup. Backend validation and JSON serialization
   do not replace safe frontend rendering. Treat media URLs as separate validated
   link fields, not as HTML supplied by users.
-- Withdrawal and withdrawal-rejection bodies now reject unknown fields with HTTP 422,
-  matching the other request models. Send only the properties declared in OpenAPI.
+- Admin withdrawal-rejection bodies reject unknown fields with HTTP 422. Courier
+  withdrawal requests are no longer supported; send only properties declared in OpenAPI.
 - Base path is `/api`. Send `Authorization: Bearer <access_token>` on protected HTTP calls. Existing users receive 30-minute access and rotating 30-day refresh credentials; use `POST /api/auth/refresh` and replace both stored tokens. Logout invalidates credentials on every device. Do not derive role or ownership from the phone number, local fixture, or a client-supplied user ID.
 - `UUID string`, ISO timestamp, and Gregorian `YYYY-MM-DD` are wire values. **All money values are decimal strings**, such as `"125.50"`, not JSON numbers or halala integers. Localize Arabic display text and numerals only in the UI. A question mark after a field name means the field may be omitted; `| null` means the wire value can be null.
 - A successful `204` has no body. Lists use bounded `limit` (1–100) and `next_cursor`; missing/foreign or out-of-filter order/wallet anchors return `404 NOT_FOUND`, so refresh the list when an anchor is no longer valid; pass that cursor unchanged to the same list route. Order, message, and transaction cursors are UUID strings. Inbox cursors are opaque `<timestamp>|<uuid>` strings; malformed inbox cursors return `400 BAD_REQUEST` rather than restarting the list. Do not use offset or invent a next page when `next_cursor` is null.
@@ -293,26 +295,26 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 **When/how (62 words):** Retrieve a minimal public-facing profile for the customer or courier on an order. The backend requires proof that the caller shares an order or conversation with the target; arbitrary account browsing is not supported. Use the seven-digit public identifier, display name, and initials in chat headers. Show rating and courier details only for a courier. Do not expect phone, email, identity documents, or full profile fields.
 
-## Wallet and withdrawals
+## Customer wallet and courier earnings
 
 ### GET /api/wallets/me
 
 - **API name:** Get My Wallet.
-- **Screens:** Customer/Courier Home `/home`; Wallet `/wallet`.
-- **Who / authorization:** Authenticated customer or eligible verified courier; bearer access token.
+- **Screens:** Customer Home `/home`; Wallet `/wallet`.
+- **Who / authorization:** Authenticated active customer; bearer access token. Couriers use courier earnings reports instead.
 - **Path, query, headers:** None.
 - **Request body:** No JSON body.
 - **Response:** HTTP 200; `WalletResponse` — `balance: string`; `held_balance: string`; `available: string`; `currency: string`
 - **Before:** Login and role/profile restoration.
-- **Then / dependent API:** `GET /api/wallets/me/transactions`; optional top-up or withdrawal.
+- **Then / dependent API:** `GET /api/wallets/me/transactions`; optional customer top-up.
 
-**When/how (56 words):** Load the signed-in user's own wallet snapshot, not a wallet ID chosen by the client. Display balance, held balance, and available funds as decimal-string SAR amounts; never parse them through floating-point arithmetic for financial decisions. Refresh after payment, approval, or withdrawal activity. A courier must be active and verified before this operational wallet route is available.
+**When/how (49 words):** Load the signed-in customer's own wallet snapshot. Display balance, held balance, and available funds as decimal-string SAR amounts; never use floating-point arithmetic for financial decisions. Couriers cannot access wallet balances, fund a wallet, or request withdrawals. Use `/api/couriers/me/earnings` and `/api/couriers/me/summary` for courier proceeds.
 
 ### POST /api/wallets/topup
 
 - **API name:** Start Topup.
 - **Screens:** Wallet `/wallet` add-funds action.
-- **Who / authorization:** Authenticated customer or eligible verified courier; bearer access token.
+- **Who / authorization:** Authenticated active customer; bearer access token. Couriers cannot top up.
 - **Path, query, headers:** None.
 - **Request body:** `TopupRequest` — `amount: string`
 - **Response:** HTTP 201; `TopupResponse` — `payment_intent_id: string`; `amount: string`; `payment_url?: string | null`
@@ -321,18 +323,7 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 **When/how (59 words):** Start a wallet funding attempt with a positive decimal-string amount. In development the fake payment flow may settle locally and return a null payment URL; production currently returns `PAYMENTS_DISABLED` before any intent or balance change because Dhamen is not integrated. The mobile UI must not present this as a working production checkout or treat a browser return as settlement.
 
-### POST /api/wallets/withdrawals
-
-- **API name:** Request Withdrawal.
-- **Screens:** Courier Wallet `/wallet` withdrawal action.
-- **Who / authorization:** Authenticated active verified courier; bearer access token.
-- **Path, query, headers:** `Idempotency-Key: string` (header).
-- **Request body:** `WithdrawalRequest` — `amount: string`; `iban: secret string`
-- **Response:** HTTP 201; `WithdrawalResponse` — `id: string`; `amount: string`; `iban_last4: string`; `status: string`; `rejection_reason?: string | null`
-- **Before:** `GET /api/wallets/me` confirms available funds.
-- **Then / dependent API:** Refresh wallet and transactions; no courier withdrawal-list API exists.
-
-**When/how (54 words):** Request a courier withdrawal by sending a positive decimal-string amount and Saudi IBAN, plus a unique `Idempotency-Key` header. The backend encrypts the IBAN and returns only its last four characters and request status. Reuse the same key for a retry of one logical request, not for a new withdrawal. Customers cannot call this route.
+Couriers do not have a withdrawal-request API or self-service payout flow. They use the read-only courier earnings endpoints to see settled proceeds after platform fees. A Dhamen weekly payout, when configured in the provider account, is provider-managed; this backend does not schedule, initiate, or confirm that batch. The courier payout IBAN is managed by an administrator in the courier profile table and is never exposed to courier APIs. Historical withdrawal records and admin-only lifecycle operations remain for existing records.
 
 ### GET /api/wallets/me/transactions
 
@@ -1015,7 +1006,7 @@ The prototype's labels and local-device data are not server contracts. The table
 | Invoice `/invoice/[id]` | `orders/{id}/invoice`, `invoices/{id}`, promo preview/apply/remove; courier create/cancel; customer pay | Pay the returned current invoice ID after promo changes. No saved-card API. Production payment is disabled. |
 | Customer Calendar `/calendar` | `/api/occasions` CRUD | Customer-owned dates support opt-in one-off reminders; annual recurrence remains deferred. |
 | Courier Calendar `/calendar` | Assigned orders support inclusive delivery-date ranges for day/week/month views | No appointment CRUD or separate appointments API. |
-| Customer/Courier Wallet `/wallet` | `wallets/me`, transactions; top-up; courier withdrawal | No saved-card display/list API. Production top-up is disabled. No withdrawal-list API for courier. |
+| Customer Wallet `/wallet` | `wallets/me`, transactions; customer top-up | Couriers do not use wallet balance or withdrawal controls. |
 | Courier Reports `/reports` and settings sheet | couriers/me/earnings and couriers/me/report-settings | Settled proceeds, comparisons, buckets and versioned targets are available; financial-notification settings remain deferred. |
 | Courier Statement `/statement` | Wallet transactions, cursor-paged | No date-range filtering, statement totals, or downloadable statement API. |
 | Profile `/profile` | `users/me`, patch, courier resubmit, logout, device registration | Date of birth and gender are writable and returned by `users/me`; theme stays local; dedicated courier-avatar and phone-change APIs are described below. |
@@ -1028,11 +1019,11 @@ The prototype's labels and local-device data are not server contracts. The table
 2. **Create order with photos:** for each of at most three images, request an `ORDER_REQUEST` upload URL → signed PUT bytes → confirm the key → create the order with confirmed keys → navigate to `/waiting/[id]` using the returned UUID.
 3. **Courier fulfillment:** `orders/available` → accept → conversation inbox/chat → create invoice → customer reads invoice and attempts payment only when a supported gateway is enabled → courier uploads/ confirms `DELIVERY_PROOF` → deliver → customer approves or disputes → the customer may rate the courier after completion.
 4. **Chat:** get inbox for `conversation_id` → page REST history → open WebSocket while visible → send with REST or JSON WebSocket frames → mark read. On socket reconnect, reload REST history to cover missed ephemeral events.
-5. **Wallet:** fetch snapshot and transactions. For courier withdrawal, send `Idempotency-Key` with amount and IBAN, then refresh wallet. Do not expose top-up or invoice checkout as functional in production until the backend enables a verified Dhamen integration.
+5. **Customer wallet:** fetch the authenticated customer's snapshot and transactions; top-up only when an enabled payment provider supports it. **Courier proceeds:** use `/api/couriers/me/summary` and `/api/couriers/me/earnings`; do not show wallet-balance, top-up, withdrawal, or IBAN-edit actions. Dhamen's automatic weekly payout is configured with the provider and is not triggered by a courier API call.
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **83 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **82 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
 
 ## Invoice PDF and final item prices (2026-10-08)
 

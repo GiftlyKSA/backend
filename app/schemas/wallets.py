@@ -5,11 +5,7 @@ Money is always a decimal STRING, never a number.
 
 from __future__ import annotations
 
-import re
-
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
-
-_SAUDI_IBAN = re.compile(r"^SA\d{22}$")
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WalletResponse(BaseModel):
@@ -41,23 +37,6 @@ class TransactionPage(BaseModel):
 
     items: list[TransactionResponse] = Field(..., description="Newest first.")
     next_cursor: str | None = Field(None, description="Pass back to fetch the next page.")
-
-
-class WithdrawalRequest(BaseModel):
-    """A courier request to withdraw available wallet funds."""
-
-    model_config = ConfigDict(extra="forbid")
-    amount: str = Field(..., description="Amount as a decimal string.", examples=["250.00"])
-    iban: SecretStr = Field(..., description="Saudi IBAN; encrypted immediately at rest.")
-
-    @field_validator("iban", mode="before")
-    @classmethod
-    def normalize_iban(cls, value: object) -> str:
-        """Normalize spaces/case and reject malformed Saudi IBANs."""
-        raw = str(value).replace(" ", "").upper()
-        if not _SAUDI_IBAN.fullmatch(raw):
-            raise ValueError("IBAN must be a valid 24-character Saudi IBAN.")
-        return raw
 
 
 class WithdrawalResponse(BaseModel):

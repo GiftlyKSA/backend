@@ -73,7 +73,7 @@ architecture drawing or a local fake.
 | Cities | `cities`: UUID, English `name`, Arabic `name_ar`, unique shortcut, active flag and creation timestamp. |
 | Orders | Customer and courier user FKs, city FK, delivery date, optional plain-text address note and lifecycle. No geometry, coordinates, radius, distance or map URL. |
 | Billing | Versioned `invoices`, `invoice_items`, promos/redemptions and idempotent invoice-promo operations. |
-| Money | User/system wallets, double-entry transactions, payment intents, topups, payouts and withdrawals. |
+| Money | Customer/system wallets and a double-entry ledger. Courier proceeds are calculated from settled ledger entries; the courier account is an internal accounting account, not a withdrawable wallet. |
 | Chat | An order conversation references customer/courier users; encrypted messages and private attachments reference the conversation. |
 | Customer dates | Owner-scoped `occasions` for personal dates and anniversaries. |
 | Reviews | One order-associated customer rating for a completed delivery; courier summaries are derived from ratings. |
@@ -403,7 +403,7 @@ come from the requested screen inventory; the mobile repository was not changed.
 | Customer occasions | `/api/occasions` CRUD and inclusive date filters | Actual reminder delivery; recurrence optional |
 | Courier calendar | `/api/orders` assigned-order date/status filters | Independent appointments, only if approved |
 | Wallet invoices | Invoice detail, active order invoice, invoice PDF | Account-wide list; no pushed order invoice-history list |
-| Courier avatar / bank | Profile contains nullable avatar URL; encrypted IBAN in withdrawals | Avatar always returns null; no avatar mutation or saved bank profile |
+| Courier avatar / bank | Profile contains nullable avatar URL and an admin-editable encrypted payout IBAN | Avatar always returns null; no courier IBAN mutation API |
 | Change phone | Login OTP and Saudi phone normalization | Separate authenticated change challenge; do not repurpose login verification |
 | Delete account / terminate contract | Internal DELETED account fields | No mobile submission/status operation or approved business process |
 | Customer order search | `/api/orders` date/status filters and cursor | Text search; no defined order number (UUID is the order identifier) |
@@ -631,7 +631,7 @@ an index. Tests: revision replacement, cancelled histories, draft visibility, fo
 participant, status/date/cursor intersections. No initial cache; later 15-second cache
 invalidates on issue/promo replacement/cancellation/payment and admin corrections.
 
-### 8. Courier avatar and optional bank profile
+### 8. Courier avatar and admin-managed payout IBAN
 
 **Avatar proposal:** extend existing `/api/media/upload-urls` purpose with
 `COURIER_AVATAR` (courier-only), retain secure direct PUT and `/api/media/confirm`.
@@ -646,14 +646,13 @@ and stores courier avatar reference/version. Test forged/claimed/purpose-mismatc
 non-image/oversize/decompression cases, replacement and authorized participant reads.
 No public caching of API/signed access; asset versioning must preserve privacy rules.
 
-**Bank profile only if approved:** GET/PUT/DELETE `/api/couriers/me/bank-profile`.
-PUT `{"version":1,"beneficiary_name":"Example Courier","iban":"SA<22 digits>"}`;
-return `{"beneficiary_name":"Example Courier","iban_last4":"1234","verification_status":"UNVERIFIED","version":2,"updated_at":"2026-10-07T09:00:00Z"}`.
-Beneficiary max120, Saudi normalization/checksum, encryption at rest, optimistic version;
-never return plaintext IBAN, log body or claim verified without verification integration.
-Initial GET when absent returns 404; DELETE204. No automatic change to already-submitted
-withdrawals. Confirm required beneficiary/legal fields and verification process first.
-Owned bank table migration; tests redaction/encryption, foreign access, stale version.
+Courier IBAN changes are administrator-only through the authenticated courier-profile table
+editor. The `payout_iban_encrypted` field is write-only in the form, encrypted before storage,
+and included in the normal admin table audit event. Courier profile and mobile APIs never
+return the IBAN. There is no courier bank-profile endpoint and no courier withdrawal request.
+Couriers view their settled proceeds through the earnings report; internal double-entry
+accounts remain for accounting and reconciliation. Dhamen weekly transfers are provider-side
+when configured; this backend does not enqueue, schedule, initiate, or confirm a weekly batch.
 
 ### 9. Phone change
 

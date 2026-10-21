@@ -15,14 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.exceptions import NotFoundError
 from app.core.money import money_str, parse_money
-from app.models import Withdrawal
 from app.models.enums import UserRole
-from app.repositories.audit_repository import AuditRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.operation_repository import OperationRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.wallet_repository import WalletRepository
-from app.repositories.withdrawal_repository import WithdrawalRepository
 from app.schemas.date_range import CalendarDate, DateRange, date_range
 from app.schemas.payments import TopupRequest, TopupResponse
 from app.schemas.wallet_statement import WalletStatement
@@ -30,37 +27,19 @@ from app.schemas.wallets import (
     TransactionPage,
     TransactionResponse,
     WalletResponse,
-    WithdrawalRequest,
-    WithdrawalResponse,
 )
 from app.services.courier_eligibility_service import CourierEligibilityService
-from app.services.money_service import MoneyService
 from app.services.operation_service import OperationService
 from app.services.payment_service import build_payment_service
 from app.services.reporting_dates import reporting_bounds
 from app.services.wallet_statement_pdf import WalletStatementPdfService
 from app.services.wallet_statement_service import WalletStatementService
-from app.services.withdrawal_service import WithdrawalService
 
 router = APIRouter(prefix="/api/wallets", tags=["wallets"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _CustomerOrCourier = require_role(UserRole.CUSTOMER, UserRole.COURIER)
-_Courier = require_role(UserRole.COURIER)
-
-
-def _withdrawals(request: Request, db: AsyncSession) -> WithdrawalService:
-    wallets = WalletRepository(db)
-    return WithdrawalService(
-        withdrawals=WithdrawalRepository(db),
-        wallets=wallets,
-        money=MoneyService(wallets),
-        audit=AuditRepository(db),
-        eligibility=CourierEligibilityService(
-            users=UserRepository(db), couriers=CourierRepository(db)
-        ),
-        settings=get_settings(request),
-    )
+_Customer = require_role(UserRole.CUSTOMER)
 
 
 async def _eligible_customer_or_courier(
@@ -73,31 +52,22 @@ async def _eligible_customer_or_courier(
     return actor
 
 
-async def _eligible_courier(
+async def _eligible_customer(
     db: DbDep,
-    actor: Annotated[Actor, Depends(_Courier)],
+    actor: Annotated[Actor, Depends(_Customer)],
 ) -> Actor:
-    await CourierEligibilityService(
+    eligibility = CourierEligibilityService(
         users=UserRepository(db), couriers=CourierRepository(db)
-    ).require_courier(actor.id)
-    return actor
-
-
-def _withdrawal_response(row: Withdrawal) -> WithdrawalResponse:
-    return WithdrawalResponse(
-        id=str(row.id),
-        amount=money_str(row.amount),
-        iban_last4=row.iban_last4,
-        status=str(row.status),
-        rejection_reason=row.rejection_reason,
     )
+    await eligibility.require_customer(actor.id)
+    return actor
 
 
 @router.get("/me", response_model=WalletResponse)
 async def get_my_wallet(
-    db: DbDep, actor: Annotated[Actor, Depends(_eligible_customer_or_courier)]
+    db: DbDep, actor: Annotated[Actor, Depends(_eligible_customer)]
 ) -> WalletResponse:
-    """Return the authenticated user's wallet snapshot."""
+    """Return the authenticated customer's wallet snapshot."""
     wallet = await WalletRepository(db).get_by_user(actor.id)
     if wallet is None:
         raise NotFoundError("Wallet not found.")
@@ -114,7 +84,7 @@ async def start_topup(
     request: Request,
     db: DbDep,
     body: TopupRequest,
-    actor: Annotated[Actor, Depends(_eligible_customer_or_courier)],
+    actor: Annotated[Actor, Depends(_eligible_customer)],
     idempotency_key: Annotated[uuid.UUID | None, Header(alias="Idempotency-Key")] = None,
 ) -> TopupResponse:
     """Start a wallet top-up and return the gateway payment URL."""
@@ -155,24 +125,6 @@ async def start_topup(
     if operation is not None:
         await operations.finish(operation, response, result.intent_id)
     return response
-
-
-@router.post("/withdrawals", response_model=WithdrawalResponse, status_code=201)
-async def request_withdrawal(
-    request: Request,
-    db: DbDep,
-    body: WithdrawalRequest,
-    actor: Annotated[Actor, Depends(_eligible_courier)],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)],
-) -> WithdrawalResponse:
-    """Reserve funds and create an encrypted courier withdrawal request."""
-    row = await _withdrawals(request, db).request_withdrawal(
-        courier_id=actor.id,
-        amount=parse_money(body.amount),
-        iban=body.iban.get_secret_value(),
-        idempotency_key=idempotency_key,
-    )
-    return _withdrawal_response(row)
 
 
 @router.get("/me/transactions", response_model=TransactionPage)

@@ -17,6 +17,8 @@ def test_mobile_openapi_matches_non_admin_wire_contract() -> None:
     """Catch route, body, response, or shared-schema drift before UI handoff."""
     generated = create_app(make_test_settings(ENVIRONMENT="development")).openapi()
     mobile = json.loads(_MOBILE_SPEC.read_text(encoding="utf-8"))
+    assert "/api/wallets/withdrawals" not in generated["paths"]
+    assert "/api/wallets/withdrawals" not in mobile["paths"]
     operations = {
         (path, method): operation
         for path, path_operations in generated["paths"].items()

@@ -188,9 +188,22 @@ async def test_full_lifecycle_deliver_approve_rate() -> None:
             approved = await client.post(f"/api/orders/{order_id}/approve", headers=cust_h)
             assert approved.status_code == 200 and approved.json()["status"] == "COMPLETED"
 
-            # The courier's wallet received the payout.
+            # Courier proceeds are available through the earnings ledger, not wallet controls.
             cour_wallet = await client.get("/api/wallets/me", headers=cour_h)
-            assert cour_wallet.json()["balance"] == "540.00"
+            assert cour_wallet.status_code == 403
+            topup = await client.post(
+                "/api/wallets/topup", headers=cour_h, json={"amount": "100.00"}
+            )
+            assert topup.status_code == 403
+            withdrawal = await client.post(
+                "/api/wallets/withdrawals",
+                headers={**cour_h, "Idempotency-Key": str(_secrets.token_hex(16))},
+                json={"amount": "100.00", "iban": "SA0380000000608010167519"},
+            )
+            assert withdrawal.status_code == 404
+            summary = await client.get("/api/couriers/me/summary", headers=cour_h)
+            assert summary.status_code == 200
+            assert summary.json()["settled_earnings_total"] == "540.00"
 
             # Both parties rate each other, once.
             r1 = await client.post(

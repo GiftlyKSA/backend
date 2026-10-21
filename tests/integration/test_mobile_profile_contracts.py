@@ -360,7 +360,7 @@ async def test_courier_me_exposes_safe_profile_and_rejected_account_cannot_use_a
                 headers={**_headers(rejected), "Idempotency-Key": str(uuid.uuid4())},
                 json={"amount": "100.00", "iban": "SA0380000000608010167519"},
             )
-            assert withdrawal.status_code == 403
+            assert withdrawal.status_code == 404
             resubmitted = await client.post(
                 "/api/users/me/courier-verification/resubmit", headers=_headers(rejected)
             )

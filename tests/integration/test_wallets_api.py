@@ -1,4 +1,4 @@
-"""HTTP tests for the wallet endpoints (GET /api/wallets/me and transactions).
+"""HTTP tests for customer wallet reads and read-only ledger transactions.
 
 Registers a customer through the real auth flow, credits their wallet through the
 money service (committed), then reads the wallet and its ledger over HTTP.
@@ -94,7 +94,7 @@ async def test_wallet_read_endpoints() -> None:
             assert items[0]["amount"] == "300.00"
             assert items[0]["type"] == "TOPUP"
 
-            # A courier/customer role is required; no token is 401.
+            # Authentication is required.
             assert (await client.get("/api/wallets/me")).status_code == 401
     finally:
         await app.state.redis.aclose()

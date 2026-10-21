@@ -879,7 +879,6 @@ There are no testing-only or mobile tasks in this tracker.
 | PUSH-SETUP | Activate Expo push | Configure worker provider and Expo/EAS platform credentials. | Postponed | 7 | 2026-10-13 | 2026-10-14 |
 | STORE-SETUP | Activate private S3 | Configure matching private bucket, endpoint and credentials on API/worker; scheduler needs none. | Postponed | 7 | 2026-10-13 | 2026-10-14 |
 | FIN-POLICY | Final account closure/fund return | Implement final behavior after business/legal retention policy approval; retain 14-day recovery/admin hold meanwhile. | Postponed | 7 | 2026-10-11 | 2026-10-14 |
-| BANK-PROFILE | Saved courier bank profile | Define validation/masking/verification, then implement private saved details. | Postponed | 4 | 2026-10-07 | 2026-10-14 |
 | FIN-NOTIFY | Financial notification preferences | Define covered events/channels and implement actual delivery before exposing switches. | Postponed | 4 | 2026-10-07 | 2026-10-14 |
 
 Accepted unrestricted admin CRUD risks, excluded work and unverified deployment/provider

@@ -4362,33 +4362,6 @@
         "title": "WithdrawalParameters",
         "type": "object"
       },
-      "WithdrawalRequest": {
-        "additionalProperties": false,
-        "description": "A courier request to withdraw available wallet funds.",
-        "properties": {
-          "amount": {
-            "description": "Amount as a decimal string.",
-            "examples": [
-              "250.00"
-            ],
-            "title": "Amount",
-            "type": "string"
-          },
-          "iban": {
-            "description": "Saudi IBAN; encrypted immediately at rest.",
-            "format": "password",
-            "title": "Iban",
-            "type": "string",
-            "writeOnly": true
-          }
-        },
-        "required": [
-          "amount",
-          "iban"
-        ],
-        "title": "WithdrawalRequest",
-        "type": "object"
-      },
       "WithdrawalResponse": {
         "description": "A masked courier withdrawal record.",
         "properties": {
@@ -8393,7 +8366,7 @@
     },
     "/api/wallets/me": {
       "get": {
-        "description": "Return the authenticated user's wallet snapshot.",
+        "description": "Return the authenticated customer's wallet snapshot.",
         "operationId": "get_my_wallet_api_wallets_me_get",
         "responses": {
           "200": {
@@ -8738,61 +8711,6 @@
           }
         },
         "summary": "Start Topup",
-        "tags": [
-          "wallets"
-        ]
-      }
-    },
-    "/api/wallets/withdrawals": {
-      "post": {
-        "description": "Reserve funds and create an encrypted courier withdrawal request.",
-        "operationId": "request_withdrawal_api_wallets_withdrawals_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WithdrawalRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WithdrawalResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Request Withdrawal",
         "tags": [
           "wallets"
         ]

@@ -1616,61 +1616,6 @@
         }
       }
     },
-    "/api/wallets/withdrawals": {
-      "post": {
-        "tags": [
-          "wallets"
-        ],
-        "summary": "Request Withdrawal",
-        "description": "Reserve funds and create an encrypted courier withdrawal request.",
-        "operationId": "request_withdrawal_api_wallets_withdrawals_post",
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128,
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WithdrawalRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WithdrawalResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/wallets/me/transactions": {
       "get": {
         "tags": [
@@ -8213,73 +8158,6 @@
         ],
         "title": "WithdrawalParameters",
         "description": "The actual withdrawal status."
-      },
-      "WithdrawalRequest": {
-        "properties": {
-          "amount": {
-            "type": "string",
-            "title": "Amount",
-            "description": "Amount as a decimal string.",
-            "examples": [
-              "250.00"
-            ]
-          },
-          "iban": {
-            "type": "string",
-            "format": "password",
-            "title": "Iban",
-            "description": "Saudi IBAN; encrypted immediately at rest.",
-            "writeOnly": true
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "amount",
-          "iban"
-        ],
-        "title": "WithdrawalRequest",
-        "description": "A courier request to withdraw available wallet funds."
-      },
-      "WithdrawalResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "amount": {
-            "type": "string",
-            "title": "Amount"
-          },
-          "iban_last4": {
-            "type": "string",
-            "title": "Iban Last4"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "rejection_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rejection Reason"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "amount",
-          "iban_last4",
-          "status"
-        ],
-        "title": "WithdrawalResponse",
-        "description": "A masked courier withdrawal record."
       },
       "WithdrawalStatus": {
         "type": "string",
