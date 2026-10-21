@@ -36,7 +36,7 @@ from app.core.exceptions import (
 )
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
-from app.core.ws_connections import WebSocketLease
+from app.core.ws_connections import WebSocketLease, check_websocket_handshake
 from app.models.enums import UserRole
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.courier_repository import CourierRepository
@@ -63,7 +63,37 @@ from app.services.chat_service import ChatMessage, ChatService, conversation_cha
 from app.services.courier_eligibility_service import CourierEligibilityService
 
 router = APIRouter(prefix="/api", tags=["chat"])
+_WS_SEND_TIMEOUT_SECONDS = 5
 _logger = logging.getLogger(__name__)
+
+
+class _WebSocketHandshakeRejectedError(Exception):
+    """Carry a safe close code for rejected or throttled handshake attempts."""
+
+    def __init__(self, code: int) -> None:
+        self.code = code
+
+
+async def _check_chat_handshake(websocket: WebSocket) -> None:
+    """Verify credentials and throttle authenticated handshakes before database reads."""
+    token = _socket_token(websocket)
+    if not token or len(token) > 8192:
+        raise _WebSocketHandshakeRejectedError(4401)
+    try:
+        claims = decode_access_token(websocket.app.state.settings, token)
+        account_id = uuid.UUID(claims.sub)
+    except (JwtError, ValueError) as exc:
+        raise _WebSocketHandshakeRejectedError(4401) from exc
+    if claims.role not in (UserRole.CUSTOMER.value, UserRole.COURIER.value):
+        raise _WebSocketHandshakeRejectedError(4401)
+    decision = await check_websocket_handshake(
+        websocket.app.state.redis, account_id, websocket.app.state.settings
+    )
+    if decision.unavailable:
+        raise _WebSocketHandshakeRejectedError(1013)
+    if not decision.allowed:
+        raise _WebSocketHandshakeRejectedError(4429)
+
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _Participant = require_role(UserRole.CUSTOMER, UserRole.COURIER)
@@ -377,27 +407,35 @@ async def mark_read(
 async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
     """Live chat socket: pushes new messages and accepts sent messages.
 
-    Prefer a Bearer header or bearer-prefixed offered protocol; retain legacy query
-    authentication. Only eligible conversation members may connect.
+    React Native clients use the Bearer header. Keep the other accepted transports for
+    client rollout compatibility; only eligible conversation members may connect.
     """
     settings = websocket.app.state.settings
     origin = websocket.headers.get("origin")
     if settings.is_production and origin is not None and origin not in settings.cors_origins:
         await websocket.close(code=4403)
         return
-    actor = await _authenticate_ws(websocket)
-    if actor is None:
-        await websocket.close(code=4401)  # unauthenticated
-        return
-
     factory = websocket.app.state.session_factory
-    async with factory() as session:
-        try:
-            conversation = await _session_service(
-                session, websocket.app.state.redis, websocket.app.state.settings
-            ).get_conversation_for_actor(conversation_id=conversation_id, actor_id=actor.id)
-        except (ForbiddenError, NotFoundError):
-            conversation = None
+    try:
+        async with asyncio.timeout(5):
+            await _check_chat_handshake(websocket)
+            actor = await _authenticate_ws(websocket)
+            if actor is None:
+                await websocket.close(code=4401)
+                return
+            async with factory() as session:
+                try:
+                    conversation = await _session_service(
+                        session, websocket.app.state.redis, settings
+                    ).get_conversation_for_actor(conversation_id=conversation_id, actor_id=actor.id)
+                except (ForbiddenError, NotFoundError):
+                    conversation = None
+    except _WebSocketHandshakeRejectedError as exc:
+        await websocket.close(code=exc.code)
+        return
+    except (TimeoutError, RedisConnectionError):
+        await websocket.close(code=1013)
+        return
     if conversation is None:
         await websocket.close(code=4403)  # not a participant
         return
@@ -663,4 +701,11 @@ async def _send_socket_frame(websocket: WebSocket, payload: str) -> None:
     if len(payload.encode("utf-8")) > websocket.app.state.settings.WS_MAX_OUTGOING_FRAME_BYTES:
         await websocket.close(code=1009)
         raise WebSocketDisconnect(code=1009)
-    await websocket.send_text(payload)
+    try:
+        async with asyncio.timeout(_WS_SEND_TIMEOUT_SECONDS):
+            await websocket.send_text(payload)
+    except TimeoutError as exc:
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(1):
+                await websocket.close(code=1013)
+        raise WebSocketDisconnect(code=1013) from exc

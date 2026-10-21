@@ -6,10 +6,28 @@ import uuid
 
 from redis.asyncio import Redis
 
+from app.core.config import Settings
+from app.core.ratelimit import RateLimitDecision, RateLimiter
+
 ACCOUNT_LIMIT = 8
 GLOBAL_LIMIT = 10_000
 LEASE_SECONDS = 30
 _GLOBAL_KEY = "ws:connections:all"
+
+
+async def check_websocket_handshake(
+    redis: Redis,
+    account_id: uuid.UUID,
+    settings: Settings,
+) -> RateLimitDecision:
+    """Bound authenticated reconnect attempts before database authorization."""
+    limiter = RateLimiter(
+        redis,
+        max_requests=settings.WS_HANDSHAKE_MAX_REQUESTS,
+        window_seconds=settings.WS_HANDSHAKE_WINDOW_SECONDS,
+    )
+    return await limiter.check(f"ws-handshake:{account_id}")
+
 
 _ACQUIRE = """
 local now = redis.call('TIME')

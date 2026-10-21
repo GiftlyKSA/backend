@@ -9,8 +9,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from redis.asyncio.client import PubSub
 
 from app.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
-from app.core.jwt import JwtError, decode_access_token
-from app.core.ws_connections import WebSocketLease
+from app.core.jwt import AccessClaims, JwtError, decode_access_token
+from app.core.ws_connections import WebSocketLease, check_websocket_handshake
 from app.schemas.order_events import OrderStatusEvent
 from app.services.order_realtime_service import OrderRealtimeService, order_channel
 
@@ -18,10 +18,29 @@ router = APIRouter(prefix="/api", tags=["orders"])
 logger = logging.getLogger(__name__)
 
 
+async def _check_order_handshake(
+    websocket: WebSocket, token: str
+) -> tuple[AccessClaims | None, int | None]:
+    """Throttle authenticated reconnects before querying order authorization."""
+    settings = websocket.app.state.settings
+    try:
+        claims = decode_access_token(settings, token)
+        account_id = UUID(claims.sub)
+    except (JwtError, ValueError):
+        return None, 4401
+    decision = await check_websocket_handshake(websocket.app.state.redis, account_id, settings)
+    if decision.unavailable:
+        return None, 1013
+    if not decision.allowed:
+        return None, 4429
+    return claims, None
+
+
 def _token(websocket: WebSocket) -> str:
-    header = websocket.headers.get("authorization", "")
-    if header.startswith("Bearer "):
-        return header[7:].strip()
+    header = websocket.headers.get("authorization")
+    if header is not None:
+        scheme, separator, value = header.partition(" ")
+        return value.strip() if separator and scheme.lower() == "bearer" else ""
     for protocol in websocket.scope.get("subprotocols", []):
         if protocol.startswith("bearer."):
             return str(protocol[7:])
@@ -46,8 +65,11 @@ async def order_ws(websocket: WebSocket, order_id: UUID) -> None:
     lease: WebSocketLease | None = None
     try:
         async with asyncio.timeout(5):
+            claims, rejection_code = await _check_order_handshake(websocket, token)
+            if rejection_code is not None or claims is None:
+                await websocket.close(code=rejection_code or 4401)
+                return
             await service.snapshot(order_id, token)
-        claims = decode_access_token(settings, token)
         lease = WebSocketLease(websocket.app.state.redis, UUID(claims.sub))
         if not await lease.acquire():
             await websocket.close(code=4429)

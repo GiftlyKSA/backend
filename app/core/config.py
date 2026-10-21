@@ -132,7 +132,9 @@ class Settings(BaseSettings):
     # WebSocket chat guards (audit SEC-4/LOG-3): per-user message throttle + frame cap.
     WS_RATE_LIMIT_MAX_MESSAGES: int = 30
     WS_RATE_LIMIT_WINDOW_SECONDS: int = 60
-    WS_MAX_FRAME_BYTES: int = 4096
+    WS_HANDSHAKE_MAX_REQUESTS: int = Field(default=30, ge=1, le=120)
+    WS_HANDSHAKE_WINDOW_SECONDS: int = Field(default=60, ge=1, le=300)
+    WS_MAX_FRAME_BYTES: int = Field(default=4096, ge=1, le=4096)
     WS_MAX_OUTGOING_FRAME_BYTES: int = Field(default=32768, ge=1, le=131072)
 
     # Dedicated OTP HMAC key (audit SEC-3); optional — see OtpService for the fallback.

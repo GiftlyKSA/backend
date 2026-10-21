@@ -48,7 +48,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 # Migrations run before any configured API or worker command.
 ENTRYPOINT ["python", "-m", "app.entrypoint"]
 CMD ["gunicorn", "app.main:create_app()", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--worker-class", "app.core.uvicorn_worker.GiftlyUvicornWorker", \
      "--bind", "0.0.0.0:3000", \
      "--workers", "3", \
      "--timeout", "80"]

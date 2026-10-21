@@ -18,7 +18,7 @@ def main() -> None:
         "gunicorn",
         "app.main:create_app()",
         "--worker-class",
-        "uvicorn.workers.UvicornWorker",
+        "app.core.uvicorn_worker.GiftlyUvicornWorker",
         "--bind",
         "0.0.0.0:3000",
         "--workers",

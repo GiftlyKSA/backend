@@ -1684,6 +1684,21 @@ reconnection, restriction/cap checks and verified safe proxy logging on the targ
 deployment. A successful build, readiness response or local suite is insufficient.
 See AUD-30 in tasks.md for the upstream logging mitigation and current limitations.
 
+### WebSocket resource and reconnect limits — 2026-10-21
+
+The React Native client should authenticate with `Authorization: Bearer <access_token>`;
+it does not need browser subprotocol negotiation. Existing server support for bearer
+subprotocol and legacy query credentials remains during rollout. After JWT signature
+and expiry validation, each account is limited to 30 WebSocket handshakes per 60 seconds
+across chat and order streams, using shared Redis state before database authorization.
+Redis limit-store failures fail closed with a pre-upgrade 1013 request; excess attempts
+request 4429. The configured Uvicorn transport caps incoming frames at 4 KiB, queues at
+most one frame and disables per-message compression. Chat sends that cannot complete
+within five seconds close with 1013; committed messages remain recoverable from REST
+history. These changes bound reconnect pressure, per-connection buffering and slow-reader
+resource use. They do not establish successful behavior on the deployed reverse proxy;
+authenticated deployment checks and ingress log redaction remain unverified.
+
 ### Courier notification-center policy and chat unread counts
 
 Courier notification-center reads include only existing `ORDER_STATUS_CHANGED`
