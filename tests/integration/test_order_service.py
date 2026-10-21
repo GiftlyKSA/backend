@@ -139,6 +139,38 @@ async def test_accept_requires_verified_active_courier(
         await svc.accept_order(order_id=order.id, courier_id=courier.id)
 
 
+async def test_verified_courier_can_accept_more_than_three_orders(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    svc = _service(db_session, redis_client)
+    customer = await _customer(db_session)
+    courier = User(
+        phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}",
+        role=UserRole.COURIER,
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(courier)
+    await db_session.flush()
+    db_session.add(
+        CourierProfile(
+            user_id=courier.id,
+            city=await city_by_name(db_session, "Jeddah"),
+            is_verified=True,
+            national_id_encrypted="test-placeholder",
+        )
+    )
+    await db_session.flush()
+
+    accepted = []
+    for _ in range(5):
+        order = await svc.create_order(customer_id=customer.id, data=_input())
+        accepted.append(await svc.accept_order(order_id=order.id, courier_id=courier.id))
+
+    assert len({order.id for order in accepted}) == 5
+    assert all(order.status is OrderStatus.ASSIGNED for order in accepted)
+    assert all(order.courier_id == courier.id for order in accepted)
+
+
 async def test_cancel_rejects_illegal_transition(
     db_session: AsyncSession, redis_client: Redis
 ) -> None:

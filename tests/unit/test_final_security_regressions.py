@@ -1,10 +1,9 @@
 """Regression checks for the final review findings without external services."""
 
-from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -261,10 +260,11 @@ async def test_logout_invalidates_other_device_access_and_refresh():
     repo.add_refresh_token.assert_not_awaited()
 
 
-async def test_accept_order_has_no_active_assignment_limit(monkeypatch):
+@pytest.mark.parametrize("existing_assignments", [0, 2, 3, 8])
+async def test_accept_order_has_no_active_assignment_limit(existing_assignments):
     service = order_service()
-    courier_id = uuid4()
-    city_id = uuid4()
+    courier_id, city_id = uuid4(), uuid4()
+    assigned_at = datetime.now(UTC)
     order = SimpleNamespace(
         id=uuid4(),
         customer_id=uuid4(),
@@ -273,27 +273,28 @@ async def test_accept_order_has_no_active_assignment_limit(monkeypatch):
         courier_id=None,
         assigned_at=None,
     )
-    service._orders.count_courier_active.return_value = 3
+    service._orders.count_courier_active.return_value = existing_assignments
     service._orders.lock.return_value = order
     service._orders.create_conversation.return_value = SimpleNamespace(id=uuid4())
-    service._orders.now = Mock(return_value=datetime.now(UTC))
+    service._orders.now = Mock(return_value=assigned_at)
     service._couriers.lock.return_value = SimpleNamespace(
-        is_verified=True,
-        city_of_residence_id=city_id,
+        is_verified=True, city_of_residence_id=city_id
     )
-
-    @asynccontextmanager
-    async def accept_lock(_redis, _key, *, ttl_seconds):
-        yield
-
-    monkeypatch.setattr("app.services.order_service.redis_lock", accept_lock)
+    service._redis.set.return_value = True
 
     accepted = await service.accept_order(order_id=order.id, courier_id=courier_id)
 
     assert accepted is order
     assert order.status is OrderStatus.ASSIGNED
+    assert order.courier_id == courier_id
+    assert order.assigned_at == assigned_at
+    service._eligibility.require_courier.assert_awaited_once_with(courier_id)
     service._orders.count_courier_active.assert_not_awaited()
     service._orders.lock_actor.assert_not_awaited()
+    service._redis.set.assert_awaited_once_with(
+        f"lock:order_accept:{order.id}", ANY, nx=True, ex=10
+    )
+    service._redis.eval.assert_awaited_once()
 
 
 async def test_quota_lock_does_not_block_foreign_key_references():

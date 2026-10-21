@@ -1,5 +1,13 @@
 # Giftly backend — audit and task register
 
+## Courier cap follow-up review — 2026-10-21
+
+Rechecked published `7347323` against the user's requirement to remove the fixed courier assignment cap. Its service and repository changes correctly remove the count query and cap-specific actor lock while retaining current courier eligibility, locked city checks, Redis/database order locks, conversation creation and post-commit broadcasts. No fixed courier assignment cap remains in that source; the separate customer creation limit is unchanged. The older primary checkout contains unrelated unpublished edits and was preserved.
+
+Strengthened the existing regression for 0, 2, 3 and 8 prior assignments, exercising the real Redis-lock helper and checking eligibility, assignment identity/time and lock release. Added an existing-file PostgreSQL/Redis integration test accepting five orders for one verified courier. The cap implementation passed the complete 1,640-test suite against a fresh local database; after reconciling the independently published commit, 36 focused service/security/integration/OpenAPI checks passed again. The executable service/repository code is identical to the full-suite candidate; the service docstring differs only in wording. Ruff lint/format, strict mypy and both hook stages passed. Tests used supported Python 3.12 because the old temporary Python 3.13 installation is no longer usable; no new Python 3.13 claim is made. One existing Starlette/httpx deprecation warning remains.
+
+Delivery limitation observed during this review: the public acceptance description still matches the older runtime, and deployment `_IPDV4nd994VIAaJp54D0` failed with a platform remote-command exit 1 and no build-log excerpt. Published code is not proof of deployment. No production data, account eligibility or payment settings were changed, and no authenticated live acceptance was attempted. The running backend must receive the published release before the removed cap can affect mobile users.
+
 ## Current review — 2026-10-16
 
 **Reviewed source:** published `master` **`864530186b305fbc9035b4fb44265d498c21b00a`**.
