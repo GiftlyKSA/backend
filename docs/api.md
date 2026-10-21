@@ -458,8 +458,9 @@ add it only when representative plans justify it.
 - **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
 - **Before:** `GET /api/orders/available` supplies a `NEW` order UUID.
 - **Then / dependent API:** `GET /api/orders/{order_id}`, chat, then invoice creation.
+- **Expected failures:** `403 FORBIDDEN` when the courier account is not eligible; `404 NOT_FOUND` when the order is missing or belongs to another city; `409 ORDER_ALREADY_ASSIGNED` when the order is no longer `NEW` or another courier wins the claim race. Refresh available orders after a conflict.
 
-**When/how (62 words):** Claim a `NEW` order as the current verified courier. The backend checks city, assignment capacity, and current order state under locks; the first valid acceptance wins. Do not show assignment as complete until the response succeeds, because another courier may accept concurrently. The response provides the assigned order detail; use its UUID and status to open chat and later issue an invoice.
+**When/how (74 words):** Claim a `NEW` order as the current active, verified courier. The backend checks the courier's assigned city and current order state under locks; there is no active-assignment count limit. The first valid acceptance wins. Do not show assignment as complete until the response succeeds, because another courier may accept concurrently. The response provides assigned order detail; use its UUID and status to open chat and later issue an invoice. If the request returns `ORDER_ALREADY_ASSIGNED`, refresh the list instead of repeatedly submitting that order.
 
 ### POST /api/orders/{order_id}/cancel
 

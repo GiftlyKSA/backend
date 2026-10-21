@@ -30,12 +30,6 @@ _CUSTOMER_ACTIVE = (
     OrderStatus.DELIVERED,
     OrderStatus.DISPUTED,
 )
-# Statuses that count against a courier's concurrent-assignment limit.
-_COURIER_ACTIVE = (
-    OrderStatus.ASSIGNED,
-    OrderStatus.WAITING_PAYMENT,
-    OrderStatus.IN_PROGRESS,
-)
 
 
 @dataclass(frozen=True)
@@ -201,15 +195,6 @@ class OrderRepository:
             select(func.count())
             .select_from(Order)
             .where(Order.customer_id == customer_id, Order.status.in_(_CUSTOMER_ACTIVE))
-        )
-        return int(total or 0)
-
-    async def count_courier_active(self, courier_id: uuid.UUID) -> int:
-        """Count a courier's active assignments (concurrency limit)."""
-        total = await self._session.scalar(
-            select(func.count())
-            .select_from(Order)
-            .where(Order.courier_id == courier_id, Order.status.in_(_COURIER_ACTIVE))
         )
         return int(total or 0)
 

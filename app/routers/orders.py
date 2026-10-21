@@ -306,7 +306,7 @@ async def accept_order(
     order_id: uuid.UUID,
     actor: Annotated[Actor, Depends(_active_courier)],
 ) -> OrderDetail:
-    """Accept a NEW order (Redis lock + FOR UPDATE race)."""
+    """Accept a NEW same-city order; the first valid courier claim wins."""
     service = _service(request, db)
     order = await service.accept_order(order_id=order_id, courier_id=actor.id)
     view = await service.view_existing_order_for_actor(

@@ -43,7 +43,6 @@ from app.services.promo_service import PromoService
 from app.services.rating_service import RatingService
 
 _MAX_CUSTOMER_ACTIVE = 5
-_MAX_COURIER_ACTIVE = 3
 _MAX_REQUEST_MEDIA = 3
 _ACCEPT_LOCK_TTL = 10
 
@@ -148,16 +147,11 @@ class OrderService:
 
         Raises:
             NotFoundError: The order does not exist.
-            ForbiddenError: The courier is not verified/active, or over the assignment
-                limit.
+            ForbiddenError: The courier is not verified or active.
             OrderAlreadyAssignedError: Another courier won the race, or the order is no
                 longer NEW.
         """
         await self.require_active_verified_courier(courier_id)
-        await self._orders.lock_actor(courier_id)
-        if await self._orders.count_courier_active(courier_id) >= _MAX_COURIER_ACTIVE:
-            raise ForbiddenError("You have reached the maximum number of active assignments.")
-
         lock_key = f"lock:order_accept:{order_id}"
         try:
             async with redis_lock(self._redis, lock_key, ttl_seconds=_ACCEPT_LOCK_TTL):

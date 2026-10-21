@@ -42,7 +42,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 | [AUD-24](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:247) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
 | [AUD-23](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:211) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
 | [AUD-25](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:264) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
-| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:281) | Avoid scanning closed order history for active-order quotas | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced |
+| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:281) | Avoid scanning closed order history for the customer active-order quota | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced; courier assignment cap removed 2026-10-21 |
 | [AUD-27](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:228) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
 | [AUD-28](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:299) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
 | [AUD-29](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:315) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
@@ -278,21 +278,21 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-26-current"></a>
 
-#### AUD-26 — Active-order quota counts scan an owner's closed order history
+#### AUD-26 — Customer active-order quota count scans closed order history
 
 | Field | Full detail |
 | --- | --- |
-| Purpose / why important | Keep authoritative order-creation/acceptance quota checks efficient as users accumulate closed history. Never replace the check with stale cached eligibility. |
+| Purpose / why important | Keep the customer's authoritative five-active-order creation check efficient as closed history grows. Courier acceptance no longer has an active-assignment quota. Never replace the customer write check with stale cached eligibility. |
 | Type / severity / urgency | SQL/optimization; **3/10** severity; **3/10** urgency. |
-| Status / created | Proposed measured query/index improvement; 2026-10-16. |
-| Code locations | `app/repositories/order_repository.py:198–215`; `app/services/order_service.py:121,158`; customer/courier active-order limits and existing owner indexes. |
-| Current workflow | Quota checks count owner orders whose statuses are active. Owner access paths include the owner's historical rows, so filtering active status can discard a large closed history even though the permitted active set is small (customer five; courier three). |
+| Status / created | Open measured query/index improvement for the customer order-creation quota; 2026-10-16. The three-active-assignment courier cap and its count query were removed on 2026-10-21 at the user's request. |
+| Code locations | `app/repositories/order_repository.py` (`count_customer_active`); `app/services/order_service.py` (`create_order`, customer limit); existing customer order indexes. Courier acceptance no longer counts assigned orders. |
+| Current workflow | Customer order creation counts non-terminal orders while holding the customer quota lock and rejects creation at five. The count can scan closed history through the customer order access path. Courier acceptance relies on current account/profile eligibility, same-city authorization, the per-order Redis lock, and the database order row lock; it has no active-assignment count query. |
 | Evidence / assumptions | PostgreSQL 16 temporary clone with 100k orders; one customer had 50k history rows, only two active. Original median **4.4455 ms**, filtering 49,998 history rows and about 905 local buffer hits. A partial active-owner index with trusted fixed-status predicates gave **0.0115 ms**, two local hits and a 16,384-byte index in this fixture. These are synthetic local query timings, not end-to-end production measurements. |
 | Critical plan caveat | A forced generic plan with status parameters did **not** use the partial index (**7.458 ms**). A tested owner/status composite index used 729,088 bytes and did not improve that generic plan (**7.4215 ms**). Keeping owner ID parameterized while expressing only the fixed internal status set as trusted SQL literals enabled the partial path under generic planning (**0.0135 ms**). A migration alone is therefore not a demonstrated fix. |
-| Impact if unresolved | Create/claim latency and database buffer work grow with closed history, potentially while coordination locks are held. The checks remain required for concurrency and abuse protection. |
-| Proposed minimal solution | Couple a reviewed query form with narrow customer/courier active-status partial indexes, proving both real prepared/generic paths. Only compile trusted internal enum constants; never interpolate user input. Preserve authoritative transaction/locking/quota semantics. Reject an index-only proposal that the actual prepared query cannot use. |
-| Expected system impact | Work follows active rows rather than all history. Index storage/write maintenance grows with global active rows and status entry/exit; measure both owner paths and write costs before choosing definitions. |
-| Verification / rollback | Test quota boundary races, every included/excluded status, role/ownership, history growth, prepared-plan reuse, write/update overhead and migration locking. Forward migration only after plan evidence; downgrade removes new indexes without altering orders. No client contract change. |
+| Impact if unresolved | Customer order-creation latency and database buffer work can grow with closed customer history while the quota coordination lock is held. |
+| Proposed minimal solution | Optimize only the customer active-order count with a narrow partial index after confirming the actual prepared/generic query plans. Compile only trusted internal enum constants; never interpolate request values. Preserve the authoritative transaction/locking/quota behavior. Do not add a courier index for a quota that no longer exists. |
+| Expected system impact | The customer quota query can follow active rows rather than all history. Index storage/write maintenance grows with active customer orders and status entry/exit; measure that cost before adding a migration. Courier acceptance loses one count query and one quota-lock operation. |
+| Verification / rollback | Test the customer quota boundary, each included/excluded status, ownership, history growth, prepared-plan reuse, and index write/update overhead before any migration. Courier regression coverage confirms acceptance past three assignments while retaining same-city and single-winner checks. No client payload change. |
 
 <a id="aud-28-current"></a>
 

@@ -2250,7 +2250,7 @@
           "orders"
         ],
         "summary": "Accept Order",
-        "description": "Accept a NEW order (Redis lock + FOR UPDATE race).",
+        "description": "Accept a NEW same-city order; the first valid courier claim wins.",
         "operationId": "accept_order_api_orders__order_id__accept_post",
         "parameters": [
           {
