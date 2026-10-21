@@ -8,8 +8,8 @@ from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
-from arabic_reshaper import ArabicReshaper  # type: ignore[import-untyped]
-from bidi import get_display  # type: ignore[import-untyped]
+from arabic_reshaper import ArabicReshaper
+from bidi import get_display
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase.pdfmetrics import registerFont, stringWidth

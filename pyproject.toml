@@ -89,6 +89,10 @@ disallow_untyped_defs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
+module = ["arabic_reshaper", "bidi"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["app.services.*", "app.repositories.*", "app.core.*"]
 strict = true
 
