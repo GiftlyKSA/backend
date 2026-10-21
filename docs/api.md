@@ -33,6 +33,33 @@ Reset pagination when filters change; preserve identical filters thereafter. For
 or out-of-range anchors404. All new reads return Cache-Control: private, no-store.
 Do not sum pages or infer earnings/payment success from wallet balances.
 
+### Courier homepage summary
+
+`GET /api/couriers/me/summary` requires a Bearer access token for the active, verified
+courier. It takes no request body or query parameters and derives the courier ID from
+the token. The response is an unpaginated aggregate independent of `/api/orders`
+pagination. `current_orders_count` includes assigned orders in `ASSIGNED`,
+`WAITING_PAYMENT`, `IN_PROGRESS`, `DELIVERED` or `DISPUTED`; `COMPLETED` is excluded.
+`registered_orders_count` is the all-time count of every order assigned to this courier,
+including terminal history, matching the unfiltered courier order collection. “Registered”
+is a mobile presentation label, not a distinct backend status. `completed_orders_count`
+counts `COMPLETED` only; `DELIVERED` is not complete.
+
+`settled_earnings_total` uses the exact signed, settled courier-wallet `ESCROW_RELEASE`
+ledger basis used by `GET /api/couriers/me/earnings`, including item reimbursement and
+applying the existing treatment of compensating entries. Pending and reversed ledger
+rows are excluded. Wallet balance and invoice totals are not substitutes. Empty accounts
+return integer zero counts and the decimal string `"0.00"`. The API returns `SAR` and
+`as_of` as the UTC timestamp at which the single SQL aggregate statement was evaluated.
+All values are calculated in one database statement without loading histories or using
+pagination; the response uses `Cache-Control: private, no-store`.
+
+Example response:
+
+```json
+{"current_orders_count":4,"registered_orders_count":8,"completed_orders_count":3,"settled_earnings_total":"258.75","currency":"SAR","as_of":"2026-10-21T09:30:00Z"}
+```
+
 Common domain errors use the existing error envelope; schema422 may use detail[].
 Handle401/403/404/422/503 distinctly. On429 honor Retry-After seconds. Render all user
 text as plain text; signed media links must be refreshed after expiry. No response
@@ -44,7 +71,7 @@ Updated 2026-10-04. This is maintained API documentation, not an implementation 
 
 [Project documentation](documentation.md) · [Current review](tasks.md#full-audit-evidence-and-analysis) · [Tasks](tasks.md)
 
-The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 62 supported
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 83 supported
 mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
@@ -1005,7 +1032,7 @@ The prototype's labels and local-device data are not server contracts. The table
 
 ## Source and verification
 
-Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **61 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
+Derived from `app/main.py`, `app/routers/`, `app/schemas/`, service eligibility/state checks, and an **offline** development OpenAPI build with dummy settings. No database, Redis, Docker, real storage, or payment provider was contacted for this document. The OpenAPI HTTP inventory was compared against all router registrations: **83 supported mobile HTTP operations plus two WebSockets** are represented above. `/api/admin/*` and server-rendered `/v1/admin/admin/*` are deliberately excluded. The mobile file supplied with the request was used only to name and map screens, not as authority for backend behavior.
 
 ## Invoice PDF and final item prices (2026-10-08)
 

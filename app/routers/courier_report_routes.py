@@ -11,6 +11,7 @@ from app.repositories.courier_report_repository import CourierReportRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.courier_report_schemas import (
+    CourierHomeSummary,
     EarningsReport,
     Granularity,
     TargetSettings,
@@ -30,6 +31,13 @@ def _service(db: AsyncSession) -> CourierReportService:
         CourierReportRepository(db),
         CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),
     )
+
+
+@router.get("/summary", response_model=CourierHomeSummary)
+async def courier_summary(response: Response, db: DbDep, actor: CourierActor) -> CourierHomeSummary:
+    """Return the authenticated courier's order counts and settled proceeds."""
+    response.headers["Cache-Control"] = "private, no-store"
+    return await _service(db).summary(actor.id)
 
 
 @router.get("/earnings", response_model=EarningsReport)

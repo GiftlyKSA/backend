@@ -109,3 +109,22 @@ class EarningsReport(BaseModel):
     previous: PreviousPeriod
     buckets: list[EarningsBucket]
     target: TargetProgress | None
+
+
+class CourierHomeSummary(BaseModel):
+    """Unpaginated order counters and settled proceeds for the authenticated courier."""
+
+    current_orders_count: int = Field(
+        description=(
+            "Assigned orders in ASSIGNED, WAITING_PAYMENT, IN_PROGRESS, DELIVERED or DISPUTED."
+        )
+    )
+    registered_orders_count: int = Field(
+        description="All orders assigned to this courier, matching the unfiltered orders list."
+    )
+    completed_orders_count: int = Field(description="Assigned orders with COMPLETED status only.")
+    settled_earnings_total: str = Field(
+        description="Lifetime signed settled courier proceeds, including item reimbursement."
+    )
+    currency: Literal["SAR"]
+    as_of: datetime = Field(description="UTC timestamp when the aggregate query was evaluated.")

@@ -9,6 +9,7 @@ from app.core.money import ZERO, money_str
 from app.repositories.courier_report_repository import CourierReportRepository
 from app.schemas.courier_report_schemas import (
     Comparison,
+    CourierHomeSummary,
     EarningsBucket,
     EarningsReport,
     Granularity,
@@ -57,6 +58,22 @@ class CourierReportService:
         """Read current target and complete-period progress."""
         await self._eligibility.require_courier(courier_id)
         return await self._target(courier_id)
+
+    async def summary(self, courier_id: uuid.UUID) -> CourierHomeSummary:
+        """Return eligible courier's all-time homepage aggregates."""
+        await self._eligibility.require_courier(courier_id)
+        aggregate = await self._reports.summary(courier_id)
+        as_of = aggregate.as_of
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=UTC)
+        return CourierHomeSummary(
+            current_orders_count=aggregate.current_orders_count,
+            registered_orders_count=aggregate.registered_orders_count,
+            completed_orders_count=aggregate.completed_orders_count,
+            settled_earnings_total=money_str(aggregate.settled_earnings_total),
+            currency=aggregate.currency,
+            as_of=as_of.astimezone(UTC),
+        )
 
     async def update_settings(self, courier_id: uuid.UUID, body: TargetUpdate) -> TargetSettings:
         """Apply an owner-scoped optimistic target replacement."""

@@ -528,6 +528,52 @@
         "title": "ConversationResponse",
         "type": "object"
       },
+      "CourierHomeSummary": {
+        "description": "Unpaginated order counters and settled proceeds for the authenticated courier.",
+        "properties": {
+          "as_of": {
+            "description": "UTC timestamp when the aggregate query was evaluated.",
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "completed_orders_count": {
+            "description": "Assigned orders with COMPLETED status only.",
+            "title": "Completed Orders Count",
+            "type": "integer"
+          },
+          "currency": {
+            "const": "SAR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "current_orders_count": {
+            "description": "Assigned orders in ASSIGNED, WAITING_PAYMENT, IN_PROGRESS, DELIVERED or DISPUTED.",
+            "title": "Current Orders Count",
+            "type": "integer"
+          },
+          "registered_orders_count": {
+            "description": "All orders assigned to this courier, matching the unfiltered orders list.",
+            "title": "Registered Orders Count",
+            "type": "integer"
+          },
+          "settled_earnings_total": {
+            "description": "Lifetime signed settled courier proceeds, including item reimbursement.",
+            "title": "Settled Earnings Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_orders_count",
+          "registered_orders_count",
+          "completed_orders_count",
+          "settled_earnings_total",
+          "currency",
+          "as_of"
+        ],
+        "title": "CourierHomeSummary",
+        "type": "object"
+      },
       "CourierProfileResponse": {
         "description": "Safe courier details visible only through an authorized profile response.",
         "properties": {
@@ -3165,6 +3211,30 @@
         "title": "SendOtpResponse",
         "type": "object"
       },
+      "SimulatePaymentRequest": {
+        "additionalProperties": false,
+        "description": "Development-only: simulate a simulated payment callback for a payment-link ID.",
+        "properties": {
+          "payment_link_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Payment Link Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "PAID",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payment_link_id"
+        ],
+        "title": "SimulatePaymentRequest",
+        "type": "object"
+      },
       "StatementTotals": {
         "description": "Status-separated credits/debits and settled net; all decimal strings.",
         "properties": {
@@ -5310,6 +5380,96 @@
         "summary": "Update Report Settings",
         "tags": [
           "courier reports"
+        ]
+      }
+    },
+    "/api/couriers/me/summary": {
+      "get": {
+        "description": "Return the authenticated courier's order counts and settled proceeds.",
+        "operationId": "courier_summary_api_couriers_me_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourierHomeSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Courier Summary",
+        "tags": [
+          "courier reports"
+        ]
+      }
+    },
+    "/api/dev/ping": {
+      "get": {
+        "description": "Confirm dev routes are registered (development only).",
+        "operationId": "dev_ping_api_dev_ping_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Dev Ping Api Dev Ping Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Development liveness marker",
+        "tags": [
+          "dev"
+        ]
+      }
+    },
+    "/api/dev/simulation/simulate": {
+      "post": {
+        "description": "Fire a correctly-signed webhook at the REAL handler (development only).\n\nLooks up the intent's amount, builds a local simulation payload,\nsigns it with the fake gateway's test secret, and calls the simulation webhook\nhandler \u2014 it never bypasses webhook processing.",
+        "operationId": "simulate_payment_api_dev_simulation_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Payment",
+        "tags": [
+          "dev"
         ]
       }
     },

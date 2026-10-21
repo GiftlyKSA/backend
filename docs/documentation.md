@@ -1340,3 +1340,12 @@ writes share deferred commit-time invalidation with the calendar cache. Keep the
 constraints deferred in application transactions; only short final invalidation
 is serialized, with no external calls inside it. Deployment commit throughput is
 unmeasured. All cached HTTP responses remain private/no-store.
+
+### Courier homepage summary (2026-10-21)
+
+`GET /api/couriers/me/summary` reuses the existing courier eligibility checks and settled
+courier proceeds ledger definition. It returns all-time assigned-order counters and the
+lifetime signed settled proceeds in one SQL snapshot, independent of list pagination.
+See [api.md](api.md#courier-homepage-summary) and the mobile OpenAPI contract. No migration,
+new environment variable or cache is required. Runtime deployment is not verified by this
+source change.
