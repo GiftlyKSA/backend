@@ -1075,24 +1075,17 @@ On429 honor Retry-After seconds.
 ### Dhamen browser return
 
 `GET https://backend.giftly.sa/payment/return` is a public HTML fallback registered as
-Dhamen's customer return URL. It selects Arabic or English copy from `Accept-Language`,
-attempts the fixed `giftly://payment/return` app link, and shows an `Open Giftly` button
-with the same fixed target. Request query parameters are ignored. The page never reports
-payment success and performs no financial or database writes. The app must call the
-authenticated refresh endpoint below to obtain authoritative state.
+Dhamen's customer return URL. During Expo Go testing it selects Arabic or English
+instructions from `Accept-Language` and asks the customer to switch back to Expo Go
+manually, then check the payment status in Giftly. It does not attempt a custom-scheme
+redirect or provide an app-opening link. Request query parameters are ignored. The page
+never reports payment success and performs no financial or database writes. The app must
+call the authenticated refresh endpoint below to obtain authoritative state.
 
-`GET /.well-known/apple-app-site-association` serves an iOS association restricted to
-`/payment/return` when `APPLE_APP_IDENTIFIER` contains the verified App ID. Android's
-`GET /.well-known/assetlinks.json` requires `ANDROID_APPLICATION_ID` and
-`ANDROID_SHA256_CERT_FINGERPRINTS` (comma-separated SHA-256 certificate fingerprints).
-These files return 503 until valid signing information is configured; placeholder
-associations are never served. Android `assetlinks.json` binds an app to the domain, while
-the mobile Android intent filter must restrict matching to `/payment/return`.
-
-The mobile project currently declares bundle/package ID `com.giftly.mobile`; the Apple
-App ID prefix and Android signing fingerprints still require confirmation from the
-signed mobile builds. Universal/App Links remain unavailable until those values are
-verified and deployed.
+Apple Universal Links and Android App Links association files are deferred while testing
+uses Expo Go. The `/.well-known/apple-app-site-association` and
+`/.well-known/assetlinks.json` routes are not currently served. Configure them only after
+the signed mobile builds and identifiers are confirmed.
 
 `POST /api/payment-sessions/{intent_id}/refresh` is an authenticated customer/courier
 operation with no request body. `intent_id` is a UUID path parameter. The server checks

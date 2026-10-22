@@ -72,11 +72,6 @@ class Settings(BaseSettings):
     DHAMEN_RETURN_URL: str | None = None
     DHAMEN_WEBHOOK_URL: str | None = None
 
-    # Public app-link associations; values come from signed mobile build settings.
-    APPLE_APP_IDENTIFIER: str | None = None
-    ANDROID_APPLICATION_ID: str | None = None
-    ANDROID_SHA256_CERT_FINGERPRINTS: str | None = None
-
     # Auth / JWT
     JWT_SECRET: SecretStr | None = None
     JWT_PRIVATE_KEY: SecretStr | None = None
