@@ -8781,6 +8781,28 @@
           "webhooks"
         ]
       }
+    },
+    "/payment/return": {
+      "get": {
+        "description": "Public browser fallback only. It opens the fixed Giftly app link and never interprets query parameters or changes payment state. Check payment status through the authenticated payment-session refresh endpoint.",
+        "operationId": "payment_return_payment_return_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Return from hosted checkout to Giftly",
+        "tags": [
+          "payment return"
+        ]
+      }
     }
   }
 }

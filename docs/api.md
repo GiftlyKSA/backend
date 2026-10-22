@@ -73,8 +73,9 @@ Updated 2026-10-04. This is maintained API documentation, not an implementation 
 
 [Project documentation](documentation.md) · [Current review](tasks.md#full-audit-evidence-and-analysis) · [Tasks](tasks.md)
 
-The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 82 supported
-mobile HTTP operations. [Full OpenAPI](openapi.json) also includes administrative API operations.
+The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 83 supported
+non-admin HTTP operations, including the public hosted-payment browser return page.
+[Full OpenAPI](openapi.json) also includes administrative API operations.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
 No endpoint should be inferred for an unsupported screen: it will be added later.
@@ -1070,6 +1071,47 @@ These single-object operations need no pagination and return Cache-Control: priv
 no-store. GET never establishes external payment success. Refresh an unknown outcome
 with bounded backoff; do not create another checkout or trust the return-page redirect.
 On429 honor Retry-After seconds.
+
+### Dhamen browser return
+
+`GET https://backend.giftly.sa/payment/return` is a public HTML fallback registered as
+Dhamen's customer return URL. It selects Arabic or English copy from `Accept-Language`,
+attempts the fixed `giftly://payment/return` app link, and shows an `Open Giftly` button
+with the same fixed target. Request query parameters are ignored. The page never reports
+payment success and performs no financial or database writes. The app must call the
+authenticated refresh endpoint below to obtain authoritative state.
+
+`GET /.well-known/apple-app-site-association` serves an iOS association restricted to
+`/payment/return` when `APPLE_APP_IDENTIFIER` contains the verified App ID. Android's
+`GET /.well-known/assetlinks.json` requires `ANDROID_APPLICATION_ID` and
+`ANDROID_SHA256_CERT_FINGERPRINTS` (comma-separated SHA-256 certificate fingerprints).
+These files return 503 until valid signing information is configured; placeholder
+associations are never served. Android `assetlinks.json` binds an app to the domain, while
+the mobile Android intent filter must restrict matching to `/payment/return`.
+
+The mobile project currently declares bundle/package ID `com.giftly.mobile`; the Apple
+App ID prefix and Android signing fingerprints still require confirmation from the
+signed mobile builds. Universal/App Links remain unavailable until those values are
+verified and deployed.
+
+`POST /api/payment-sessions/{intent_id}/refresh` is an authenticated customer/courier
+operation with no request body. `intent_id` is a UUID path parameter. The server checks
+current account eligibility and intent ownership, queries the configured provider for
+authoritative status, validates the checkout reference and amount, then applies settlement
+atomically with existing replay protection. In development/testing or when no hosted
+provider is selected, it returns the existing local session state without creating a
+payment. The response is `PaymentSessionResponse`: `payment_intent_id`, `provider`,
+`status`, `checkout_state`, `order_id`, `invoice_id`, `currency`,
+`amount_from_wallet`, `amount_from_gateway`, `expires_at`, `payment_url`, `invoice`,
+`purpose`, `title`, `description`, and `use_wallet`. Amounts are decimal strings;
+`payment_url` is null for inactive/terminal sessions. Existing 404 ownership concealment,
+403 account/role denials, 409 unknown or review-required provider outcomes, 422 invalid
+UUIDs, and 503 provider unavailability remain unchanged. A redirect or browser query never
+establishes payment success.
+
+The receiver remains `POST /api/webhooks/dhamen`. Dhamen callback authentication and
+atomic event processing are unchanged. Register
+`https://backend.giftly.sa/api/webhooks/dhamen` with the Dhamen testing account.
 
 PaymentSessionResponse fields:
 payment_intent_id:string UUID; provider:string; status:PENDING/PAID/FAILED/EXPIRED/CANCELLED;

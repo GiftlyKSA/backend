@@ -4034,6 +4034,28 @@
           "courier reports"
         ]
       }
+    },
+    "/payment/return": {
+      "get": {
+        "tags": [
+          "payment return"
+        ],
+        "summary": "Return from hosted checkout to Giftly",
+        "description": "Public browser fallback only. It opens the fixed Giftly app link and never interprets query parameters or changes payment state. Check payment status through the authenticated payment-session refresh endpoint.",
+        "operationId": "payment_return_payment_return_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4770,7 +4792,7 @@
             "type": "array",
             "maxItems": 3,
             "title": "Request Media Keys",
-            "description": "Confirmed request-photo keys (0–3)."
+            "description": "Confirmed request-photo keys (0\u20133)."
           }
         },
         "additionalProperties": false,
