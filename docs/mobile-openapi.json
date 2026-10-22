@@ -4041,7 +4041,7 @@
           "payment return"
         ],
         "summary": "Return from hosted checkout to Giftly",
-        "description": "Public browser fallback only. It opens the fixed Giftly app link and never interprets query parameters or changes payment state. Check payment status through the authenticated payment-session refresh endpoint.",
+        "description": "Public HTML fallback for Expo Go testing. It instructs the customer to return to Expo Go manually and never interprets query parameters or changes payment state. Check payment status through the authenticated refresh endpoint.",
         "operationId": "payment_return_payment_return_get",
         "responses": {
           "200": {
