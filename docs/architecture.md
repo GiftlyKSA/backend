@@ -40,7 +40,7 @@ is a server-rendered dashboard within the same backend.
 
 | Component | Purpose |
 | --- | --- |
-| Python / FastAPI | Validates requests and runs application services. Docker uses Python 3.13. |
+| Python / FastAPI | Validates requests and runs application services. Docker uses Python 3.15.1. |
 | Domain services | Enforce roles, ownership, order transitions and financial rules. |
 | PostgreSQL / SQLAlchemy | Store users, orders, invoices, wallets, messages and activity. |
 | Redis | Shares OTP verification state, rate limits, revocation, coordination and live events; also backs the job queue. |

@@ -317,7 +317,7 @@ class OrderRepository:
         return await self._page(query, limit, before_id)
 
     async def _page(
-        self, query: Select[tuple[Order]], limit: int, before_id: uuid.UUID | None
+        self, query: Select[Order], limit: int, before_id: uuid.UUID | None
     ) -> list[Order]:
         if before_id is not None:
             anchor = (

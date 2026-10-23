@@ -173,7 +173,7 @@ async def _spawn_process(*args: str) -> asyncio.subprocess.Process:
                 await asyncio.shield(launch)
         try:
             process = launch.result()
-        except (OSError, NotImplementedError):
+        except OSError, NotImplementedError:
             raise asyncio.CancelledError from None
         await _complete_task(
             asyncio.create_task(_cleanup_process(process, [], asyncio.create_task(process.wait())))
@@ -184,7 +184,7 @@ async def _spawn_process(*args: str) -> asyncio.subprocess.Process:
 async def _run(*args: str) -> bytes:
     try:
         process = await _spawn_process(*args)
-    except (OSError, NotImplementedError) as exc:
+    except OSError, NotImplementedError as exc:
         raise MediaValidationUnavailableError() from exc
     tasks = [
         asyncio.create_task(_read_output(process.stdout)),
@@ -242,7 +242,7 @@ def probe_duration(output: bytes, kind: str, mime: str, maximum: int) -> float |
         if duration is not None and (not math.isfinite(duration) or not 0 < duration <= maximum):
             raise ValueError("Invalid duration")
         return duration
-    except (KeyError, TypeError, ValueError, OverflowError, AttributeError) as exc:
+    except KeyError, TypeError, ValueError, OverflowError, AttributeError as exc:
         raise BadRequestError("Invalid media format, streams, dimensions or duration.") from exc
 
 

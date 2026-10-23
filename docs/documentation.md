@@ -49,7 +49,7 @@ in `app/integrations/`; jobs in `app/workers/`; migrations in `app/migrations/`.
 
 | Component | Implementation | Responsibility |
 | --- | --- | --- |
-| Runtime | Python 3.13 in Docker; project supports 3.11+ | Async application and worker processes. |
+| Runtime | Python 3.15.1 in Docker; project requires 3.15+ | Async application and worker processes. |
 | HTTP / validation | FastAPI, Pydantic v2 | Typed inputs, explicit schemas and error handling. |
 | Server | Uvicorn / Gunicorn | API workers; default image uses three workers, 80-second timeout. |
 | Database | PostgreSQL 16, SQLAlchemy 2 async, asyncpg | Durable business state, constraints, row locks and audit changes. |

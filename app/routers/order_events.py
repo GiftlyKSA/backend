@@ -26,7 +26,7 @@ async def _check_order_handshake(
     try:
         claims = decode_access_token(settings, token)
         account_id = UUID(claims.sub)
-    except (JwtError, ValueError):
+    except JwtError, ValueError:
         return None, 4401
     decision = await check_websocket_handshake(websocket.app.state.redis, account_id, settings)
     if decision.unavailable:
@@ -75,9 +75,9 @@ async def order_ws(websocket: WebSocket, order_id: UUID) -> None:
             await websocket.close(code=4429)
             return
         await _serve(websocket, order_id, token, service, lease)
-    except (UnauthorizedError, JwtError):
+    except UnauthorizedError, JwtError:
         await websocket.close(code=4401)
-    except (ForbiddenError, NotFoundError):
+    except ForbiddenError, NotFoundError:
         await websocket.close(code=4403)
     except WebSocketDisconnect:
         pass

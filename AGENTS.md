@@ -12,7 +12,7 @@
 ## Stack and architecture
 
 - This repository is the Python backend, server-rendered admin dashboard, workers, and API documentation for Giftly.
-- Production Docker images use Python 3.13. `pyproject.toml` currently permits Python 3.11+, and Ruff/mypy target 3.11; preserve compatibility until an upgrade is authorized.
+- Production Docker images pin Python 3.15.1. `pyproject.toml` requires Python 3.15+, and Ruff/mypy target 3.15.
 - HTTP and WebSocket APIs use FastAPI, Pydantic v2, and Uvicorn/Gunicorn. The admin dashboard uses Jinja2.
 - Persistence uses PostgreSQL 16, SQLAlchemy 2 async, asyncpg, and Alembic migrations.
 - Redis 7 supports shared state and Taskiq background processing. Docker and Docker Compose provide the development and deployment container workflow.

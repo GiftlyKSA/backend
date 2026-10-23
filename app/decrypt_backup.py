@@ -60,7 +60,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         decrypt_backup(args.source, args.target, getpass.getpass("Backup password: "))
-    except (OSError, ValueError, InvalidTag):
+    except OSError, ValueError, InvalidTag:
         parser.exit(1, "Decryption failed: check the password, file, and output path.\n")
 
 

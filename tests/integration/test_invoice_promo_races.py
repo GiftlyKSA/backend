@@ -82,7 +82,7 @@ async def test_invoice_promo_competes_atomically(competitor: str) -> None:
                         identifier = result.id
                     await session.commit()
                     return "success", identifier
-                except (ConflictError, InvalidStateTransitionError):
+                except ConflictError, InvalidStateTransitionError:
                     await session.rollback()
                     return "conflict", None
 

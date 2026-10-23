@@ -3,10 +3,7 @@ name = "giftly-backend"
 version = "0.1.0"
 description = "Giftly — peer-to-peer custom gifting marketplace backend."
 readme = "README.md"
-# SPEC SECTION 2 mandates Python 3.13+. This build environment cannot download a
-# 3.13 interpreter (egress policy blocks python-build-standalone), so the floor is
-# relaxed to 3.11 here. Production images pin 3.13.
-requires-python = ">=3.11"
+requires-python = ">=3.15"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -25,8 +22,8 @@ dependencies = [
     "taskiq-redis>=1.0",
     "aioboto3>=13",
     "python-multipart>=0.0.20",
-    "reportlab>=4.4,<5",
-    "pillow-heif==1.8.0",
+    "reportlab>=4.4",
+    "pillow-heif>=1.8.0",
     "arabic-reshaper>=3,<4",
     "python-bidi>=0.6,<1",
 ]
@@ -45,18 +42,19 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "testcontainers>=4.8",
-    "pre-commit>=4.3,<5",
-    "pre-commit-hooks>=6,<7",
+    "pre-commit>=4.3",
+    "pre-commit-hooks>=6",
     "types-reportlab>=5.0.0.20260911",
 ]
 
 [tool.uv]
 package = false
+required-version = ">=0.12.16"
 constraint-dependencies = ["aiohttp>=3.14.3", "urllib3>=2.8", "virtualenv>=21.7.13"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py315"
 src = ["app"]
 
 [tool.ruff.lint]
@@ -70,6 +68,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "S", "B"]
 "app/migrations/*" = ["D", "E501"]
+"app/repositories/read_snapshot.py" = ["UP047"]
+"app/services/chat_media_validation.py" = ["UP047"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -82,7 +82,7 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 max-complexity = 10
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.15"
 strict = true
 plugins = ["pydantic.mypy"]
 disallow_untyped_defs = true

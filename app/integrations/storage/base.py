@@ -53,7 +53,7 @@ class StorageClient(ABC):
 
     async def iter_bounded_object(
         self, storage_key: str, *, max_bytes: int
-    ) -> AsyncGenerator[bytes, None]:
+    ) -> AsyncGenerator[bytes]:
         """Adapt legacy bounded readers; streaming providers override this method."""
         body = await self.read_bounded_object(storage_key, max_bytes=max_bytes)
         if len(body) > max_bytes:

@@ -144,7 +144,7 @@ async def test_concurrent_admin_identity_edits_do_not_invert_session_user_locks(
                 )
                 await session.commit()
                 return "saved"
-            except (ConflictError, ForbiddenError):
+            except ConflictError, ForbiddenError:
                 await session.rollback()
                 return "rejected"
 

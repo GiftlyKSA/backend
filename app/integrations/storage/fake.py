@@ -59,7 +59,7 @@ class FakeStorageClient(StorageClient):
 
     async def iter_bounded_object(
         self, storage_key: str, *, max_bytes: int
-    ) -> AsyncGenerator[bytes, None]:
+    ) -> AsyncGenerator[bytes]:
         """Yield bounded chunks from actual test bytes without duplicating the object."""
         body = await self.read_bounded_object(storage_key, max_bytes=max_bytes)
         for offset in range(0, len(body), STORAGE_READ_CHUNK_BYTES):

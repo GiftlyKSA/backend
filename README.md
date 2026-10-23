@@ -3,7 +3,7 @@
 Python/FastAPI backend, server-rendered administration and background workers for
 Giftly's customer/courier gifting marketplace. PostgreSQL stores business state;
 Redis supports shared security state, live events and the Taskiq queue. Docker uses
-Python 3.13; the project supports Python 3.11+ and uses `uv` exclusively.
+Python 3.15.1; the project requires Python 3.15+ and uses `uv` exclusively.
 
 Production payments are disabled until the selected Dhamen integration and callback
 verification are implemented and tested. Development/test provider fakes are not

@@ -85,7 +85,7 @@ async def _check_chat_handshake(websocket: WebSocket) -> None:
     try:
         claims = decode_access_token(websocket.app.state.settings, token)
         account_id = uuid.UUID(claims.sub)
-    except (JwtError, ValueError) as exc:
+    except JwtError, ValueError as exc:
         raise _WebSocketHandshakeRejectedError(4401) from exc
     if claims.role not in (UserRole.CUSTOMER.value, UserRole.COURIER.value):
         raise _WebSocketHandshakeRejectedError(4401)
@@ -234,7 +234,7 @@ async def send_chat_media(
             actor_id=actor.id,
             keys=body.storage_keys,
         )
-    except (BadRequestError, ConflictError):
+    except BadRequestError, ConflictError:
         if body.client_message_id is None:
             raise
         await mark_request_transaction(db)
@@ -422,12 +422,12 @@ async def conversation_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> N
                     conversation = await _session_service(
                         session, websocket.app.state.redis, settings
                     ).get_conversation_for_actor(conversation_id=conversation_id, actor_id=actor.id)
-                except (ForbiddenError, NotFoundError):
+                except ForbiddenError, NotFoundError:
                     conversation = None
     except _WebSocketHandshakeRejectedError as exc:
         await websocket.close(code=exc.code)
         return
-    except (TimeoutError, RedisConnectionError):
+    except TimeoutError, RedisConnectionError:
         await websocket.close(code=1013)
         return
     if conversation is None:
@@ -489,7 +489,7 @@ async def _run_admitted_ws(
             task.result()
     except WebSocketDisconnect:
         pass
-    except (UnauthorizedError, ForbiddenError, NotFoundError):
+    except UnauthorizedError, ForbiddenError, NotFoundError:
         await websocket.close(code=4401)
     except RedisConnectionError:
         await websocket.close(code=1013)

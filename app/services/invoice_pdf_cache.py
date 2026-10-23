@@ -89,7 +89,7 @@ class InvoicePdfCache:
             document = base64.b64decode(encoded, validate=True)
             if len(document) <= _MAX_BYTES and document.startswith(b"%PDF-"):
                 return document
-        except (binascii.Error, ValueError):
+        except binascii.Error, ValueError:
             return None
         except Exception:  # noqa: BLE001 - an optional cache cannot break an owned read
             _logger.warning("Invoice PDF cache read unavailable.")

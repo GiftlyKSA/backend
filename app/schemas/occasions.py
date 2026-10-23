@@ -49,7 +49,7 @@ class UpdateOccasionRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def non_empty(self) -> "UpdateOccasionRequest":
+    def non_empty(self) -> UpdateOccasionRequest:
         """Require at least one actual change request."""
         if not self.model_fields_set:
             raise ValueError("Supply at least one field to update.")

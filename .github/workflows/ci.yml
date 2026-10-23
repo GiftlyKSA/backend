@@ -19,8 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          python-version: \"3.15.1\"
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --all-extras --dev
@@ -70,8 +71,9 @@ jobs:
       # NO SNDR_*. NO AWS_*. Deliberately absent.
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          python-version: \"3.15.1\"
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --all-extras --dev
@@ -86,8 +88,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          python-version: \"3.15.1\"
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --dev
@@ -112,8 +115,9 @@ jobs:
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          python-version: \"3.15.1\"
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --dev
@@ -173,7 +177,7 @@ jobs:
           # Scan only the layers OUR Dockerfile adds. The base python image
           # legitimately embeds GPG/key strings to verify the CPython source tarball,
           # so we diff its history out and check what remains. Pull the base first so
-          # `docker history python:3.13-slim` works even under buildkit (which does not
+          # `docker history python:3.15.1-slim` works even under buildkit (which does not
           # populate the classic image store for the FROM image).
           base_image=$(sed -n 's/^FROM \(.*\) AS builder$/\1/p' ${{ matrix.dockerfile }})
           docker pull "$base_image" >/dev/null

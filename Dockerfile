@@ -2,7 +2,7 @@
 # Multi-stage, non-root, read-only-friendly, no secrets baked in.
 
 # ---- Stage 1: builder -------------------------------------------------------
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
+FROM python:3.15.1-slim@sha256:5b5ca730846f66dc816dbac397fcc0ec002230ec3aee6e09d2c44f8eafeddda2 AS builder
 
 # uv comes from its published image; pip is banned everywhere.
 COPY --from=ghcr.io/astral-sh/uv:0.12.16@sha256:adc68cd785ca65ea25c0611043b0a00b4ea3a22e1b54102fc084406d888082ee /uv /uvx /bin/
@@ -23,7 +23,7 @@ COPY alembic.ini ./alembic.ini
 RUN uv sync --frozen --no-dev
 
 # ---- Stage 2: runtime -------------------------------------------------------
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS runtime
+FROM python:3.15.1-slim@sha256:5b5ca730846f66dc816dbac397fcc0ec002230ec3aee6e09d2c44f8eafeddda2 AS runtime
 
 # Non-root runtime with the recording decoder and no build tools.
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg postgresql-client \
