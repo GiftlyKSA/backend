@@ -88,6 +88,10 @@ all three apps. Before starting the separate scheduler, stop any old combined sc
 or duplicate cron triggers. The API image never switches to a worker based on an environment setting.
 PROCESS_ROLE is obsolete and can be removed from existing app settings.
 Only the separate worker/scheduler images start background services.
+
+After relevant database commits, the API sends best-effort Taskiq wake-ups for
+order pushes, invoice receipts and chat delivery. Workers drain the durable
+outboxes; scheduled sweeps recover work if Redis queueing is unavailable.
 See docs/documentation.md for connection budgets, configuration and rollback.
 
 Run workers and one scheduler per deployment after migrations:

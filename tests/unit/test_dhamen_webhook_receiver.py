@@ -19,6 +19,7 @@ async def test_webhook_acknowledges_only_committed_settlement(
     app.state.redis = AsyncMock()
     app.state.clients = Mock()
     session = AsyncMock()
+    session.info = {}
     manager = AsyncMock()
     manager.__aenter__.return_value = session
     app.state.session_factory = Mock(return_value=manager)
@@ -39,6 +40,8 @@ async def test_webhook_acknowledges_only_committed_settlement(
     service.handle_dhamen_notifications.side_effect = handle
     session.commit.side_effect = commit
     monkeypatch.setattr(webhooks, "build_payment_service", Mock(return_value=service))
+    dispatch = AsyncMock(return_value=set())
+    monkeypatch.setattr(webhooks, "dispatch_worker_wakeups", dispatch)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
         base_url="https://giftly.test",
@@ -53,3 +56,7 @@ async def test_webhook_acknowledges_only_committed_settlement(
         assert response.json() == {"responseId": "test-response", "status": "SUCCESS"}
         assert events == ["settle", "commit"]
         session.rollback.assert_not_called()
+        dispatch.assert_awaited_once_with(session)
+        assert session.info["worker_wakeups"]
+    if failure:
+        dispatch.assert_not_awaited()

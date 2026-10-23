@@ -8,6 +8,11 @@ from fastapi import APIRouter, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_redis, get_settings
+from app.core.worker_dispatch import (
+    WorkerTask,
+    dispatch_worker_wakeups,
+    request_worker_wakeup,
+)
 from app.schemas.payments import DhamenWebhookAck, WebhookAck
 from app.services.payment_service import build_payment_service
 
@@ -30,6 +35,8 @@ async def dhamen_webhook(request: Request) -> DhamenWebhookAck:
             )
             result = await service.handle_dhamen_notifications(raw_body=raw_body)
             await session.commit()
+            request_worker_wakeup(session, WorkerTask.INVOICE_RECEIPTS)
+            await dispatch_worker_wakeups(session)
             return result
         except Exception:
             await session.rollback()
@@ -56,6 +63,9 @@ async def simulation_webhook(
             )
             result = await service.handle_webhook(raw_body=raw_body, signature=x_webhook_signature)
             await session.commit()
+            if result.outcome == "processed":
+                request_worker_wakeup(session, WorkerTask.INVOICE_RECEIPTS)
+            await dispatch_worker_wakeups(session)
         except Exception:
             await session.rollback()
             raise

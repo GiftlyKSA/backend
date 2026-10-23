@@ -6,40 +6,23 @@ import asyncio
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from app.core.worker_dispatch import WorkerTask
 from app.models import Message
 from app.models.enums import MessageType
 from app.repositories.chat_repository import ChatRepository
-from app.routers.chat import _deliver_chat_message
-from app.services.chat_service import ChatMessage
+from app.routers.chat import _request_chat_delivery
 
 
-async def test_live_delivery_does_not_wait_for_push_provider() -> None:
-    pending = asyncio.Event()
-
-    async def wait_for_provider(*_args: object) -> None:
-        await pending.wait()
-
-    push = AsyncMock(side_effect=wait_for_provider)
-    chat = AsyncMock()
-    message = ChatMessage(
-        str(uuid.uuid4()),
-        str(uuid.uuid4()),
-        str(uuid.uuid4()),
-        "TEXT",
-        "hi",
-        False,
-        datetime.now(UTC).isoformat(),
-    )
-    with patch("app.routers.chat._notify_chat_recipient", new=push, create=True):
-        delivered = await asyncio.wait_for(
-            _deliver_chat_message(chat, message),
-            timeout=0.1,
-        )
-    assert delivered is True
-    push.assert_not_awaited()
+def test_chat_delivery_uses_worker_wakeups_not_request_side_provider_calls() -> None:
+    session = SimpleNamespace(info={})
+    _request_chat_delivery(session)
+    assert session.info["worker_wakeups"] == {
+        WorkerTask.CHAT_LIVE_MESSAGES.value,
+        WorkerTask.CHAT_NOTIFICATIONS.value,
+    }
 
 
 @pytest.mark.parametrize("message_type", [MessageType.TEXT, MessageType.VOICE])

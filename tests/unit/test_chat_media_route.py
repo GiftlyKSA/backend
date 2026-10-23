@@ -30,9 +30,10 @@ async def test_committed_text_returns_success_despite_delivery_failure():
         "2026-10-04T00:00:00+00:00",
     )
     chat.send_message.return_value = dto
-    chat.publish_message.side_effect = RuntimeError("Redis unavailable")
+    db.info = {}
     with (
         patch("app.routers.chat._service", return_value=chat),
+        patch("app.routers.chat._request_chat_delivery") as request_delivery,
     ):
         response = await send_message(
             SimpleNamespace(
@@ -48,6 +49,7 @@ async def test_committed_text_returns_success_despite_delivery_failure():
     assert response.id == dto.id
     assert response.content == "Hello"
     db.commit.assert_awaited_once()
+    request_delivery.assert_called_once_with(db)
 
 
 @pytest.mark.asyncio
@@ -65,7 +67,7 @@ async def test_websocket_acknowledges_saved_message_when_delivery_fails():
         "2026-10-04T00:00:00+00:00",
     )
     chat.send_message.return_value = dto
-    chat.publish_message.side_effect = RuntimeError("Redis unavailable")
+    db.info = {}
     db.__aenter__.return_value = db
     websocket = SimpleNamespace(
         app=SimpleNamespace(
@@ -81,6 +83,7 @@ async def test_websocket_acknowledges_saved_message_when_delivery_fails():
         patch("app.routers.chat.mark_request_transaction", new=AsyncMock()),
         patch("app.routers.chat.set_audit_actor", new=AsyncMock()),
         patch("app.routers.chat._require_live_authorization", new=AsyncMock()),
+        patch("app.routers.chat.dispatch_worker_wakeups", new=AsyncMock(return_value=set())),
         patch("app.routers.chat.RateLimiter") as limiter,
     ):
         limiter.return_value.check_guarded = AsyncMock(
@@ -107,12 +110,13 @@ async def test_committed_media_returns_success_when_live_delivery_fails():
         "2026-10-03T00:00:00+00:00",
     )
     media.send.return_value = dto
-    chat.publish_message.side_effect = RuntimeError("Redis unavailable")
+    db.info = {}
     with (
         patch("app.routers.chat._media_service", return_value=media),
         patch("app.routers.chat._service", return_value=chat),
         patch("app.routers.chat.require_auth", new=AsyncMock(return_value=actor)),
         patch("app.routers.chat.mark_request_transaction", new=AsyncMock()),
+        patch("app.routers.chat._request_chat_delivery") as request_delivery,
     ):
         response = await send_chat_media(
             SimpleNamespace(), db, conversation, SendChatMediaRequest(storage_keys=["key"]), actor
@@ -120,6 +124,7 @@ async def test_committed_media_returns_success_when_live_delivery_fails():
     assert response.id == dto.id
     db.commit.assert_awaited_once()
     db.rollback.assert_not_awaited()
+    request_delivery.assert_called_once_with(db)
 
 
 @pytest.mark.asyncio

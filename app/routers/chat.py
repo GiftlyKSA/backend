@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -36,6 +35,11 @@ from app.core.exceptions import (
 )
 from app.core.jwt import JwtError, decode_access_token
 from app.core.ratelimit import RateLimiter
+from app.core.worker_dispatch import (
+    WorkerTask,
+    dispatch_worker_wakeups,
+    request_worker_wakeup,
+)
 from app.core.ws_connections import WebSocketLease, check_websocket_handshake
 from app.models.enums import UserRole
 from app.repositories.chat_repository import ChatRepository
@@ -64,7 +68,6 @@ from app.services.courier_eligibility_service import CourierEligibilityService
 
 router = APIRouter(prefix="/api", tags=["chat"])
 _WS_SEND_TIMEOUT_SECONDS = 5
-_logger = logging.getLogger(__name__)
 
 
 class _WebSocketHandshakeRejectedError(Exception):
@@ -223,7 +226,7 @@ async def send_chat_media(
         )
         if replay is not None:
             await db.commit()
-            await _deliver_chat_message(_service(request, db), replay)
+            _request_chat_delivery(db)
             return _message(replay)
     try:
         attachments = await service.prepare(
@@ -247,7 +250,7 @@ async def send_chat_media(
         if replay is None:
             raise
         await db.commit()
-        await _deliver_chat_message(_service(request, db), replay)
+        _request_chat_delivery(db)
         return _message(replay)
     await mark_request_transaction(db)
     current_actor = await require_auth(request, db)
@@ -261,23 +264,14 @@ async def send_chat_media(
         client_message_id=body.client_message_id,
     )
     await db.commit()
-    await _deliver_chat_message(_service(request, db), dto)
+    _request_chat_delivery(db)
     return _message(dto)
 
 
-async def _deliver_chat_message(
-    service: ChatService,
-    dto: ChatMessage,
-) -> bool:
-    """Keep optional delivery failures from changing the result of a committed send."""
-    delivered = False
-    try:
-        async with asyncio.timeout(5):
-            published = await service.publish_message(dto)
-        delivered = published is not False
-    except Exception:
-        _logger.exception("The chat message was saved, but live delivery failed.")
-    return delivered
+def _request_chat_delivery(session: AsyncSession) -> None:
+    """Wake the durable chat push and live-delivery drainers after commit."""
+    request_worker_wakeup(session, WorkerTask.CHAT_NOTIFICATIONS)
+    request_worker_wakeup(session, WorkerTask.CHAT_LIVE_MESSAGES)
 
 
 @router.get("/chat/attachments/{attachment_id}/url", response_model=AttachmentUrlResponse)
@@ -388,7 +382,7 @@ async def send_message(
     )
     # A live event must never race ahead of the durable row it announces.
     await db.commit()
-    await _deliver_chat_message(service, dto)
+    _request_chat_delivery(db)
     return _message(dto)
 
 
@@ -588,8 +582,9 @@ async def _pump_socket_to_chat(
                 continue
             # Commit before any external side effect or live event can expose the row.
             await session.commit()
-            delivered = await _deliver_chat_message(service, dto)
-            if not delivered:
+            _request_chat_delivery(session)
+            queued = await dispatch_worker_wakeups(session)
+            if WorkerTask.CHAT_LIVE_MESSAGES not in queued:
                 await _require_live_authorization(websocket, conversation_id)
                 await _send_socket_frame(websocket, _message(dto).model_dump_json())
 

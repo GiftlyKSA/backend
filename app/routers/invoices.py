@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.money import money_str, parse_money
+from app.core.worker_dispatch import WorkerTask, request_worker_wakeup
 from app.models import Invoice, InvoiceItem
 from app.models.enums import InvoiceStatus, UserRole
 from app.repositories.courier_repository import CourierRepository
@@ -247,6 +248,8 @@ async def pay_invoice(
         customer_id=actor.id,
         use_wallet=body.use_wallet if body is not None else True,
     )
+    if result.status == "PAID":
+        request_worker_wakeup(db, WorkerTask.INVOICE_RECEIPTS)
     return PayInvoiceResponse(
         invoice_id=str(result.invoice_id),
         status=result.status,

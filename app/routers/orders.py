@@ -18,6 +18,7 @@ from app.core.db import emit_committed_audit_events
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_auth, require_role
 from app.core.exceptions import ConflictError, UnauthorizedError
 from app.core.money import money_str
+from app.core.worker_dispatch import WorkerTask, request_worker_wakeup
 from app.models import Dispute
 from app.models.enums import OrderStatus, UserRole
 from app.repositories.courier_repository import CourierRepository
@@ -211,6 +212,7 @@ async def create_order(
     response = _detail(view)
     if operation is not None:
         await operations.finish(operation, response, order.id)
+    request_worker_wakeup(db, WorkerTask.ORDER_NOTIFICATIONS)
     return response
 
 

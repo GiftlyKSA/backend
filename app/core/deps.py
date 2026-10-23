@@ -22,6 +22,7 @@ from app.core.config import Settings
 from app.core.db import emit_committed_audit_events
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.jwt import JwtError, decode_access_token
+from app.core.worker_dispatch import dispatch_worker_wakeups
 from app.models.enums import UserRole
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import validate_access_claims
@@ -65,9 +66,11 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
             yield session
             await session.commit()
             emit_committed_audit_events(session)
+            await dispatch_worker_wakeups(session)
         except Exception:
             await session.rollback()
             session.info.pop("committed_audit_events", None)
+            session.info.pop("worker_wakeups", None)
             raise
 
 

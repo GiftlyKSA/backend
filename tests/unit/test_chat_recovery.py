@@ -74,6 +74,7 @@ async def test_media_race_recovers_replay_after_grant_consumption():
         "2026-10-08T00:00:00+00:00",
     )
     chat, media, db = AsyncMock(), AsyncMock(), AsyncMock()
+    db.info = {}
     chat.replay_message.side_effect = [None, dto]
     media.prepare.side_effect = ConflictError("Upload already used.")
     with (
@@ -117,6 +118,7 @@ async def test_media_replay_skips_decode_and_grant_consumption():
         "2026-10-08T00:00:00+00:00",
     )
     chat, media, db = AsyncMock(), AsyncMock(), AsyncMock()
+    db.info = {}
     chat.replay_message.return_value = dto
     with (
         patch("app.routers.chat._service", return_value=chat),
@@ -143,23 +145,19 @@ def test_socket_retry_identity_is_shared_with_rest_validation():
     assert _extract_send_request('{"text":"hello", "client_message_id":"invalid"}') is None
 
 
-@pytest.mark.asyncio
-async def test_completed_replay_requests_sender_acknowledgement():
-    from app.routers.chat import _deliver_chat_message
-    from app.services.chat_service import ChatMessage
+def test_chat_delivery_requests_both_durable_worker_drainers():
+    from types import SimpleNamespace
 
-    service = AsyncMock()
-    service.publish_message.return_value = False
-    dto = ChatMessage(
-        str(uuid4()),
-        str(uuid4()),
-        str(uuid4()),
-        "TEXT",
-        "hello",
-        False,
-        "2026-10-08T00:00:00+00:00",
-    )
-    assert not await _deliver_chat_message(service, dto)
+    from app.core.worker_dispatch import WorkerTask
+    from app.routers.chat import _request_chat_delivery
+
+    session = SimpleNamespace(info={})
+    _request_chat_delivery(session)
+
+    assert session.info["worker_wakeups"] == {
+        WorkerTask.CHAT_LIVE_MESSAGES.value,
+        WorkerTask.CHAT_NOTIFICATIONS.value,
+    }
 
 
 @pytest.mark.asyncio
@@ -170,6 +168,7 @@ async def test_invalid_socket_payload_reports_error_then_accepts_valid_message(i
     from unittest.mock import patch
 
     from app.core.deps import Actor
+    from app.core.worker_dispatch import WorkerTask
     from app.models.enums import UserRole
     from app.routers.chat import _pump_socket_to_chat
     from app.services.chat_service import ChatMessage
@@ -187,8 +186,8 @@ async def test_invalid_socket_payload_reports_error_then_accepts_valid_message(i
         "2026-10-08T00:00:00+00:00",
     )
     chat.send_message.return_value = dto
-    chat.publish_message.return_value = True
     db.__aenter__.return_value = db
+    db.info = {}
     websocket = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(settings=make_test_settings())),
         receive_text=AsyncMock(
@@ -197,6 +196,10 @@ async def test_invalid_socket_payload_reports_error_then_accepts_valid_message(i
         send_text=AsyncMock(),
     )
     with (
+        patch(
+            "app.routers.chat.dispatch_worker_wakeups",
+            new=AsyncMock(return_value={WorkerTask.CHAT_LIVE_MESSAGES}),
+        ),
         patch("app.routers.chat._session_service", return_value=chat),
         patch("app.routers.chat.mark_request_transaction", new=AsyncMock()),
         patch("app.routers.chat.set_audit_actor", new=AsyncMock()),

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Actor, get_db, get_redis, get_settings, require_role
 from app.core.money import money_str
+from app.core.worker_dispatch import WorkerTask, request_worker_wakeup
 from app.integrations.payments.base import PaymentContext
 from app.models import PaymentIntent
 from app.models.enums import PaymentIntentStatus, PaymentPurpose, UserRole
@@ -130,9 +131,12 @@ async def refresh_payment_session(
     request: Request, db: DbDep, intent_id: UUID, actor: ActorDep
 ) -> PaymentSessionResponse:
     """Verify payment with the provider, then return the committed settlement state."""
-    return _response(
-        await _service(request, db).refresh_payment_session(intent_id=intent_id, user_id=actor.id)
+    intent = await _service(request, db).refresh_payment_session(
+        intent_id=intent_id, user_id=actor.id
     )
+    if intent.status is PaymentIntentStatus.PAID and intent.purpose is PaymentPurpose.ORDER_INVOICE:
+        request_worker_wakeup(db, WorkerTask.INVOICE_RECEIPTS)
+    return _response(intent)
 
 
 @router.post("/{intent_id}/cancel", response_model=PaymentSessionResponse)
