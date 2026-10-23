@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -150,6 +152,35 @@ async def test_creation_timeout_is_unknown_and_never_retried() -> None:
         assert calls == 1
     finally:
         await gateway.aclose()
+
+
+def test_status_provider_failure_logs_only_safe_operation_and_status(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def exercise() -> None:
+        ctx = context()
+        gateway = client(
+            lambda request: httpx.Response(
+                502,
+                text="provider response with private customerIdentifier and secret token",
+            )
+        )
+        try:
+            with caplog.at_level(logging.ERROR, logger="app.integrations.payments.dhamen"):
+                with pytest.raises(DomainError) as caught:
+                    await gateway.get_payment_status(ctx)
+
+            assert caught.value.code == "PAYMENT_PROVIDER_UNAVAILABLE"
+            assert "payment_status" in caplog.text
+            assert "502" in caplog.text
+            assert "private customerIdentifier" not in caplog.text
+            assert "secret token" not in caplog.text
+            assert ctx.customer.external_id not in caplog.text
+            assert ctx.reference not in caplog.text
+        finally:
+            await gateway.aclose()
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize(

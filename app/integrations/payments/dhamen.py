@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -26,6 +27,8 @@ from app.integrations.payments.base import (
     PaymentStatus,
 )
 from app.integrations.payments.dhamen_notifications import parse_dhamen_notifications
+
+_logger = logging.getLogger("app.integrations.payments.dhamen")
 
 
 class _CheckoutRow(BaseModel):
@@ -115,20 +118,37 @@ class DhamenPaymentClient(PaymentClient):
             async with asyncio.timeout(self._timeout_seconds):
                 return await self._bounded_request(path, body, method=method)
         except TimeoutError as exc:
+            _logger.error("Dhamen request failed (operation=%s, reason=timeout).", _operation(path))
             raise PaymentProviderUnavailableError() from exc
 
     async def _bounded_request(self, path: str, body: str, *, method: str) -> object:
         try:
             async with self._http.stream(method, path, content=body.encode()) as response:
                 if response.status_code != 200:
+                    _logger.error(
+                        "Dhamen request failed (operation=%s, reason=http_status, status=%d).",
+                        _operation(path),
+                        response.status_code,
+                    )
                     raise PaymentProviderUnavailableError()
                 chunks = bytearray()
                 async for chunk in response.aiter_bytes():
                     chunks.extend(chunk)
                     if len(chunks) > 65536:
+                        _logger.error(
+                            "Dhamen request failed (operation=%s, reason=response_too_large).",
+                            _operation(path),
+                        )
                         raise PaymentProviderUnavailableError()
                 return json.loads(chunks, parse_float=Decimal)
         except (httpx.HTTPError, ValueError, TypeError) as exc:
+            reason = "transport" if isinstance(exc, httpx.HTTPError) else "invalid_response"
+            _logger.error(
+                "Dhamen request failed (operation=%s, reason=%s, error_type=%s).",
+                _operation(path),
+                reason,
+                type(exc).__name__,
+            )
             raise PaymentProviderUnavailableError() from exc
 
     def _safe_url(self, url: str) -> str:
@@ -142,6 +162,7 @@ class DhamenPaymentClient(PaymentClient):
             or parsed.fragment
             or parsed.port not in (None, 443)
         ):
+            _logger.error("Dhamen checkout URL rejected (reason=invalid_url).")
             raise PaymentProviderUnavailableError()
         return url
 
@@ -186,9 +207,15 @@ class DhamenPaymentClient(PaymentClient):
                 await self._request("api/payments/customer-payment", body)
             ).customer_payments[0]
             if result.customer_identifier != context.customer.external_id:
+                _logger.error(
+                    "Dhamen request failed (operation=create_checkout, reason=context_mismatch)."
+                )
                 raise PaymentProviderUnavailableError()
             return PaymentCheckout(context.reference, self._safe_url(result.payment_url))
         except (ValidationError, ValueError) as exc:
+            _logger.error(
+                "Dhamen request failed (operation=create_checkout, reason=response_contract)."
+            )
             raise PaymentProviderUnavailableError() from exc
 
     async def get_payment_status(self, context: PaymentContext) -> PaymentStatus:
@@ -208,6 +235,9 @@ class DhamenPaymentClient(PaymentClient):
                 or row.customer_identifier != context.customer.external_id
                 or row.amount != context.amount
             ):
+                _logger.error(
+                    "Dhamen request failed (operation=payment_status, reason=context_mismatch)."
+                )
                 raise PaymentProviderUnavailableError()
             return PaymentStatus(
                 PaymentState.PAID if row.payment_status == 1 else PaymentState.PENDING,
@@ -215,6 +245,9 @@ class DhamenPaymentClient(PaymentClient):
                 self._safe_url(row.payment_url) if row.payment_url else None,
             )
         except (ValidationError, ValueError) as exc:
+            _logger.error(
+                "Dhamen request failed (operation=payment_status, reason=response_contract)."
+            )
             raise PaymentProviderUnavailableError() from exc
 
     async def cancel_checkout(self, context: PaymentContext) -> None:
@@ -230,6 +263,9 @@ class DhamenPaymentClient(PaymentClient):
             method="PUT",
         )
         if not isinstance(result, dict) or str(result.get("messageCode")) != "200":
+            _logger.error(
+                "Dhamen request failed (operation=cancel_checkout, reason=response_contract)."
+            )
             raise PaymentProviderUnavailableError()
 
     async def create_payment_link(
@@ -247,3 +283,12 @@ class DhamenPaymentClient(PaymentClient):
     def verify_webhook_signature(self, raw_body: bytes, signature: str) -> bool:
         """Fail closed: the supplied guide defines no Dhamen signature protocol."""
         return False
+
+
+def _operation(path: str) -> str:
+    """Map internal provider paths to safe labels without logging payload data."""
+    return {
+        "api/payments/customer-payment": "create_checkout",
+        "api/payments/customer-payment-status": "payment_status",
+        "api/payments/cancel": "cancel_checkout",
+    }.get(path, "provider_request")
