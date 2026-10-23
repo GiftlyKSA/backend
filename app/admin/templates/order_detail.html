@@ -2,6 +2,11 @@
 {% block content %}
 <h1>{{ tr('Order') }}</h1>
 {% if not order %}<p>{{ tr('Not found.') }}</p>{% else %}
+<div class="actions" aria-label="{{ tr('Actions') }}">
+  <a class="btn" href="/v1/admin/admin/orders/new">{{ tr('Add') }} {{ tr('Order') }}</a>
+  <a class="btn secondary" href="/v1/admin/admin/tables/orders">{{ tr('View all') }} {{ tr('Orders') }}</a>
+  <a class="btn secondary" href="/v1/admin/admin/tables/orders/{{ order.id }}/edit">{{ tr('Edit or delete this record') }}</a>
+</div>
 <section class="card"><table>
   <tr><td>{{ tr('ID') }}</td><td>{{ order.id }}</td></tr>
   <tr><td>{{ tr('Status') }}</td><td>{{ tr(order.status) }}</td></tr>

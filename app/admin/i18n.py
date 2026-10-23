@@ -205,6 +205,7 @@ ARABIC: dict[str, str] = {
     "Edit / delete": "تعديل / حذف",
     "Add": "إضافة",
     "Edit": "تعديل",
+    "View": "عرض",
     "Create record": "إنشاء السجل",
     "Save changes": "حفظ التغييرات",
     "Delete record": "حذف السجل",

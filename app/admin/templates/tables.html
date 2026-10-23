@@ -9,12 +9,16 @@
 </div>
 <section class="table-catalog">
   {% for table in tables %}
-  <a class="table-card" href="/v1/admin/admin/tables/{{ table.name }}">
-    <span class="table-card__name">{{ tr(table.label) }}</span>
+  <article class="table-card">
+    <a class="table-card__name" href="/v1/admin/admin/tables/{{ table.name }}">{{ tr(table.label) }}</a>
     <span class="table-card__mode {% if table.editable %}is-editable{% endif %}">
       {{ tr('View / Add / Edit / Delete') }}
     </span>
-  </a>
+    <div class="actions">
+      <a href="/v1/admin/admin/tables/{{ table.name }}">{{ tr('View all') }}</a>
+      <a href="{{ '/v1/admin/admin/orders/new' if table.name == 'orders' else '/v1/admin/admin/tables/' ~ table.name ~ '/new' }}">{{ tr('Add record') }}</a>
+    </div>
+  </article>
   {% endfor %}
 </section>
 {% endblock %}

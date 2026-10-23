@@ -40,7 +40,7 @@
   </form>
 </section>
 {% if form.record_id %}
-<section class="card edit-card">
+<section id="delete-record" class="card edit-card">
   <h2>{{ tr('Delete record') }}</h2>
   <form method="post" action="/v1/admin/admin/tables/{{ form.table_name }}/{{ form.record_id }}/delete">
     <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">

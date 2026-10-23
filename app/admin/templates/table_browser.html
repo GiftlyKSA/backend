@@ -13,7 +13,10 @@
     {{ tr('Full admin access') }}
   </span>
 </div>
-<p><a class="btn" href="/v1/admin/admin/tables/{{ data.table.name }}/new">{{ tr('Add record') }}</a></p>
+<p class="actions">
+  <a class="btn" href="{{ '/v1/admin/admin/orders/new' if data.table.name == 'orders' else '/v1/admin/admin/tables/' ~ data.table.name ~ '/new' }}">{{ tr('Add record') }}</a>
+  <a class="btn secondary" href="/v1/admin/admin/tables/{{ data.table.name }}">{{ tr('View all') }}</a>
+</p>
 <form class="audit-filters card" method="get" action="{{ browser_url }}">
   <label>{{ tr('Sort by') }}<select name="sort_by">{% for field in data.sort_fields %}<option value="{{ field }}" {% if filters.sort_by == field %}selected{% endif %}>{{ tr(field|replace('_', ' ')|title) }}</option>{% endfor %}</select></label>
   <label>{{ tr('Direction') }}<select name="direction"><option value="desc" {% if filters.direction == 'desc' %}selected{% endif %}>{{ tr('Descending') }}</option><option value="asc" {% if filters.direction == 'asc' %}selected{% endif %}>{{ tr('Ascending') }}</option></select></label>
@@ -32,9 +35,20 @@
 </p>
 <div class="table-scroll">
   <table class="list data-table">
-    <thead><tr>{% for column in data.columns %}<th>{{ tr(column|replace('_', ' ')|title) }}</th>{% endfor %}<th>{{ tr('Actions') }}</th></tr></thead>
+    <thead><tr><th>{{ tr('Actions') }}</th>{% for column in data.columns %}<th>{{ tr(column|replace('_', ' ')|title) }}</th>{% endfor %}</tr></thead>
     <tbody>{% for row in data.rows %}
-      <tr>{% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.detail_url or row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}<td>{% if row.edit_url %}<a href="{{ row.edit_url }}">{{ tr('Edit / delete') }}</a>{% endif %}</td></tr>
+      <tr>
+        <td class="row-actions">
+          {% if row.edit_url %}
+          <div>
+            <a href="{{ row.detail_url or row.edit_url }}">{{ tr('View') }}</a>
+            <a href="{{ row.edit_url }}">{{ tr('Edit') }}</a>
+            <a href="{{ row.edit_url }}#delete-record">{{ tr('Delete') }}</a>
+          </div>
+          {% endif %}
+        </td>
+        {% for cell in row.cells %}<td>{% if data.columns[loop.index0] == data.edit_column and row.edit_url %}<a href="{{ row.detail_url or row.edit_url }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}
+      </tr>
     {% else %}<tr><td colspan="{{ data.columns|length + 1 }}">{{ tr('No records.') }}</td></tr>{% endfor %}</tbody>
   </table>
 </div>

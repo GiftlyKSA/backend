@@ -14,7 +14,7 @@ from app.admin.router import router
 from app.core.exceptions import ConflictError, DomainError
 from app.core.security import make_csrf_token
 from app.models import Base
-from app.repositories.admin_read_repository import AdminTableInfo, AdminTablePage
+from app.repositories.admin_read_repository import AdminTableInfo, AdminTablePage, AdminTableRow
 from app.services.admin_table_fields import form_fields
 from app.services.admin_table_service import TableForm
 from fastapi import FastAPI
@@ -71,11 +71,18 @@ def make_app(monkeypatch):
 )
 async def test_every_list_uses_shared_filters_and_page_sizes(monkeypatch, path, table):
     app, ctx = make_app(monkeypatch)
+    record_id = uuid4()
     page = AdminTablePage(
         AdminTableInfo(table, True),
         ["id"],
         "id",
-        [],
+        [
+            AdminTableRow(
+                cells=[str(record_id)],
+                edit_url=f"/v1/admin/admin/tables/{table}/{record_id}/edit",
+                detail_url=f"/v1/admin/admin/{path}/{record_id}",
+            )
+        ],
         None,
         None,
         sort_fields=["created_at", "id"],
@@ -94,6 +101,10 @@ async def test_every_list_uses_shared_filters_and_page_sizes(monkeypatch, path, 
     assert called_table == table
     assert options.page_size == 50
     assert options.direction == "asc"
+    assert 'class="row-actions"' in response.text
+    assert f'href="/v1/admin/admin/{path}/{record_id}"' in response.text
+    assert f'href="/v1/admin/admin/tables/{table}/{record_id}/edit"' in response.text
+    assert f'href="/v1/admin/admin/tables/{table}/{record_id}/edit#delete-record"' in response.text
 
 
 async def test_promo_redemptions_keep_promo_scope_with_filters(monkeypatch):
