@@ -85,7 +85,7 @@ async def _check_chat_handshake(websocket: WebSocket) -> None:
     try:
         claims = decode_access_token(websocket.app.state.settings, token)
         account_id = uuid.UUID(claims.sub)
-    except JwtError, ValueError as exc:
+    except (JwtError, ValueError) as exc:
         raise _WebSocketHandshakeRejectedError(4401) from exc
     if claims.role not in (UserRole.CUSTOMER.value, UserRole.COURIER.value):
         raise _WebSocketHandshakeRejectedError(4401)
