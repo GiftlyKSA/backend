@@ -4056,6 +4056,52 @@
           }
         }
       }
+    },
+    "/api/promos": {
+      "get": {
+        "tags": [
+          "promos"
+        ],
+        "summary": "List Available Promos",
+        "description": "List currently active promos for customers, newest first.",
+        "operationId": "list_available_promos_api_promos_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoCatalogResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8322,6 +8368,129 @@
         ],
         "title": "CourierHomeSummary",
         "type": "object"
+      },
+      "PromoCatalogResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromoCatalogItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "PromoCatalogResponse",
+        "description": "A bounded page of currently active promo codes."
+      },
+      "PromoCatalogItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "discount_type": {
+            "$ref": "#/components/schemas/PromoDiscountType"
+          },
+          "percent_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Value"
+          },
+          "fixed_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Amount"
+          },
+          "max_discount_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Discount Amount"
+          },
+          "min_order_amount": {
+            "type": "string",
+            "title": "Min Order Amount"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "description",
+          "discount_type",
+          "percent_value",
+          "fixed_amount",
+          "max_discount_amount",
+          "min_order_amount",
+          "starts_at",
+          "ends_at",
+          "created_at"
+        ],
+        "title": "PromoCatalogItem",
+        "description": "A currently active promo, without its internal database identifier."
+      },
+      "PromoDiscountType": {
+        "type": "string",
+        "enum": [
+          "PERCENT",
+          "FIXED"
+        ],
+        "title": "PromoDiscountType",
+        "description": "How a promo discount is expressed."
       }
     }
   }

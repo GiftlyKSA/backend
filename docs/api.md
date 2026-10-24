@@ -684,6 +684,33 @@ their original result invoice; refresh active state if it has since been superse
 
 ## Promotions
 
+### GET /api/promos
+
+- **API name / screen:** List Active Promos; customer promotions picker.
+- **Who / authorization:** Authenticated ACTIVE CUSTOMER; bearer access token. Couriers,
+  admins and anonymous callers cannot use this mobile endpoint.
+- **Query:** Optional `limit: integer` from 1 to 100; default 25. No request body.
+- **Response:** HTTP 200, `{ "items": PromoCatalogItem[] }`. Each item contains `code`,
+  `description`, `discount_type` (`FIXED` or `PERCENT`), `percent_value: string | null`,
+  `fixed_amount: string | null`, `max_discount_amount: string | null`,
+  `min_order_amount: string`, `starts_at: UTC datetime | null`, `ends_at: UTC datetime | null`,
+  and `created_at: UTC datetime`. Promo IDs and usage counts are not returned.
+- **Ordering / availability:** Newest first by `created_at`, then code descending for a
+  stable tie-break. Only active promos currently within their configured time window and
+  with global usage remaining are listed. At most 100 are returned. Per-customer usage
+  limits and minimum-order eligibility are checked by validation/application, not inferred
+  by this catalog.
+- **Caching:** `Cache-Control: private, no-store` because availability can change as promos
+  start, expire, deactivate or reach their usage cap.
+- **Errors:** 401 missing/invalid authentication; 403 role/account restriction; 422 invalid
+  `limit`; 429 rate limit. Empty catalog returns `{ "items": [] }`.
+
+Use this endpoint to display current promo codes and their discount type/value. Treat
+`description` as plain text. A listed promo is not a guarantee that a particular order or
+customer qualifies: call `POST /api/promos/validate` for the customer's own order, then
+apply it through `POST /api/invoices/{invoice_id}/promo`. The invoice response remains the
+authoritative discounted total.
+
 ### POST /api/promos/validate
 
 - **API name:** Validate Promo.

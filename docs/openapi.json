@@ -2649,6 +2649,129 @@
         "title": "PreviousPeriod",
         "type": "object"
       },
+      "PromoCatalogItem": {
+        "additionalProperties": false,
+        "description": "A currently active promo, without its internal database identifier.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "discount_type": {
+            "$ref": "#/components/schemas/PromoDiscountType"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "fixed_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Amount"
+          },
+          "max_discount_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Discount Amount"
+          },
+          "min_order_amount": {
+            "title": "Min Order Amount",
+            "type": "string"
+          },
+          "percent_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Value"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          }
+        },
+        "required": [
+          "code",
+          "description",
+          "discount_type",
+          "percent_value",
+          "fixed_amount",
+          "max_discount_amount",
+          "min_order_amount",
+          "starts_at",
+          "ends_at",
+          "created_at"
+        ],
+        "title": "PromoCatalogItem",
+        "type": "object"
+      },
+      "PromoCatalogResponse": {
+        "description": "A bounded page of currently active promo codes.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromoCatalogItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PromoCatalogResponse",
+        "type": "object"
+      },
+      "PromoDiscountType": {
+        "description": "How a promo discount is expressed.",
+        "enum": [
+          "PERCENT",
+          "FIXED"
+        ],
+        "title": "PromoDiscountType",
+        "type": "string"
+      },
       "PromoPreviewResponse": {
         "description": "A previewed promo discount and the total it would produce.",
         "properties": {
@@ -7739,6 +7862,52 @@
         "summary": "Refresh Payment Session",
         "tags": [
           "payments"
+        ]
+      }
+    },
+    "/api/promos": {
+      "get": {
+        "description": "List currently active promos for customers, newest first.",
+        "operationId": "list_available_promos_api_promos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Available Promos",
+        "tags": [
+          "promos"
         ]
       }
     },

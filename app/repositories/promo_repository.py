@@ -50,6 +50,21 @@ class PromoRepository:
         query = select(Promo).order_by(Promo.created_at.desc()).limit(limit)
         return list(await self._session.scalars(query))
 
+    async def list_available(self, *, now: datetime, limit: int = 100) -> list[Promo]:
+        """Return active promos in their time window with global usage remaining."""
+        query = (
+            select(Promo)
+            .where(
+                Promo.is_active.is_(True),
+                (Promo.starts_at.is_(None) | (Promo.starts_at <= now)),
+                (Promo.ends_at.is_(None) | (Promo.ends_at > now)),
+                (Promo.max_total_usages.is_(None) | (Promo.used_count < Promo.max_total_usages)),
+            )
+            .order_by(Promo.created_at.desc(), Promo.code.desc())
+            .limit(limit)
+        )
+        return list(await self._session.scalars(query))
+
     async def create(
         self,
         *,
