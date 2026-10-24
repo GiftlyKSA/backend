@@ -52,6 +52,17 @@ after120 seconds and bounds the test job to20 minutes. Source backup behavior un
 The12 backup unit tests and static gates are rerun before the follow-up push. Final
 remote test outcome is reported in chat and continuity; CI success is not inferred.
 
+The next diagnostic CI40055916533 again passed all six non-test jobs. Its120-second
+stack captured the actual first stall at4%: test_chat_api.py's WebSocket send test
+awaited receive_json after successful Redis enqueue, but CI runs no worker consumer.
+That run was cancelled for diagnosis. The test now explicitly simulates enqueue
+unavailability to exercise the existing direct-echo fallback, while asserting pending
+push AND live-delivery outboxes remain durable. Chat application/auth code is unchanged.
+Separate recovery tests exercise the real drainer with mocked Redis publishing, and
+the socket receive test exercises real Redis-to-WebSocket delivery. This is component
+coverage, not a full queue-worker-socket acceptance test. Independent review found no
+important defects in either fixture correction. CI must be rerun for the new test setup.
+
 ## Dhamen deployed verification failure — 2026-10-24
 
 | ID | Category / severity | Status | Evidence and impact | Minimal correction / verification |

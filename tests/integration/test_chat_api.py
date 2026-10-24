@@ -11,13 +11,14 @@ import os
 import secrets as _secrets
 from datetime import date, timedelta
 from io import BytesIO
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
 from app.main import create_app
-from app.models import ChatNotification, CourierProfile, User
+from app.models import ChatLiveDelivery, ChatNotification, CourierProfile, User
 from app.models.enums import UserStatus
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
@@ -344,7 +345,7 @@ def _verify_courier_sync(client: TestClient, app: object, phone: str) -> None:
     asyncio.run(_do())
 
 
-def test_websocket_send_persists_notifies_and_guards() -> None:
+def test_websocket_send_persists_notifies_and_guards(monkeypatch: pytest.MonkeyPatch) -> None:
     """WS sends behave like REST sends (audit LOG-1/LOG-3/SEC-4).
 
     A JSON frame persists durable push work; invalid and oversized frames never persist.
@@ -367,6 +368,11 @@ def test_websocket_send_persists_notifies_and_guards() -> None:
         pytest.skip(f"database unavailable: {exc}")
 
     app = create_app(settings)
+    # No worker runs in this test; exercise fallback echo while retaining durable outboxes.
+    monkeypatch.setattr(
+        "app.core.worker_dispatch._enqueue_worker_task",
+        AsyncMock(side_effect=ConnectionError("No worker runs in this test.")),
+    )
     with TestClient(app) as client:
         cust = _register_sync(client, app, _phone(), "CUSTOMER")
         courier_phone = _phone()
@@ -412,7 +418,7 @@ def test_websocket_send_persists_notifies_and_guards() -> None:
             assert ws.receive_json()["error"]["code"] == "VALIDATION_ERROR"
             ws.send_text(_json.dumps({"text": "x" * 5000}))  # dropped: over the frame cap
             ws.send_text(_json.dumps({"text": "hello from the socket"}))
-            event = ws.receive_json()  # our message echoes back via pub/sub
+            event = ws.receive_json()
             assert event["content"] == "hello from the socket"
 
         # Exactly one message and its durable push intent persisted.
@@ -431,6 +437,9 @@ def test_websocket_send_persists_notifies_and_guards() -> None:
                 assert notification is not None
                 assert notification.recipient_id == customer_id
                 assert notification.completed_at is None
+                delivery = await session.get(ChatLiveDelivery, UUID(event["id"]))
+                assert delivery is not None
+                assert delivery.completed_at is None
 
         assert client.portal is not None
         client.portal.call(check_push_intent)
