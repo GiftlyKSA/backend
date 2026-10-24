@@ -44,7 +44,7 @@ class TargetUpdate(BaseModel):
         return money_str(amount)
 
     @model_validator(mode="after")
-    def validate_change(self) -> "TargetUpdate":
+    def validate_change(self) -> TargetUpdate:
         """Require a preference change and reject explicit null enabled state."""
         if self.model_fields_set == {"version"}:
             raise ValueError("Supply at least one target preference.")

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -73,13 +73,17 @@ async def test_summary_query_uses_single_unpaged_snapshot_and_earnings_basis():
 
     session = AsyncMock()
     as_of = datetime(2026, 10, 21, 9, 30, tzinfo=UTC)
-    session.execute.return_value.one.return_value = SimpleNamespace(
-        current_orders_count=4,
-        registered_orders_count=8,
-        completed_orders_count=3,
-        settled_earnings_total=Decimal("258.75"),
-        currency="SAR",
-        as_of=as_of,
+    session.execute.return_value = Mock(
+        one=Mock(
+            return_value=SimpleNamespace(
+                current_orders_count=4,
+                registered_orders_count=8,
+                completed_orders_count=3,
+                settled_earnings_total=Decimal("258.75"),
+                currency="SAR",
+                as_of=as_of,
+            )
+        )
     )
     courier_id = uuid4()
 
@@ -110,13 +114,17 @@ async def test_summary_query_uses_single_unpaged_snapshot_and_earnings_basis():
 
 async def test_summary_empty_account_returns_zero_values_and_sar():
     session = AsyncMock()
-    session.execute.return_value.one.return_value = SimpleNamespace(
-        current_orders_count=None,
-        registered_orders_count=None,
-        completed_orders_count=None,
-        settled_earnings_total=None,
-        currency=None,
-        as_of=datetime(2026, 10, 21, 9, 30, tzinfo=UTC),
+    session.execute.return_value = Mock(
+        one=Mock(
+            return_value=SimpleNamespace(
+                current_orders_count=None,
+                registered_orders_count=None,
+                completed_orders_count=None,
+                settled_earnings_total=None,
+                currency="SAR",
+                as_of=datetime(2026, 10, 21, 9, 30, tzinfo=UTC),
+            )
+        )
     )
 
     result = await CourierReportRepository(session).summary(uuid4())

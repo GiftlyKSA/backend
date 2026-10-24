@@ -63,9 +63,9 @@ class ResultCache:
                 value = await self._redis.getrange(key, 0, _MAX_BYTES)
             if isinstance(value, (str, bytes)) and 0 < len(value) <= _MAX_BYTES:
                 return adapter.validate_json(value)
-        except (ValidationError, UnicodeError):
+        except ValidationError, UnicodeError:
             pass
-        except (RedisError, TimeoutError):
+        except RedisError, TimeoutError:
             logger.warning("Read cache lookup unavailable.")
         return None
 
@@ -100,7 +100,7 @@ class ResultCache:
                 value = await asyncio.wait_for(asyncio.shield(pending), timeout=0.25)
                 if value is not None:
                     return adapter.validate_json(value)
-            except (TimeoutError, ValidationError):
+            except TimeoutError, ValidationError:
                 pass
             return await load()
         if len(self._pending) >= _MAX_PENDING:
@@ -123,7 +123,7 @@ class ResultCache:
                                 _TTLS[domain],
                                 _MAX_ENTRIES,
                             )
-                    except (RedisError, TimeoutError):
+                    except RedisError, TimeoutError:
                         logger.warning("Read cache storage unavailable.")
                     future.set_result(value)
             return result

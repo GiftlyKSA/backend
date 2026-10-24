@@ -63,7 +63,7 @@ class CourierReportRepository:
 
     def _proceeds(
         self, courier_id: uuid.UUID, start: datetime | None, end: datetime | None
-    ) -> Select[tuple[Decimal]]:
+    ) -> Select[Decimal]:
         query = (
             select(Transaction.amount)
             .join(Wallet, Transaction.wallet_id == Wallet.id)
@@ -84,7 +84,7 @@ class CourierReportRepository:
 
     def _summary_query(
         self, courier_id: uuid.UUID
-    ) -> Select[tuple[int, int, int, Decimal, str, datetime]]:
+    ) -> Select[int, int, int, Decimal, str, datetime]:
         """Build one owner-scoped statement for homepage counters and proceeds."""
         earnings = (
             self._proceeds(courier_id, None, None)
@@ -171,10 +171,7 @@ class CourierReportRepository:
         self, courier_id: uuid.UUID, body: TargetUpdate
     ) -> CourierReportSettings:
         """Replace exactly the observed version or reject the concurrent write."""
-        query: (
-            ReturningInsert[tuple[CourierReportSettings]]
-            | ReturningUpdate[tuple[CourierReportSettings]]
-        )
+        query: ReturningInsert[CourierReportSettings] | ReturningUpdate[CourierReportSettings]
         values = dict(
             enabled=body.target_enabled,
             amount=parse_money(body.target_amount) if body.target_amount else None,

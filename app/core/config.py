@@ -17,7 +17,7 @@ import re
 from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
-from typing import Literal, TypeVar
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, ValidationError, model_validator
@@ -601,10 +601,7 @@ def get_migration_settings() -> MigrationSettings:
     return _load_settings(MigrationSettings)
 
 
-_SettingsT = TypeVar("_SettingsT", bound=BaseSettings)
-
-
-def _load_settings(settings_class: type[_SettingsT]) -> _SettingsT:
+def _load_settings[SettingsT: BaseSettings](settings_class: type[SettingsT]) -> SettingsT:
     try:
         return settings_class()
     except ValidationError as exc:

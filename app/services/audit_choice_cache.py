@@ -38,15 +38,15 @@ async def audit_filter_choices(
         if isinstance(value, str) and len(value) <= 262144:
             choices = _Choices.model_validate_json(value)
             return AuditFilterChoices(choices.actions, choices.entities)
-    except (ValidationError, UnicodeDecodeError):
+    except ValidationError, UnicodeDecodeError:
         pass
-    except (RedisError, TimeoutError):
+    except RedisError, TimeoutError:
         logger.warning("Audit dropdown cache read unavailable.")
     result = await repository.filter_choices(categories)
     choices = _Choices(actions=result.actions, entities=result.entities)
     try:
         async with asyncio.timeout(0.1):
             await redis.set(key, choices.model_dump_json(), ex=30)
-    except (RedisError, TimeoutError):
+    except RedisError, TimeoutError:
         logger.warning("Audit dropdown cache write unavailable.")
     return result

@@ -107,7 +107,7 @@ class AccountChangeService:
             code = await self._otp.request_otp(
                 phone, scope=f"account-change:{row.id}", ttl_seconds=60
             )
-        except (HTTPError, RedisError, TimeoutError):
+        except HTTPError, RedisError, TimeoutError:
             raise AccountChangeUnavailableError() from None
         return row, code
 

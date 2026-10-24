@@ -93,7 +93,7 @@ class S3StorageClient(StorageClient):
                 async with self._condition:
                     self._active -= 1
                     self._condition.notify_all()
-        except (BotoCoreError, ClientError, TimeoutError, OSError):
+        except BotoCoreError, ClientError, TimeoutError, OSError:
             _logger.error(
                 "Private storage operation failed; check provider availability and configuration."
             )
@@ -188,7 +188,7 @@ class S3StorageClient(StorageClient):
 
     async def iter_bounded_object(
         self, storage_key: str, *, max_bytes: int
-    ) -> AsyncGenerator[bytes, None]:
+    ) -> AsyncGenerator[bytes]:
         """Stream bounded private chunks, always closing the S3 response body."""
         if max_bytes < 0:
             raise ValueError("Private media size must not be negative.")
@@ -220,6 +220,6 @@ class S3StorageClient(StorageClient):
                     ExpiresIn=ttl_seconds,
                 ),
             )
-        except (BotoCoreError, ClientError, TimeoutError, OSError):
+        except BotoCoreError, ClientError, TimeoutError, OSError:
             _logger.error("Private storage signing failed; check provider configuration.")
             raise StorageUnavailableError() from None

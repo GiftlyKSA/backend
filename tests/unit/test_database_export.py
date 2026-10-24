@@ -178,7 +178,16 @@ async def test_backup_cleanup_runs_when_download_send_fails(tmp_path):
         raise OSError("Browser disconnected")
 
     with pytest.raises(OSError):
-        await response({"type": "http", "method": "GET", "headers": []}, AsyncMock(), send)
+        await response(
+            {
+                "type": "http",
+                "method": "GET",
+                "headers": [],
+                "asgi": {"version": "3.0", "spec_version": "2.4"},
+            },
+            AsyncMock(),
+            send,
+        )
     assert not directory.exists()
 
 
@@ -251,6 +260,15 @@ async def test_backup_timeout_cleans_file_and_releases_retained_slot(monkeypatch
         await asyncio.Event().wait()
 
     with pytest.raises(TimeoutError):
-        await response({"type": "http", "method": "GET", "headers": []}, AsyncMock(), stalled_send)
+        await response(
+            {
+                "type": "http",
+                "method": "GET",
+                "headers": [],
+                "asgi": {"version": "3.0", "spec_version": "2.4"},
+            },
+            AsyncMock(),
+            stalled_send,
+        )
     assert not directory.exists()
     assert released == [True]

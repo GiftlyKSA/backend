@@ -68,6 +68,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "S", "B"]
 "app/migrations/*" = ["D", "E501"]
+"app/core/config.py" = ["UP047", "UP049"]
 "app/repositories/read_snapshot.py" = ["UP047"]
 "app/services/chat_media_validation.py" = ["UP047"]
 
