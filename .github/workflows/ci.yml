@@ -30,6 +30,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -78,7 +79,7 @@ jobs:
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen --all-extras --dev
       - run: uv run --locked python -m app.bootstrap_db
-      - run: uv run pytest -q --cov=app --cov-report=xml --cov-fail-under=85
+      - run: uv run --locked pytest -q -o faulthandler_timeout=120 --cov=app --cov-report=xml --cov-fail-under=85
       - uses: actions/upload-artifact@v4
         with:
           name: coverage

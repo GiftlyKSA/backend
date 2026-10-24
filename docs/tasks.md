@@ -41,6 +41,17 @@ an old checkout before replacement. Numeric12-digit Dhamen customer-ID mapping r
 a separate guide-alignment limitation; original UUID bindings were preserved rather
 than silently changing existing payment identities. Production remains disabled.
 
+Delivery:84ae31b was pushed to master with hooks passing. Concurrentbc76810 corrected
+worker/scheduler images still using Python3.13, which failed CI against project>=3.15.
+CI40055113787 then passed quality, docs, security and all three image jobs, but the
+test job stayed in pytest. Inspection found the integration backup-admission test had
+the same invalid default-ASGI AsyncMock receive loop previously fixed in unit tests;
+with Redis unavailable locally it never reached that branch. Its scope now explicitly
+selects ASGI2.4. The superseded CI run was cancelled, and CI now emits stack diagnostics
+after120 seconds and bounds the test job to20 minutes. Source backup behavior unchanged.
+The12 backup unit tests and static gates are rerun before the follow-up push. Final
+remote test outcome is reported in chat and continuity; CI success is not inferred.
+
 ## Dhamen deployed verification failure — 2026-10-24
 
 | ID | Category / severity | Status | Evidence and impact | Minimal correction / verification |

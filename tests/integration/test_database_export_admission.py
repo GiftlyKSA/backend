@@ -49,7 +49,14 @@ async def test_completed_exports_share_retained_admission_and_cleanup(monkeypatc
             return path
 
         monkeypatch.setattr(backup_router, "create_database_export", create)
-        request = Request({"type": "http", "method": "POST", "headers": []})
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [],
+                "asgi": {"version": "3.0", "spec_version": "2.4"},
+            }
+        )
         db = SimpleNamespace(commit=AsyncMock())
         first = await backup_router.export_database(request, db, "csrf", "plain")
         assert await redis.exists(namespace + "lock:database_export_download")
