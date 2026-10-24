@@ -57,7 +57,7 @@ expose administrative, development or provider operations.
 | Wallet invoices | GET `/api/invoices` | Optional status, from_date/to_date (issued date in Riyadh), include_historical=false, UUID cursor, limit1..100 default25 | InvoicePage with compact InvoiceSummary rows, current marker, decimal total; newest created_at/id first. Customers cannot list drafts. |
 | Wallet statement | GET `/api/wallets/me/statement` | Required Gregorian from_date/to_date; inclusive Riyadh days, max366 days; UUID cursor; limit1..100 default25 | WalletStatement: currency, timezone, bounds, as_of, whole-range status-separated money totals, items, next_cursor. Totals and items share one SQL snapshot per response. |
 | Wallet history | GET `/api/wallets/me/transactions` | New optional Gregorian from_date/to_date; existing cursor/default20 preserved | Existing page plus additive nullable description/order_id/invoice_id/payment_intent_id metadata. No filters means existing behavior. |
-| Order photos / delivery proof | GET `/api/orders/{order_id}/media` | Optional purpose ORDER_REQUEST or DELIVERY_PROOF, UUID cursor, limit1..100 default25 | Oldest created_at/id first. Trusted MIME/size, purpose and five-minute signed access_url/expires_at; no raw object key. Current participants only; foreign order404 even if empty. |
+| Order media / delivery proof | GET `/api/orders/{order_id}/media` | Optional purpose ORDER_REQUEST or DELIVERY_PROOF, UUID cursor, limit1..100 default25 | Oldest created_at/id first. Validated MIME/size, purpose and five-minute signed access_url/expires_at; no raw object key. Delivery proof may be an image or video. Current participants only; foreign order404 even if empty. |
 
 Financial date predicates use UTC midnight minus three hours through the following
 local midnight, exclusive. Output timestamps remain UTC. Calendar extremes that cannot
@@ -384,20 +384,20 @@ Couriers do not have a withdrawal-request API or self-service payout flow. They 
 
 **When/how (60 words):** Read the owner's ledger entries newest first using `limit` and the returned `next_cursor`. Each item contains signed decimal-string amount, transaction type and status, balance after, and creation timestamp. Append pages without inventing totals from only the loaded slice. The backend provides no date-range filters or statement summary, so the courier statement screen cannot be fully integrated from this endpoint alone.
 
-## Image upload
+## Image and delivery-proof media upload
 
 ### POST /api/media/upload-urls
 
 - **API name:** Create upload URL.
 - **Screens:** Create order `/request`; Delivery `/delivery/[id]`.
-- **Who / authorization:** Authenticated customer or courier; bearer access token.
+- **Who / authorization:** Authenticated account for `ORDER_REQUEST`; eligible active verified courier for `DELIVERY_PROOF` and `COURIER_AVATAR`; bearer access token. Only customers can attach request media to their own orders.
 - **Path, query, headers:** None.
-- **Request body:** `UploadUrlRequest` — `purpose: string [ORDER_REQUEST, DELIVERY_PROOF]`; `content_type: string [image/jpeg, image/png, image/heic, image/heif]`; `byte_size: integer`
+- **Request body:** `UploadUrlRequest` — `purpose: string [ORDER_REQUEST, DELIVERY_PROOF, COURIER_AVATAR]`; `content_type: string [image/jpeg, image/png, image/heic, image/heif, video/mp4, video/webm, video/quicktime]`; `byte_size: integer`
 - **Response:** HTTP 201; `UploadUrlResponse` — `upload_url: string`; `storage_key: string`; `expires_in: integer`
 - **Before:** Choose image, purpose, MIME type, and exact byte size.
 - **Then / dependent API:** Direct signed PUT, then `POST /api/media/confirm`.
 
-**When/how (59 words):** Request a five-minute signed URL for one JPEG or PNG, declaring whether it is an order request photo or delivery proof. Upload bytes directly to the returned URL with the issued `Content-Type`, `Content-Length`, and `If-None-Match: *` headers; the API does not receive the file body. Keep the returned storage key for confirmation and later attachment to the matching operation.
+**When/how:** Request a five-minute signed URL with the exact media type and byte size. `ORDER_REQUEST` and `COURIER_AVATAR` remain image-only. `DELIVERY_PROOF` accepts JPEG, PNG, HEIC, HEIF, MP4, WebM and QuickTime (`video/quicktime`). Images use `MAX_UPLOAD_BYTES` (10 MiB default); video uses `CHAT_VIDEO_MAX_UPLOAD_BYTES` (120 MiB default and hard maximum) and `CHAT_VIDEO_MAX_DURATION_SECONDS` (120 seconds maximum). Deployment may lower these limits. Send the original bytes directly to the signed URL with the issued `Content-Type`, exact `Content-Length`, and `If-None-Match: *`; do not transcode or relabel the recording. Keep the returned key for confirmation and delivery submission. The shared unclaimed-upload quota permits up to 10 × the configured video-size cap (1,200 MiB at defaults) across outstanding delivery-proof grants; image-only grant requests retain the existing 50 MiB quota.
 
 ### POST /api/media/confirm
 
@@ -410,7 +410,20 @@ Couriers do not have a withdrawal-request API or self-service payout flow. They 
 - **Before:** Successful direct PUT from `POST /api/media/upload-urls`.
 - **Then / dependent API:** `POST /api/orders` or `POST /api/orders/{order_id}/deliver`.
 
-**When/how:** Confirm an uploaded object by its server-generated storage key after the direct PUT completes. The backend checks ownership, declared type and size, actual object presence, and full isolated image decoding with a 20-million-pixel ceiling. JPEG/PNG order photos and proof use the same bounded decoder as avatars and HEIF; file headers alone do not establish validity. Only confirmed keys may be attached, and each can be claimed once for its original purpose. A local file URI or an unconfirmed key is not a durable order or delivery attachment.
+**When/how:** Confirm an uploaded object by its server-generated storage key after the direct PUT completes. The backend checks grant ownership, purpose, declared and stored MIME/size, then validates the actual bytes before confirmation. Images are fully decoded in an isolated process with a 20-million-pixel ceiling. Delivery videos are streamed to bounded temporary storage and validated by the existing restricted FFmpeg/ffprobe path for container, streams, dimensions, codec decoding and duration; unavailable validation fails closed. No media is transcoded. Only confirmed keys may be attached, and each can be claimed once for its original purpose.
+
+### GET /api/orders/{order_id}/media
+
+- **API name:** List Order Photos and Delivery Proof.
+- **Screens:** Customer order detail and Courier delivery/order detail.
+- **Who / authorization:** Authenticated customer or eligible courier who currently participates in the order; bearer access token.
+- **Path/query:** `order_id: UUID`; optional `purpose: ORDER_REQUEST | DELIVERY_PROOF`; optional `cursor: UUID`; `limit: integer` from 1–100, default 25.
+- **Request body:** None.
+- **Response:** HTTP 200; `OrderMediaPage` — `items: OrderMediaResponse[]`; `next_cursor: UUID string | null`. Each item includes `id: UUID`, `purpose: string`, validated `content_type: string`, verified `byte_size: integer`, `created_at: timestamp`, temporary `access_url: string`, and `expires_at: timestamp`.
+- **Before:** An order with attached request media or delivery proof.
+- **Then:** Renew expired access by fetching the same authorized page again.
+
+**When/how:** Fetch media only after loading an order the signed-in account can access. Pages are oldest-first by creation time and ID. The actual MIME value distinguishes image formats from MP4, WebM or QuickTime videos; the response never exposes storage keys. Access URLs are private and expire after five minutes, and responses use `Cache-Control: private, no-store`. An inaccessible order returns 404, including when it has no media. Continue with the returned cursor and unchanged purpose/limit filters.
 
 ## Orders and fulfillment
 
@@ -547,10 +560,10 @@ add it only when representative plans justify it.
 - **Path, query, headers:** `order_id: UUID string` (path).
 - **Request body:** `DeliverRequest` — `proof_media_keys: string[]`; `note?: string | null`
 - **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
-- **Before:** Order `IN_PROGRESS`; 1–5 confirmed `DELIVERY_PROOF` image keys.
+- **Before:** Order `IN_PROGRESS`; 1–10 unique confirmed `DELIVERY_PROOF` image/video keys.
 - **Then / dependent API:** Customer `POST /api/orders/{order_id}/approve` or dispute.
 
-**When/how:** Submit one to five confirmed delivery-proof photo keys after completing delivery. The backend checks courier assignment, order state, and ownership and purpose of each image before marking the order delivered. It does not collect a precise delivery location, calculate distance, or verify physical presence.
+**When/how:** Submit one to ten unique confirmed delivery-proof keys after completing delivery. The list may mix photos and videos. The backend verifies current courier eligibility, assignment, order state, grant ownership and purpose, then atomically attaches the validated media and moves the order to `DELIVERED`. The customer review/approval or dispute flow is unchanged. The media list returns each item's actual `content_type` and a five-minute private access URL. It does not collect a precise delivery location, calculate distance, or verify physical presence.
 
 ### POST /api/orders/{order_id}/approve
 
@@ -1277,10 +1290,13 @@ thread, subprocess timeouts and bounded admission. Video retains 1080p pixel bou
 Send at most five images or one video/voice note per message. Unsupported/malformed,
 misdeclared or oversized bytes fail400; unavailable validation fails503.
 
-General order-request/delivery-proof grants also accept HEIC/HEIF through existing
-POST `/api/media/upload-urls` and `/api/media/confirm`, MAX_UPLOAD_BYTES and strict
-server-generated keys. HEIF is fully decoded before confirmation/attachment. Original
-private bytes are preserved; device display/thumbnail conversion is the client's job.
+General order-request/delivery-proof grants accept HEIC/HEIF through existing
+POST `/api/media/upload-urls` and `/api/media/confirm`, `MAX_UPLOAD_BYTES` and strict
+server-generated keys. `DELIVERY_PROOF` additionally accepts MP4, WebM and original
+QuickTime MOV. These videos use the configured chat video byte/duration limits and the
+same bounded, network-disabled FFmpeg/ffprobe validation path. Delivery accepts 1–10
+unique mixed image/video keys. `ORDER_REQUEST` and `COURIER_AVATAR` stay image-only.
+Original private bytes are preserved; device display/thumbnail conversion is the client's job.
 Ownership, confirmed-grant claims and expiring signed reads are unchanged; no public
 caching or storage-key-as-public-URL. Historical attachments remain accessible.
 

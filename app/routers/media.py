@@ -1,7 +1,8 @@
 """Media routes.
 
-Any authenticated user may request an upload URL and confirm it. The bytes never pass
-through the API — the client PUTs straight to S3 with the pre-signed URL.
+Authenticated customers may upload order-request media; eligible couriers may upload
+delivery proof and avatars. The bytes never pass through the API — the client PUTs
+straight to private object storage with the pre-signed URL.
 """
 
 from __future__ import annotations
@@ -47,19 +48,22 @@ async def create_upload_url(
     Courier avatars require an active verified courier, real HTTPS storage outside test,
     JPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return
     503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and
-    If-None-Match: *. URLs expire after 300 seconds; unclaimed avatar grants after 24 hours.
+    If-None-Match: *. DELIVERY_PROOF accepts JPEG, PNG, HEIC, HEIF, MP4, WebM or QuickTime;
+    proof videos are capped at 120 MiB and 120 seconds (configuration may lower either cap).
+    ORDER_REQUEST and COURIER_AVATAR remain image-only. URLs expire after 300 seconds;
+    unclaimed avatar grants after 24 hours.
     """
 
     async def resume_writes() -> None:
         await mark_request_transaction(db)
         if await require_auth(request, db) != actor:
             raise UnauthorizedError("This session is no longer valid.")
-        if body.purpose == "COURIER_AVATAR":
+        if body.purpose in {"COURIER_AVATAR", "DELIVERY_PROOF"}:
             await CourierEligibilityService(
                 users=UserRepository(db), couriers=CourierRepository(db)
             ).require_courier(actor.id)
 
-    if body.purpose == "COURIER_AVATAR":
+    if body.purpose in {"COURIER_AVATAR", "DELIVERY_PROOF"}:
         await CourierEligibilityService(
             users=UserRepository(db), couriers=CourierRepository(db)
         ).require_courier(actor.id)
@@ -81,7 +85,7 @@ async def confirm_upload(
     body: ConfirmRequest,
     actor: Annotated[Actor, Depends(require_auth)],
 ) -> ConfirmResponse:
-    """Confirm an uploaded object exists and is a valid image."""
+    """Confirm the owned upload's actual bytes match its allowed purpose and media type."""
 
     async def resume_writes() -> None:
         await mark_request_transaction(db)

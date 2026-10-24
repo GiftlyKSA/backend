@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class UploadUrlRequest(BaseModel):
@@ -14,10 +14,36 @@ class UploadUrlRequest(BaseModel):
     purpose: Literal["ORDER_REQUEST", "DELIVERY_PROOF", "COURIER_AVATAR"] = Field(
         ..., description="What the media is for; determines the key prefix."
     )
-    content_type: Literal["image/jpeg", "image/png", "image/heic", "image/heif"] = Field(
-        ..., description="The image MIME type; pinned into the pre-signed URL."
+    content_type: Literal[
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+        "video/mp4",
+        "video/webm",
+        "video/quicktime",
+    ] = Field(
+        ...,
+        description=(
+            "JPEG, PNG, HEIC or HEIF images for all purposes; MP4, WebM or QuickTime video "
+            "only for DELIVERY_PROOF. The value is pinned into the pre-signed URL."
+        ),
     )
-    byte_size: int = Field(..., gt=0, description="Declared size in bytes; must be within the cap.")
+    byte_size: int = Field(
+        ...,
+        gt=0,
+        description=(
+            "Exact object size in bytes. Images use MAX_UPLOAD_BYTES (10 MiB default); "
+            "delivery-proof videos use CHAT_VIDEO_MAX_UPLOAD_BYTES (120 MiB maximum/default)."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_video_purpose(self) -> UploadUrlRequest:
+        """Keep non-proof media image-only at the request boundary."""
+        if self.content_type.startswith("video/") and self.purpose != "DELIVERY_PROOF":
+            raise ValueError("Video uploads are only supported for delivery proof.")
+        return self
 
 
 class UploadUrlResponse(BaseModel):

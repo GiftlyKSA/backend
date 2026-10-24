@@ -32,7 +32,7 @@ from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.message_repository import MessageWriter
-from app.repositories.order_repository import OrderRepository
+from app.repositories.order_repository import NewOrderMedia, OrderRepository
 from app.repositories.promo_repository import PromoRepository
 from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
@@ -130,16 +130,19 @@ class OrderService:
             delivery_date=data.delivery_date,
             address_note=None,
         )
-        for key in data.request_media_keys:
-            head = media_heads[key]
-            await self._orders.add_media(
-                order_id=order.id,
-                uploaded_by_user_id=customer_id,
-                media_type=MediaType.CUSTOMER_REQUEST,
-                storage_key=key,
-                content_type=head.content_type,
-                byte_size=head.byte_size,
-            )
+        await self._orders.add_media_many(
+            order_id=order.id,
+            uploaded_by_user_id=customer_id,
+            media_type=MediaType.CUSTOMER_REQUEST,
+            media=[
+                NewOrderMedia(
+                    storage_key=key,
+                    content_type=media_heads[key].content_type,
+                    byte_size=media_heads[key].byte_size,
+                )
+                for key in data.request_media_keys
+            ],
+        )
         return order
 
     async def accept_order(self, *, order_id: uuid.UUID, courier_id: uuid.UUID) -> Order:

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from app.core.deps import Actor
-from app.core.exceptions import UnauthorizedError
+from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.integrations.storage.base import ObjectHead
 from app.models.enums import UserRole
 from app.routers.media import create_upload_url
@@ -48,6 +48,40 @@ async def test_revoked_actor_cannot_receive_presigned_grant():
             )
     uploads.issue.assert_not_awaited()
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_receive_delivery_proof_grant():
+    actor = Actor(uuid4(), UserRole.CUSTOMER, "session")
+    db, uploads, storage = AsyncMock(), AsyncMock(), AsyncMock()
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                settings=make_test_settings(),
+                clients=SimpleNamespace(storage=storage),
+            )
+        )
+    )
+    eligibility = AsyncMock()
+    eligibility.require_courier.side_effect = ForbiddenError("Courier required.")
+    with (
+        patch("app.routers.media.MediaRepository", return_value=uploads),
+        patch("app.routers.media.CourierEligibilityService", return_value=eligibility),
+    ):
+        with pytest.raises(ForbiddenError):
+            await create_upload_url(
+                request,
+                db,
+                UploadUrlRequest(
+                    purpose="DELIVERY_PROOF",
+                    content_type="video/mp4",
+                    byte_size=1024,
+                ),
+                actor,
+            )
+    eligibility.require_courier.assert_awaited_once_with(actor.id)
+    storage.create_upload_url.assert_not_awaited()
+    uploads.issue.assert_not_awaited()
 
 
 @pytest.mark.asyncio

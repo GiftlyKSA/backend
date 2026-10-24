@@ -11,11 +11,14 @@ from app.core.money import MoneyError, parse_money
 
 
 class DeliverRequest(BaseModel):
-    """A courier's delivery submission with photographic proof."""
+    """A courier's delivery submission with photo and/or video proof."""
 
     model_config = ConfigDict(extra="forbid")
     proof_media_keys: list[str] = Field(
-        ..., min_length=1, max_length=5, description="Confirmed delivery-proof photo keys."
+        ...,
+        min_length=1,
+        max_length=10,
+        description="One to ten confirmed delivery-proof photos and/or videos.",
     )
     note: Annotated[str, StringConstraints(max_length=500)] | None = None
 

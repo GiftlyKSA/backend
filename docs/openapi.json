@@ -792,7 +792,7 @@
       },
       "DeliverRequest": {
         "additionalProperties": false,
-        "description": "A courier's delivery submission with photographic proof.",
+        "description": "A courier's delivery submission with photo and/or video proof.",
         "properties": {
           "note": {
             "anyOf": [
@@ -807,11 +807,11 @@
             "title": "Note"
           },
           "proof_media_keys": {
-            "description": "Confirmed delivery-proof photo keys.",
+            "description": "One to ten confirmed delivery-proof photos and/or videos.",
             "items": {
               "type": "string"
             },
-            "maxItems": 5,
+            "maxItems": 10,
             "minItems": 1,
             "title": "Proof Media Keys",
             "type": "array"
@@ -2043,7 +2043,7 @@
         "type": "object"
       },
       "OrderMediaPage": {
-        "description": "Oldest-created order media first.",
+        "description": "Oldest-created order media first; content_type identifies media format.",
         "properties": {
           "items": {
             "items": {
@@ -2072,17 +2072,19 @@
         "type": "object"
       },
       "OrderMediaResponse": {
-        "description": "One photo, without exposing its internal object key.",
+        "description": "One private photo or video, without exposing its internal object key.",
         "properties": {
           "access_url": {
             "title": "Access Url",
             "type": "string"
           },
           "byte_size": {
+            "description": "Verified object size in bytes.",
             "title": "Byte Size",
             "type": "integer"
           },
           "content_type": {
+            "description": "Validated original MIME type, including video for delivery proof.",
             "title": "Content Type",
             "type": "string"
           },
@@ -3828,18 +3830,21 @@
         "description": "Request a pre-signed upload URL for a media object.",
         "properties": {
           "byte_size": {
-            "description": "Declared size in bytes; must be within the cap.",
+            "description": "Exact object size in bytes. Images use MAX_UPLOAD_BYTES (10 MiB default); delivery-proof videos use CHAT_VIDEO_MAX_UPLOAD_BYTES (120 MiB maximum/default).",
             "exclusiveMinimum": 0.0,
             "title": "Byte Size",
             "type": "integer"
           },
           "content_type": {
-            "description": "The image MIME type; pinned into the pre-signed URL.",
+            "description": "JPEG, PNG, HEIC or HEIF images for all purposes; MP4, WebM or QuickTime video only for DELIVERY_PROOF. The value is pinned into the pre-signed URL.",
             "enum": [
               "image/jpeg",
               "image/png",
               "image/heic",
-              "image/heif"
+              "image/heif",
+              "video/mp4",
+              "video/webm",
+              "video/quicktime"
             ],
             "title": "Content Type",
             "type": "string"
@@ -5955,7 +5960,7 @@
     },
     "/api/media/confirm": {
       "post": {
-        "description": "Confirm an uploaded object exists and is a valid image.",
+        "description": "Confirm the owned upload's actual bytes match its allowed purpose and media type.",
         "operationId": "confirm_upload_api_media_confirm_post",
         "requestBody": {
           "content": {
@@ -5997,7 +6002,7 @@
     },
     "/api/media/upload-urls": {
       "post": {
-        "description": "Issue a pre-signed upload URL with a server-generated key.\n\nCourier avatars require an active verified courier, real HTTPS storage outside test,\nJPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return\n503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and\nIf-None-Match: *. URLs expire after 300 seconds; unclaimed avatar grants after 24 hours.",
+        "description": "Issue a pre-signed upload URL with a server-generated key.\n\nCourier avatars require an active verified courier, real HTTPS storage outside test,\nJPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return\n503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and\nIf-None-Match: *. DELIVERY_PROOF accepts JPEG, PNG, HEIC, HEIF, MP4, WebM or QuickTime;\nproof videos are capped at 120 MiB and 120 seconds (configuration may lower either cap).\nORDER_REQUEST and COURIER_AVATAR remain image-only. URLs expire after 300 seconds;\nunclaimed avatar grants after 24 hours.",
         "operationId": "create_upload_url_api_media_upload_urls_post",
         "requestBody": {
           "content": {
@@ -7137,7 +7142,7 @@
     },
     "/api/orders/{order_id}/deliver": {
       "post": {
-        "description": "Mark an in-progress order delivered with photo proof (assigned courier).",
+        "description": "Mark an in-progress order delivered with 1\u201310 photo/video proofs.",
         "operationId": "deliver_order_api_orders__order_id__deliver_post",
         "parameters": [
           {
@@ -7343,7 +7348,7 @@
     },
     "/api/orders/{order_id}/media": {
       "get": {
-        "description": "Return confirmed order photos with five-minute signed access URLs.",
+        "description": "Return confirmed order photos/videos with five-minute signed access URLs.",
         "operationId": "list_order_media_api_orders__order_id__media_get",
         "parameters": [
           {

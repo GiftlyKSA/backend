@@ -222,13 +222,24 @@ General order/proof images use signed, owner/purpose-scoped upload grants and ex
 confirmation. Chat has signed uploads for IMAGE, VIDEO and VOICE, then a send operation.
 Voice notes are microphone recordings in the client product flow; a server cannot prove
 that a valid audio file originated from a microphone. Camera input uses the same image/
-video contract. Clients read current limits from `/api/chat/media-limits`.
+video contract. Clients read current chat limits from `/api/chat/media-limits`.
 
 | Kind | Default maximum | Accepted media |
 | --- | --- | --- |
 | IMAGE | 10 MiB | JPEG, PNG. |
 | VIDEO | 120 MiB, 120 seconds | MP4, WebM; constrained decoded dimensions. |
 | VOICE | 10 MiB, 120 seconds | Supported audio containers/MIME values in OpenAPI. |
+
+Order delivery proof supports JPEG/PNG/HEIC/HEIF photos plus MP4, WebM and original
+QuickTime MOV videos. Images use `MAX_UPLOAD_BYTES` (10 MiB default); proof videos reuse
+`CHAT_VIDEO_MAX_UPLOAD_BYTES` (120 MiB default/hard maximum) and
+`CHAT_VIDEO_MAX_DURATION_SECONDS` (120-second maximum). Deployment may lower either cap.
+A courier may submit 1–10 unique confirmed media keys in one delivery operation.
+`ORDER_REQUEST` and `COURIER_AVATAR` remain image-only; proof videos are fully decoded
+before confirmation and preserved in their original format. The shared unclaimed-upload
+quota permits up to 10 × the configured video-size cap (1,200 MiB at defaults) for
+delivery-proof grants; image-only grant
+requests retain the existing 50 MiB quota.
 
 Private objects use create-only upload headers, verified metadata/decoded content,
 ownership checks and short-lived signed playback links. S3 waits are outside production

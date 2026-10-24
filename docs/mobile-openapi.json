@@ -1810,7 +1810,7 @@
           "media"
         ],
         "summary": "Create Upload Url",
-        "description": "Issue a pre-signed upload URL with a server-generated key.\n\nCourier avatars require an active verified courier, real HTTPS storage outside test,\nJPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return\n503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and\nIf-None-Match: *. URLs expire after 300 seconds; unclaimed avatar grants after 24 hours.",
+        "description": "Issue a pre-signed upload URL with a server-generated key.\n\nCourier avatars require an active verified courier, real HTTPS storage outside test,\nJPEG/PNG and at most 10 MiB (or a lower configured cap). Storage failures return\n503 STORAGE_UNAVAILABLE. PUT the exact bytes with Content-Type, Content-Length and\nIf-None-Match: *. DELIVERY_PROOF accepts JPEG, PNG, HEIC, HEIF, MP4, WebM or QuickTime;\nproof videos are capped at 120 MiB and 120 seconds (configuration may lower either cap).\nORDER_REQUEST and COURIER_AVATAR remain image-only. URLs expire after 300 seconds;\nunclaimed avatar grants after 24 hours.",
         "operationId": "create_upload_url_api_media_upload_urls_post",
         "requestBody": {
           "content": {
@@ -1852,7 +1852,7 @@
           "media"
         ],
         "summary": "Confirm Upload",
-        "description": "Confirm an uploaded object exists and is a valid image.",
+        "description": "Confirm the owned upload's actual bytes match its allowed purpose and media type.",
         "operationId": "confirm_upload_api_media_confirm_post",
         "requestBody": {
           "content": {
@@ -2293,7 +2293,7 @@
           "orders"
         ],
         "summary": "Deliver Order",
-        "description": "Mark an in-progress order delivered with photo proof (assigned courier).",
+        "description": "Mark an in-progress order delivered with 1\u201310 photo/video proofs.",
         "operationId": "deliver_order_api_orders__order_id__deliver_post",
         "parameters": [
           {
@@ -2445,7 +2445,7 @@
           "orders"
         ],
         "summary": "List Order Media",
-        "description": "Return confirmed order photos with five-minute signed access URLs.",
+        "description": "Return confirmed order photos/videos with five-minute signed access URLs.",
         "operationId": "list_order_media_api_orders__order_id__media_get",
         "parameters": [
           {
@@ -4810,10 +4810,10 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 5,
+            "maxItems": 10,
             "minItems": 1,
             "title": "Proof Media Keys",
-            "description": "Confirmed delivery-proof photo keys."
+            "description": "One to ten confirmed delivery-proof photos and/or videos."
           },
           "note": {
             "anyOf": [
@@ -4834,7 +4834,7 @@
           "proof_media_keys"
         ],
         "title": "DeliverRequest",
-        "description": "A courier's delivery submission with photographic proof."
+        "description": "A courier's delivery submission with photo and/or video proof."
       },
       "DeviceResponse": {
         "properties": {
@@ -5984,7 +5984,7 @@
           "next_cursor"
         ],
         "title": "OrderMediaPage",
-        "description": "Oldest-created order media first."
+        "description": "Oldest-created order media first; content_type identifies media format."
       },
       "OrderMediaResponse": {
         "properties": {
@@ -6003,11 +6003,13 @@
           },
           "content_type": {
             "type": "string",
-            "title": "Content Type"
+            "title": "Content Type",
+            "description": "Validated original MIME type, including video for delivery proof."
           },
           "byte_size": {
             "type": "integer",
-            "title": "Byte Size"
+            "title": "Byte Size",
+            "description": "Verified object size in bytes."
           },
           "created_at": {
             "type": "string",
@@ -6035,7 +6037,7 @@
           "expires_at"
         ],
         "title": "OrderMediaResponse",
-        "description": "One photo, without exposing its internal object key."
+        "description": "One private photo or video, without exposing its internal object key."
       },
       "OrderNavigation": {
         "properties": {
@@ -7674,16 +7676,19 @@
               "image/jpeg",
               "image/png",
               "image/heic",
-              "image/heif"
+              "image/heif",
+              "video/mp4",
+              "video/webm",
+              "video/quicktime"
             ],
             "title": "Content Type",
-            "description": "The image MIME type; pinned into the pre-signed URL."
+            "description": "JPEG, PNG, HEIC or HEIF images for all purposes; MP4, WebM or QuickTime video only for DELIVERY_PROOF. The value is pinned into the pre-signed URL."
           },
           "byte_size": {
             "type": "integer",
             "exclusiveMinimum": 0.0,
             "title": "Byte Size",
-            "description": "Declared size in bytes; must be within the cap."
+            "description": "Exact object size in bytes. Images use MAX_UPLOAD_BYTES (10 MiB default); delivery-proof videos use CHAT_VIDEO_MAX_UPLOAD_BYTES (120 MiB maximum/default)."
           }
         },
         "additionalProperties": false,

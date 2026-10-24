@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -42,6 +43,15 @@ class LiveOrderState:
     status: OrderStatus | None
     courier_id: uuid.UUID | None
     assigned_at: datetime | None
+
+
+@dataclass(frozen=True)
+class NewOrderMedia:
+    """Validated media metadata to attach in a single repository flush."""
+
+    storage_key: str
+    content_type: str
+    byte_size: int
 
 
 class OrderRepository:
@@ -112,16 +122,39 @@ class OrderRepository:
         captured_at: datetime | None = None,
     ) -> None:
         """Attach a media object (customer request or delivery proof) to an order."""
-        self._session.add(
-            OrderMedia(
-                order_id=order_id,
-                uploaded_by_user_id=uploaded_by_user_id,
-                media_type=media_type,
-                storage_key=storage_key,
-                content_type=content_type,
-                byte_size=byte_size,
-                captured_at=captured_at,
-            )
+        await self.add_media_many(
+            order_id=order_id,
+            uploaded_by_user_id=uploaded_by_user_id,
+            media_type=media_type,
+            media=[NewOrderMedia(storage_key, content_type, byte_size)],
+            captured_at=captured_at,
+        )
+
+    async def add_media_many(
+        self,
+        *,
+        order_id: uuid.UUID,
+        uploaded_by_user_id: uuid.UUID,
+        media_type: MediaType,
+        media: Sequence[NewOrderMedia],
+        captured_at: datetime | None = None,
+    ) -> None:
+        """Attach bounded order media with one flush instead of per-file round trips."""
+        if not media:
+            return
+        self._session.add_all(
+            [
+                OrderMedia(
+                    order_id=order_id,
+                    uploaded_by_user_id=uploaded_by_user_id,
+                    media_type=media_type,
+                    storage_key=item.storage_key,
+                    content_type=item.content_type,
+                    byte_size=item.byte_size,
+                    captured_at=captured_at,
+                )
+                for item in media
+            ]
         )
         await self._session.flush()
 
@@ -278,7 +311,7 @@ class OrderRepository:
         limit: int,
         cursor: uuid.UUID | None,
     ) -> list[OrderMedia]:
-        """Page only request/proof photos for the order's current participants."""
+        """Page request/proof media for the order's current participants."""
         query = (
             select(OrderMedia)
             .join(Order, Order.id == OrderMedia.order_id)

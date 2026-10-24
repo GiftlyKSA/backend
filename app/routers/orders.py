@@ -346,7 +346,7 @@ async def deliver_order(
     body: DeliverRequest,
     actor: Annotated[Actor, Depends(_active_courier)],
 ) -> OrderDetail:
-    """Mark an in-progress order delivered with photo proof (assigned courier)."""
+    """Mark an in-progress order delivered with 1–10 photo/video proofs."""
     media = await _prepare_media(request, db, actor, body.proof_media_keys, "DELIVERY_PROOF")
     await _active_courier(request, db, actor)
     order = await _fulfillment(request, db, media=media).submit_delivery(

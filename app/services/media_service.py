@@ -17,33 +17,47 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 from app.core.config import Environment, Settings
-from app.core.exceptions import BadRequestError, ConflictError, StorageUnavailableError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    MediaValidationUnavailableError,
+    StorageUnavailableError,
+)
 from app.integrations.storage.base import ObjectHead, StorageClient
 from app.models import MediaUpload
 from app.repositories.media_repository import MediaRepository
-from app.services.chat_media_validation import MEDIA_TYPES, verify_image_isolated
+from app.services.chat_media_validation import (
+    MEDIA_TYPES,
+    bounded_recording_file,
+    verify_image_isolated,
+    verify_recording_file,
+)
 
 ALLOWED_IMAGE_TYPES = frozenset(MEDIA_TYPES["IMAGE"])
+ALLOWED_VIDEO_TYPES = frozenset(MEDIA_TYPES["VIDEO"])
 _image_slots = asyncio.Semaphore(2)
+_video_slots = asyncio.Semaphore(1)
 _UPLOAD_TTL_SECONDS = 300
 _AVATAR_MAX_BYTES = 10 * 1024 * 1024
 _AVATAR_GRANT_RETENTION = timedelta(days=1)
 MAX_OUTSTANDING_UPLOADS = 20
 MAX_OUTSTANDING_BYTES = 50 * 1024 * 1024
+MAX_DELIVERY_PROOF_MEDIA = 10
 _PREFIX_BY_PURPOSE = {
     "ORDER_REQUEST": "orders/pending",
     "DELIVERY_PROOF": "orders/proof",
     "COURIER_AVATAR": "couriers/avatars",
 }
-# A safe key: only the known prefixes, a uuid, and a supported image suffix — nothing else.
+# A safe key: only known prefixes, a UUID, and a supported media suffix.
 _KEY_RE = re.compile(
-    r"^(orders/pending|orders/proof|couriers/avatars)/[0-9a-f-]{36}\.(jpg|png|heic|heif)$"
+    r"^(orders/pending|orders/proof|couriers/avatars)/[0-9a-f-]{36}\.(jpg|png|heic|heif|mp4|webm|mov)$"
 )
 
 
 @dataclass(frozen=True)
 class _UploadSnapshot:
     storage_key: str
+    purpose: str
     content_type: str
     byte_size: int
 
@@ -110,16 +124,24 @@ class MediaService:
             raise BadRequestError("Unknown media purpose.")
         if purpose == "COURIER_AVATAR" and content_type not in {"image/jpeg", "image/png"}:
             raise BadRequestError("Courier avatars must be JPEG or PNG.")
-        if content_type not in ALLOWED_IMAGE_TYPES:
-            raise BadRequestError("Only JPEG, PNG, HEIC or HEIF images are allowed.")
-        max_bytes = self._settings.MAX_UPLOAD_BYTES
+        is_video = content_type in ALLOWED_VIDEO_TYPES
+        if is_video and purpose != "DELIVERY_PROOF":
+            raise BadRequestError("Videos are only allowed for delivery proof.")
+        if not is_video and content_type not in ALLOWED_IMAGE_TYPES:
+            raise BadRequestError("Only supported images or delivery-proof videos are allowed.")
+        max_bytes = (
+            self._settings.CHAT_VIDEO_MAX_UPLOAD_BYTES
+            if is_video
+            else self._settings.MAX_UPLOAD_BYTES
+        )
         if purpose == "COURIER_AVATAR":
             max_bytes = min(max_bytes, _AVATAR_MAX_BYTES)
             self._require_avatar_storage()
         if not 0 < byte_size <= max_bytes:
             raise BadRequestError("The file is too large.")
 
-        ext = MEDIA_TYPES["IMAGE"][content_type]
+        media_kind = "VIDEO" if is_video else "IMAGE"
+        ext = MEDIA_TYPES[media_kind][content_type]
         storage_key = f"{prefix}/{uuid.uuid4()}.{ext}"
         if release_reads is not None:
             await release_reads()
@@ -140,7 +162,14 @@ class MediaService:
             content_type=content_type,
             byte_size=byte_size,
             max_count=MAX_OUTSTANDING_UPLOADS,
-            max_bytes=MAX_OUTSTANDING_BYTES,
+            max_bytes=(
+                max(
+                    MAX_OUTSTANDING_BYTES,
+                    MAX_DELIVERY_PROOF_MEDIA * self._settings.CHAT_VIDEO_MAX_UPLOAD_BYTES,
+                )
+                if purpose == "DELIVERY_PROOF"
+                else MAX_OUTSTANDING_BYTES
+            ),
         )
         return url, storage_key, _UPLOAD_TTL_SECONDS
 
@@ -152,16 +181,15 @@ class MediaService:
         release_reads: TransactionBoundary | None = None,
         resume_writes: TransactionBoundary | None = None,
     ) -> None:
-        """Verify an uploaded object exists, is within size, and is a real image.
+        """Verify an uploaded object exists, is within size, and has valid contents.
 
         Raises:
-            BadRequestError: The key is malformed, missing, oversized, or not an
-                image by magic bytes.
+            BadRequestError: The key is malformed, missing, oversized, or has invalid contents.
         """
         grant = await self._owned_grant(storage_key, actor_id)
         if grant.attached_at is not None or grant.deleting_at is not None:
             raise ConflictError("This media has already been attached.")
-        snapshot = _UploadSnapshot(storage_key, grant.content_type, grant.byte_size)
+        snapshot = _UploadSnapshot(storage_key, grant.purpose, grant.content_type, grant.byte_size)
         if release_reads is not None:
             await release_reads()
         await self._verify_object(snapshot)
@@ -200,8 +228,9 @@ class MediaService:
         release_reads: TransactionBoundary,
     ) -> None:
         """Validate immutable uploads outside the caller's attachment transaction."""
-        if len(storage_keys) > 5 or len(storage_keys) != len(set(storage_keys)):
-            raise ConflictError("Provide at most five unique media keys.")
+        maximum = MAX_DELIVERY_PROOF_MEDIA if purpose == "DELIVERY_PROOF" else 5
+        if len(storage_keys) > maximum or len(storage_keys) != len(set(storage_keys)):
+            raise ConflictError(f"Provide at most {maximum} unique media keys.")
         snapshots = []
         for grant in await self._owned_grants(storage_keys, actor_id):
             key = grant.storage_key
@@ -209,7 +238,9 @@ class MediaService:
                 raise BadRequestError("The media is not confirmed for this purpose.")
             if grant.attached_at is not None or grant.deleting_at is not None:
                 raise ConflictError("This media has already been attached.")
-            snapshots.append(_UploadSnapshot(key, grant.content_type, grant.byte_size))
+            snapshots.append(
+                _UploadSnapshot(key, grant.purpose, grant.content_type, grant.byte_size)
+            )
         await release_reads()
         prepared = {}
         for snapshot in snapshots:
@@ -222,8 +253,9 @@ class MediaService:
         self, storage_keys: list[str], *, actor_id: uuid.UUID, purpose: str
     ) -> dict[str, ObjectHead]:
         """Claim unique keys in stable order to avoid opposing row-lock orders."""
-        if len(storage_keys) > 5 or len(storage_keys) != len(set(storage_keys)):
-            raise ConflictError("Provide at most five unique media keys.")
+        maximum = MAX_DELIVERY_PROOF_MEDIA if purpose == "DELIVERY_PROOF" else 5
+        if len(storage_keys) > maximum or len(storage_keys) != len(set(storage_keys)):
+            raise ConflictError(f"Provide at most {maximum} unique media keys.")
         if not storage_keys:
             return {}
         keys = sorted(storage_keys)
@@ -237,7 +269,12 @@ class MediaService:
             for grant in await self._owned_grants(keys, actor_id):
                 self._check_claimable(grant, purpose)
                 snapshots.append(
-                    _UploadSnapshot(grant.storage_key, grant.content_type, grant.byte_size)
+                    _UploadSnapshot(
+                        grant.storage_key,
+                        grant.purpose,
+                        grant.content_type,
+                        grant.byte_size,
+                    )
                 )
             for snapshot in snapshots:
                 if snapshot.storage_key not in heads:
@@ -292,30 +329,70 @@ class MediaService:
 
     async def _verify_object(self, grant: MediaUpload | _UploadSnapshot) -> ObjectHead:
         storage_key = grant.storage_key
-        avatar = storage_key.startswith("couriers/avatars/")
+        avatar = grant.purpose == "COURIER_AVATAR"
+        video = grant.purpose == "DELIVERY_PROOF" and grant.content_type in ALLOWED_VIDEO_TYPES
         if avatar:
             self._require_avatar_storage()
         head = await self._storage.head_object(storage_key)
         if head is None or not head.exists:
             raise BadRequestError("The uploaded object was not found.")
-        max_bytes = (
-            min(self._settings.MAX_UPLOAD_BYTES, _AVATAR_MAX_BYTES)
-            if avatar
-            else self._settings.MAX_UPLOAD_BYTES
-        )
+        self._validate_object_head(grant, head, avatar=avatar, video=video)
+        if video:
+            await self._verify_video_object(grant)
+        else:
+            await self._verify_image_object(grant)
+        return head
+
+    def _validate_object_head(
+        self,
+        grant: MediaUpload | _UploadSnapshot,
+        head: ObjectHead,
+        *,
+        avatar: bool,
+        video: bool,
+    ) -> None:
+        if avatar:
+            max_bytes = min(self._settings.MAX_UPLOAD_BYTES, _AVATAR_MAX_BYTES)
+        elif video:
+            max_bytes = self._settings.CHAT_VIDEO_MAX_UPLOAD_BYTES
+        else:
+            max_bytes = self._settings.MAX_UPLOAD_BYTES
         if head.byte_size != grant.byte_size or head.byte_size > max_bytes:
             raise BadRequestError("The uploaded file size does not match the upload request.")
-        if (
-            head.content_type != grant.content_type
-            or head.content_type not in ALLOWED_IMAGE_TYPES
-            or (avatar and head.content_type not in {"image/jpeg", "image/png"})
-        ):
+        allowed_types = ALLOWED_VIDEO_TYPES if video else ALLOWED_IMAGE_TYPES
+        if head.content_type != grant.content_type or head.content_type not in allowed_types:
+            raise BadRequestError(
+                "The uploaded file is not a permitted video."
+                if video
+                else "The uploaded file is not a permitted image."
+            )
+        if avatar and head.content_type not in {"image/jpeg", "image/png"}:
             raise BadRequestError("The uploaded file is not a permitted image.")
+
+    async def _verify_video_object(self, grant: MediaUpload | _UploadSnapshot) -> None:
+        try:
+            async with asyncio.timeout(45):
+                async with _video_slots:
+                    async with bounded_recording_file(
+                        self._storage, grant.storage_key, max_bytes=grant.byte_size
+                    ) as path:
+                        await verify_recording_file(
+                            path,
+                            kind="VIDEO",
+                            mime=grant.content_type,
+                            maximum=self._settings.CHAT_VIDEO_MAX_DURATION_SECONDS,
+                        )
+        except ValueError as exc:
+            raise BadRequestError("The uploaded video exceeds its declared size.") from exc
+        except TimeoutError as exc:
+            raise MediaValidationUnavailableError() from exc
+
+    async def _verify_image_object(self, grant: MediaUpload | _UploadSnapshot) -> None:
         try:
             async with asyncio.timeout(25):
                 async with _image_slots:
                     body = await self._storage.read_bounded_object(
-                        storage_key, max_bytes=grant.byte_size
+                        grant.storage_key, max_bytes=grant.byte_size
                     )
                     if len(body) != grant.byte_size:
                         raise BadRequestError(
@@ -325,10 +402,7 @@ class MediaService:
         except ValueError as exc:
             raise BadRequestError("The uploaded file exceeds its declared size.") from exc
         except TimeoutError as exc:
-            from app.core.exceptions import MediaValidationUnavailableError
-
             raise MediaValidationUnavailableError() from exc
-        return head
 
     @staticmethod
     def validate_key(storage_key: str) -> None:

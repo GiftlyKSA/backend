@@ -1,4 +1,4 @@
-"""Sign bounded order-photo pages only after current participant authorization."""
+"""Sign bounded order-media pages only after current participant authorization."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ _READ_TTL_SECONDS = 300
 
 
 class OrderMediaReadService:
-    """Expose trusted photo metadata and short-lived signed URLs to participants."""
+    """Expose trusted photo/video metadata and short-lived signed URLs to participants."""
 
     def __init__(
         self,
@@ -40,7 +40,7 @@ class OrderMediaReadService:
         limit: int,
         cursor: UUID | None,
     ) -> OrderMediaPage:
-        """Reject inaccessible orders even when they have no attached photos."""
+        """Reject inaccessible orders even when they have no attached media."""
         await self._eligibility.require_marketplace_actor(actor_id)
         if await self._orders.get_for_actor(order_id, actor_id) is None:
             raise NotFoundError("Order not found.")

@@ -1,6 +1,6 @@
 """Order fulfilment: delivery, approval, and disputes.
 
-The escrow lifecycle lives here. A courier submits delivery photo proof;
+The escrow lifecycle lives here. A courier submits delivery media proof;
 the customer (or the auto-approve job) approves, which RELEASES escrow through the money
 service — the courier is paid on the pre-discount base, and the platform
 keeps the residue. Either party may DISPUTE, freezing escrow until an admin resolves it.
@@ -26,9 +26,9 @@ from app.models import Dispute, Invoice, Order
 from app.models.enums import DisputeStatus, InvoiceStatus, MediaType, OrderStatus
 from app.repositories.dispute_repository import DisputeRepository
 from app.repositories.invoice_repository import InvoiceRepository
-from app.repositories.order_repository import OrderRepository
+from app.repositories.order_repository import NewOrderMedia, OrderRepository
 from app.repositories.wallet_repository import WalletRepository
-from app.services.media_service import MediaService
+from app.services.media_service import MAX_DELIVERY_PROOF_MEDIA, MediaService
 from app.services.money_service import MoneyService
 from app.services.order_state import assert_transition
 
@@ -39,9 +39,6 @@ class DeliveryInput:
 
     proof_media_keys: list[str]
     note: str | None
-
-
-_MAX_PROOF_MEDIA = 5
 
 
 class FulfillmentService:
@@ -74,13 +71,12 @@ class FulfillmentService:
     async def submit_delivery(
         self, *, order_id: uuid.UUID, courier_id: uuid.UUID, data: DeliveryInput
     ) -> Order:
-        """Mark an in-progress order DELIVERED with photo proof (assigned courier).
+        """Mark an in-progress order DELIVERED with media proof (assigned courier).
 
         Raises:
             NotFoundError: Not this courier's order.
             InvalidStateTransitionError: The order is not IN_PROGRESS.
-            ValidationDomainError: Missing/too many photos, or
-                a proof object that fails validation.
+            ValidationDomainError: Missing or too many proof objects.
         """
         order = await self._orders.lock_for_actor(order_id, courier_id)
         if order is None or order.courier_id != courier_id:
@@ -88,24 +84,27 @@ class FulfillmentService:
         assert_transition(order.status, OrderStatus.DELIVERED)
 
         if not data.proof_media_keys:
-            raise ValidationDomainError("At least one delivery photo is required.")
-        if len(data.proof_media_keys) > _MAX_PROOF_MEDIA:
-            raise ValidationDomainError("At most 5 delivery photos are allowed.")
+            raise ValidationDomainError("At least one delivery-proof photo or video is required.")
+        if len(data.proof_media_keys) > MAX_DELIVERY_PROOF_MEDIA:
+            raise ValidationDomainError("At most 10 delivery-proof photos or videos are allowed.")
         media_heads = await self._media.claim_many(
             data.proof_media_keys, actor_id=courier_id, purpose="DELIVERY_PROOF"
         )
         captured_at = self._now()
-        for key in data.proof_media_keys:
-            head = media_heads[key]
-            await self._orders.add_media(
-                order_id=order.id,
-                uploaded_by_user_id=courier_id,
-                media_type=MediaType.DELIVERY_PROOF,
-                storage_key=key,
-                content_type=head.content_type,
-                byte_size=head.byte_size,
-                captured_at=captured_at,
-            )
+        await self._orders.add_media_many(
+            order_id=order.id,
+            uploaded_by_user_id=courier_id,
+            media_type=MediaType.DELIVERY_PROOF,
+            media=[
+                NewOrderMedia(
+                    storage_key=key,
+                    content_type=media_heads[key].content_type,
+                    byte_size=media_heads[key].byte_size,
+                )
+                for key in data.proof_media_keys
+            ],
+            captured_at=captured_at,
+        )
         order.status = OrderStatus.DELIVERED
         order.delivered_at = self._now()
         await self._orders.flush()

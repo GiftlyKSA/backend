@@ -47,7 +47,9 @@ async def test_avatar_rejects_image_header_without_valid_decodable_bytes(test_se
     storage.recorded_bytes[key] = body
     service = MediaService(storage, test_settings, AsyncMock(spec=MediaRepository))
     with pytest.raises(BadRequestError):
-        await service._verify_object(_UploadSnapshot(key, "image/jpeg", len(body)))
+        await service._verify_object(
+            _UploadSnapshot(key, "COURIER_AVATAR", "image/jpeg", len(body))
+        )
 
 
 async def test_development_fake_avatar_never_issues_successful_grant():
@@ -201,7 +203,9 @@ async def test_avatar_confirmation_rechecks_jpeg_png_policy(test_settings):
 
     storage = AsyncMock()
     storage.head_object.return_value = ObjectHead(True, 10, "image/heic")
-    snapshot = _UploadSnapshot(f"couriers/avatars/{uuid.uuid4()}.heic", "image/heic", 10)
+    snapshot = _UploadSnapshot(
+        f"couriers/avatars/{uuid.uuid4()}.heic", "COURIER_AVATAR", "image/heic", 10
+    )
     with pytest.raises(BadRequestError, match="permitted image"):
         await MediaService(storage, test_settings, AsyncMock())._verify_object(snapshot)
     storage.read_bounded_object.assert_not_awaited()

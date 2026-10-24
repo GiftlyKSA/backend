@@ -1,4 +1,4 @@
-"""Private order-photo reads for authorized mobile participants."""
+"""Private order-media reads for authorized mobile participants."""
 
 from typing import Annotated
 from uuid import UUID
@@ -29,7 +29,7 @@ async def list_order_media(
     cursor: Annotated[UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> OrderMediaPage:
-    """Return confirmed order photos with five-minute signed access URLs."""
+    """Return confirmed order photos/videos with five-minute signed access URLs."""
     response.headers["Cache-Control"] = "private, no-store"
     return await OrderMediaReadService(
         OrderRepository(db),
