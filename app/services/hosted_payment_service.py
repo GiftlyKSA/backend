@@ -15,6 +15,7 @@ from app.integrations.payments.base import (
 from app.models import PaymentIntent
 from app.models.enums import PaymentIntentStatus
 from app.repositories.payment_repository import PaymentRepository
+from app.services.payment_context import payment_session_deadline
 from app.services.payment_reservation_service import PaymentReservationService
 
 
@@ -82,13 +83,16 @@ class HostedPaymentService:
         if (
             intent.checkout_state == "ACTIVE"
             and intent.gateway_payment_url
-            and intent.expires_at > datetime.now(UTC)
+            and payment_session_deadline(intent) > datetime.now(UTC)
         ):
             return intent
         current = await self.reconcile(intent)
         if current.status is PaymentIntentStatus.PAID:
             return current
-        if current.expires_at > datetime.now(UTC) and current.checkout_state == "ACTIVE":
+        if (
+            payment_session_deadline(current) > datetime.now(UTC)
+            and current.checkout_state == "ACTIVE"
+        ):
             return current
         if current.checkout_state == "CREATING":
             raise PaymentSessionPendingError()

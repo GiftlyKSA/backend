@@ -1,5 +1,50 @@
 # Giftly API reference
 
+## Dhamen thirty-minute checkout workflow — 2026-10-24
+
+Order creation/acceptance and invoice issuance are local Giftly operations. Issuance
+moves the order to WAITING_PAYMENT. POST /api/invoices/{invoice_id}/pay accepts only
+the wallet choice; the backend computes/reserves the wallet contribution and charges
+only the remainder through POST /api/payments/customer-payment. The provider request
+uses paymentExpiredOnMinutes=30, customer name, one-time payment flags and no supplierId.
+Invoice line details remain in the immutable Giftly snapshot; the guide defines no
+checkout item array. Wallet-only funding settles without Dhamen.
+
+Hosted attempts last at most30 minutes (or the invoice deadline if earlier), independently
+of PAYMENT_EXPIRY_HOURS, which still controls invoice validity and simulated attempts.
+Existing Dhamen attempts are also bounded by created_at+30 minutes. Owned session reads
+expose that effective expires_at and hide payment_url at/after expiry. Before expiry,
+pay reuses the same active attempt and frozen wallet split. After expiry, status must
+be verified and PUT /api/payments/cancel must confirm unpaid closure before replacement.
+Unknown outcomes retain the attempt/hold and do not authorize another checkout.
+
+POST /api/webhooks/dhamen treats notifications as hints and queries the authenticated
+POST /api/payments/customer-payment-status API. Matching reference/customer/amount and
+paymentStatus=1 authorize one atomic ledger/escrow settlement, invoice PAID and order
+IN_PROGRESS. Only committed batches return HTTP200 with responseId and status=SUCCESS.
+Redirects never prove payment. POST /api/payment-sessions/{intent_id}/refresh and the
+five-minute reconciliation worker recover missed notifications. Reconciliation closes
+expired unpaid sessions without expiring a still-valid invoice. The ten-minute expiry
+job handles lapsed invoices; overdue unaccepted orders are cancelled at Saudi midnight.
+Paid-invoice email is queued after settlement and retried by the five-minute receipt job.
+Courier credit remains deferred until order COMPLETED. Production payment interlocks
+remain in force; local tests/CI do not establish a live production integration.
+
+## Payment verification incident — 2026-10-24
+
+PAYMENT_PROVIDER_UNAVAILABLE (503) does not mean checkouts are disabled. Observed
+POST /api/payment-sessions/{intent_id}/refresh failures result from a Dhamen status
+response array where the deployed parser expects customerPayments. The local fix
+normalizes it into the same exactly-one-payment envelope and preserves all identity,
+amount, state and HTTPS checks. Public requests/responses and mobile flags unchanged.
+
+Authorized unpaid sandbox checkout returned201; same-key replay reused its intent,
+owned reads returned200, and refresh reproduced503 under request_id
+`dhamen-status-probe-a166c51bcff44475815b0d753d8fc28c`. Corrected local adapter verified
+PENDING and confirmed provider cancellation. Temporary customer soft-deleted through
+admin, credentials revoked, zero wallet credit/holds, balanced pending audit rows
+retained. No funds collected. Correction not deployed; see [incident evidence](tasks.md#dhamen-deployed-verification-failure--2026-10-24).
+
 ## Mobile read additions — 2026-10-07
 
 The inspected feature routes are deployed as of 2026-10-12. Authenticated checks and

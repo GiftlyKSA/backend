@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
@@ -182,9 +181,8 @@ class DhamenPaymentClient(PaymentClient):
 
     async def create_checkout(self, context: PaymentContext) -> PaymentCheckout:
         """Create one checkout; use exact decimal JSON and explicitly disable recurrence."""
-        minutes = max(1, math.ceil((context.expires_at - datetime.now(UTC)).total_seconds() / 60))
         payment = {
-            "name": context.title[:100],
+            "name": context.customer.name[:100],
             "customerIdentifier": context.customer.external_id,
             "isPreAuth": False,
             "enableRecurring": False,
@@ -196,8 +194,7 @@ class DhamenPaymentClient(PaymentClient):
         body = (
             '{"paymentReferenceId":'
             + json.dumps(context.reference)
-            + ',"paymentExpiredOnMinutes":'
-            + str(minutes)
+            + ',"paymentExpiredOnMinutes":30'
             + ',"customerPayments":['
             + row
             + "]}"
@@ -227,9 +224,11 @@ class DhamenPaymentClient(PaymentClient):
             }
         )
         try:
-            row = _StatusResponse.model_validate(
-                await self._request("api/payments/customer-payment-status", body)
-            ).customer_payments[0]
+            result = await self._request("api/payments/customer-payment-status", body)
+            # The sandbox returns an array; v1.5 documents a one-row envelope.
+            if isinstance(result, list):
+                result = {"customerPayments": result}
+            row = _StatusResponse.model_validate(result).customer_payments[0]
             if (
                 row.payment_reference_id != context.reference
                 or row.customer_identifier != context.customer.external_id

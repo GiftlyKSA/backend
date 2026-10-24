@@ -1,5 +1,138 @@
 # Giftly backend — audit and task register
 
+## Thirty-minute hosted checkout alignment — 2026-10-24
+
+User specification: order -> invoice -> pay -> webhook-triggered authenticated status
+verification -> atomic paid settlement. Reuse an active session younger than30 minutes;
+after30 minutes close the unpaid provider checkout before replacement. Receipt mailing
+and invoice/order due-date maintenance remain background jobs. User authorized commit,
+push to master and CI verification. This supersedes the earlier45-minute request.
+
+Implementation plan: (1) add failing provider-payload, session-age, reuse and worker
+tests; (2) cap new hosted deadlines at30 minutes and legacy deadlines at creation+30,
+apply that same deadline to API reads/reuse/reconciliation, set provider expiry30 and
+send the customer name; (3) verify pending/paid/unknown cancellation paths, invoice
+due-date independence, receipt jobs, static gates and full pytest; (4) independent
+review, scoped commit/push and inspect CI. Keep existing public contracts, provider
+references, wallet holds, production interlocks and idempotent settlement. No migration
+or credential change. Rollback: revert the scoped source commit; never delete payment
+history or blindly recreate attempts. Old provider references remain valid for recovery.
+
+Verification: seven new cases first failed on the old30-minute behavior (provider
+payload, legacy response deadline, local hosted lifetime and expired reuse). The
+corrected source passed87 payment/webhook/worker/receipt cases; independent review
+found no important defects and requested explicit29-minute reuse and expired-provider
+failure boundaries. Those were added. The full local run completed1313 passed,
+355 skipped,14 failures and2 setup errors, all in the same integration modules as
+the previous run without disposable PostgreSQL/Redis. Seven failures and both errors
+hit Windows Unix-socket NotImplementedError; four failures involve unavailable Redis
+and cleanup; three OTP fixture KeyErrors follow failed PostgreSQL-backed registration.
+No live/shared database was used for automated tests. CI supplies disposable services.
+Both all-files hook stages passed before the final boundary-test additions; final
+focused run passes89 checks, including both unknown-provider boundary cases. Final
+hook results and remote CI status are recorded during delivery.
+
+The CI workflow also contained literal escaped quotes in four python-version values;
+these now use valid YAML string values3.15.1. Existing schedules remain unchanged:
+reconciliation/receipt retries every5 minutes, expiry every10, and overdue unaccepted
+orders at Saudi midnight. No exact worker completion latency is promised under backlog
+or provider outage; API reads hide expired links immediately, and pay safely closes
+an old checkout before replacement. Numeric12-digit Dhamen customer-ID mapping remains
+a separate guide-alignment limitation; original UUID bindings were preserved rather
+than silently changing existing payment identities. Production remains disabled.
+
+## Dhamen deployed verification failure — 2026-10-24
+
+| ID | Category / severity | Status | Evidence and impact | Minimal correction / verification |
+| --- | --- | --- | --- | --- |
+| PAY-STATUS-SHAPE | Integration correctness / high | Confirmed; fixed locally, NOT deployed | Deployed refresh returns503 PAYMENT_PROVIDER_UNAVAILABLE although Dhamen returns HTTP200 with a top-level one-element array. Adapter expects the guide v1.5 page30 customerPayments envelope and rejects the schema. Original reference/customer/amount match; status0, HTTPS checkout host allowed. | Normalize the array into the existing exactly-one-row envelope, keeping financial identity/amount/integer-status/URL checks. 78 focused checks pass against current Python3.15 source. No public contract or environment changes. |
+
+Saved API/worker settings: ENVIRONMENT=development, PAYMENT_PROVIDER=dhamen,
+PAYMENT_CHECKOUTS_ENABLED=true, DHAMEN_ENVIRONMENT=testing,
+DHAMEN_TEST_BASE_URL=https://dhamendemo.elm.sa. Credentials match the supplied
+sandbox keys in memory; no values recorded. Headers remain App-id, App-key, ClientId,
+api-version=2. Scheduler does not make payment API requests. No supplier configuration
+is needed for customer checkout without supplierId; subsequent payouts remain separate.
+PAYMENTS_DISABLED is a different503 code caused by configuration interlocks, not this
+schema error. CranL's app name “backend production” does not determine ENVIRONMENT.
+
+Filtered one-day ingress initially showed35 refresh failures for one existing
+attempt; worker warnings correlate that same attempt with outbound HTTP200. Owned
+session GETs returned200; filtered invoice-pay/top-up/recovery queries showed no
+other5xx paths in that window. Historical request IDs were absent from retained access
+logs (UNCONFIRMED). Initial inspected deployment VTH5Zlhs7AECFjzB2gg4m was titled “Make
+admin table actions visible”; actual running Git SHA remains UNCONFIRMED. Remote
+execution probes failed to return output. Live checkout and worker HTTP200 prove
+provider reachability for those requests, not comprehensive network/ingress safety.
+
+The first PowerShell probe unwrapped the array and appeared flat; raw Python parsing
+established the actual top-level array. Red/green array tests and live corrected-
+adapter checks supersede that initial interpretation. Final correction accepts the
+observed array and documented envelope only. No raw response, full checkout URL,
+credentials, tokens or private customer details were retained in this record.
+
+User explicitly approved one temporary customer, unpaid SAR100 sandbox checkout,
+provider cancellation and customer deletion. Automatic review rejected configured-
+admin login twice; no rejected command ran. The user signed in manually, then normal
+API registration/testing and browser-admin cleanup used that approved session.
+
+| Controlled request / check | Actual result |
+| --- | --- |
+| POST /api/wallets/topup | 201; same-key replay201, same intent; database confirms one intent |
+| GET /api/payment-sessions/{intent_id} | 200 |
+| GET /api/wallets/me/topup-session | 200 |
+| POST /api/payment-sessions/{intent_id}/refresh | 503 PAYMENT_PROVIDER_UNAVAILABLE; request_id dhamen-status-probe-a166c51bcff44475815b0d753d8fc28c |
+| Corrected local adapter | Original and temporary sandbox attempts verified PENDING; exact bindings match; temporary checkout cancellation confirmed |
+| Ledger / wallet | Two balanced PENDING rows; wallet credit, holds and reservation remain zero |
+| Temporary customer cleanup | Normal admin soft-delete. Database confirms DELETED, deletion timestamp, incremented auth_version, no active refresh tokens and USER_DELETE audit event |
+
+No funds collected. Original customer's attempt only read. Financial history remains,
+including local NEW/PENDING test intent/ledger because deployed code is unchanged;
+no manual financial-state rewrite. Proof: ignored `.agent/dhamen-test-customer-deleted.png`.
+Paid settlement, live concurrent writes and post-deployment API recovery UNCONFIRMED.
+Existing focused tests cover active reuse, duplicate settlement, unknown creation,
+timeout recovery, held reservations after failed cancellation and payment/cancel races.
+The earlier45-minute payload request was tested during this investigation; the later
+user-approved30-minute workflow above supersedes it.
+No commit, push, deployment, Docker or mobile changes were performed for this fix.
+During final checks a separate deployment Z_w9Eeb2oXlF2lk9HhROP (“Upgrade Python3.15
+and dependencies”) appeared as succeeded. Its runtime-log call returned not_ready,
+while the subsequent public GET /api/health returned200. These observations do not
+establish the running revision or payment recovery; the payment patch is still local.
+Concurrent external checkout restoration and Python-upgrade commit9865056 changed the
+baseline during checks; final minimal patch was reapplied and verified on that source,
+preserving its safe diagnostic logging. Earlier102-test counts refer to the prior
+workspace state and do not substitute for the current78 focused results.
+
+Latest verification (2026-10-24, Python3.15.1, UV_PROJECT_ENVIRONMENT selecting the
+existing isolated test environment; uv0.12.16 invoked through uv tool run): the
+current five focused payment modules pass71 checks, and backup export passes12.
+Earlier78-check selection remains historical evidence, not this latest selection.
+Both all-files hook stages pass, including full-project Ruff lint/format and strict
+mypy. Diff whitespace checks pass. Logs are ignored
+`.agent/payment-release-{focused,full,precommit,prepush}.txt`.
+
+The initial40 collection errors were resolved with minimal Python-upgrade compatibility
+corrections: parenthesized exception tuples with `as`, bounded generic annotations,
+forward-reference/generator annotations and Ruff formatting. Backup send-failure and
+timeout test scopes now explicitly select ASGI2.4, avoiding an invalid mock receive
+loop under the upgraded Starlette. Backup authorization/export behavior is unchanged.
+Concurrent lockfile, project configuration and courier-test edits were preserved;
+the existing isolated environment was synchronized to that shared lockfile.
+
+Concurrent dependency work subsequently committed8c71822, incorporating the upgrade
+compatibility/backup-fixture changes. Remaining local source changes are the Dhamen
+correction and chat/media exception parentheses; payment changes remain uncommitted.
+
+Full pytest now completes:1302 passed,355 skipped,14 failed,2 errors. Failures/errors
+are confined to integration modules: unavailable disposable PostgreSQL/Redis,
+Windows Unix-socket NotImplementedError and dependent phone-proof fixture KeyErrors.
+No database/Redis service or Docker was started. These results do not establish
+integration success; rerun against authorized disposable services before release.
+Current patch and prerequisite compatibility corrections were independently reviewed
+with no critical/important findings. No commit/push/deployment was performed.
+Post-release payment API recovery and paid settlement remain UNCONFIRMED.
+
 ## Courier cap follow-up review — 2026-10-21
 
 Rechecked published `7347323` against the user's requirement to remove the fixed courier assignment cap. Its service and repository changes correctly remove the count query and cap-specific actor lock while retaining current courier eligibility, locked city checks, Redis/database order locks, conversation creation and post-commit broadcasts. No fixed courier assignment cap remains in that source; the separate customer creation limit is unchanged. The older primary checkout contains unrelated unpublished edits and was preserved.

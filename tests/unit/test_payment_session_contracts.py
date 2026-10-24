@@ -51,6 +51,38 @@ def test_expired_session_never_offers_stale_url() -> None:
     assert _response(intent).status == "PENDING"
 
 
+@pytest.mark.parametrize("minutes_old, active", [(29, True), (30, False), (31, False)])
+def test_dhamen_session_age_limits_legacy_long_deadlines(minutes_old, active) -> None:
+    intent = row()
+    intent.created_at = datetime.now(UTC) - timedelta(minutes=minutes_old)
+    response = _response(intent)
+    assert (response.payment_url is not None) is active
+    assert response.expires_at == (intent.created_at + timedelta(minutes=30)).isoformat()
+
+
+def test_session_deadline_preserves_an_earlier_invoice_due_date() -> None:
+    intent = row()
+    intent.created_at = datetime.now(UTC)
+    intent.expires_at = intent.created_at + timedelta(minutes=5)
+    assert _response(intent).expires_at == intent.expires_at.isoformat()
+
+
+@pytest.mark.parametrize("hosted", [False, True])
+def test_hosted_checkout_expiry_is_separate_from_invoice_due_date(hosted) -> None:
+    svc = PaymentService(
+        **{
+            key: AsyncMock()
+            for key in ("payments", "invoices", "orders", "wallets", "money", "promos", "users")
+        },
+        gateway=Mock(uses_hosted_sessions=hosted),
+        redis=AsyncMock(),
+        settings=make_test_settings(PAYMENT_EXPIRY_HOURS=48),
+    )
+    now = svc._now()
+    expected = timedelta(minutes=30) if hosted else timedelta(hours=48)
+    assert abs(svc._expiry() - now - expected) < timedelta(seconds=1)
+
+
 async def test_session_read_and_order_recovery_enforce_payer_scope() -> None:
     payments = AsyncMock()
     payments.get_intent_for_actor.return_value = None

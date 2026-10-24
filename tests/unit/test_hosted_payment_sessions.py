@@ -58,11 +58,40 @@ def service(row: SimpleNamespace) -> tuple[HostedPaymentService, AsyncMock, Asyn
 
 async def test_active_session_is_reused_without_creating_or_holding_again() -> None:
     row = attempt()
+    row.created_at = datetime.now(UTC) - timedelta(minutes=29)
     hosted, gateway, settle = service(row)
     result = await hosted.reuse_or_close(row)
     assert result is row
     gateway.create_checkout.assert_not_called()
     gateway.get_payment_status.assert_not_called()
+    settle.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["get_payment_status", "cancel_checkout"])
+async def test_expired_legacy_session_keeps_hold_when_provider_outcome_unknown(operation) -> None:
+    row = attempt()
+    row.created_at = datetime.now(UTC) - timedelta(minutes=31)
+    hosted, gateway, settle = service(row)
+    gateway.get_payment_status.return_value = PaymentStatus(PaymentState.PENDING, row.amount)
+    getattr(gateway, operation).side_effect = PaymentSessionPendingError()
+    with pytest.raises(PaymentSessionPendingError):
+        await hosted.reuse_or_close(row)
+    assert row.status is PaymentIntentStatus.NEW
+    hosted._reservations.release_locked_intent.assert_not_called()
+    gateway.create_checkout.assert_not_called()
+    settle.assert_not_called()
+
+
+@pytest.mark.parametrize("minutes_old", [30, 31])
+async def test_legacy_session_closes_after_thirty_minutes_before_replacement(minutes_old) -> None:
+    row = attempt()
+    row.created_at = datetime.now(UTC) - timedelta(minutes=minutes_old)
+    hosted, gateway, settle = service(row)
+    gateway.get_payment_status.return_value = PaymentStatus(PaymentState.PENDING, row.amount)
+    assert await hosted.reuse_or_close(row) is None
+    gateway.cancel_checkout.assert_awaited_once()
+    hosted._reservations.release_locked_intent.assert_awaited_once_with(row)
+    assert row.status is PaymentIntentStatus.CANCELLED
     settle.assert_not_called()
 
 

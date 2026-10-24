@@ -19,6 +19,7 @@ from app.integrations.payments.base import PaymentClient
 from app.models.enums import PaymentIntentStatus
 from app.repositories.payment_repository import PaymentRepository
 from app.services.expiry_service import ExpiryService
+from app.services.payment_context import payment_session_deadline
 from app.services.payment_service import build_payment_service
 from app.workers.broker import broker
 
@@ -90,7 +91,8 @@ async def _reconcile_one(
     )
     current = await service.refresh_payment_session(intent_id=intent_id, user_id=intent.user_id)
     if current.status is PaymentIntentStatus.NEW and (
-        current.checkout_state == "CLOSING" or current.expires_at <= datetime.now(UTC)
+        current.checkout_state == "CLOSING"
+        or payment_session_deadline(current) <= datetime.now(UTC)
     ):
         current = await service.cancel_payment_session(intent_id=intent_id, user_id=intent.user_id)
     if current.status is PaymentIntentStatus.CANCELLED and current.reference_invoice_id is not None:

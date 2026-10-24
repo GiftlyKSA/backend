@@ -16,6 +16,16 @@ guides. Source code and current user decisions take precedence. Production payme
 are deliberately disabled: Dhamen is selected but is not a verified live integration.
 No claims below establish production capacity, live vendor acceptance or absence of flaws.
 
+Hosted Dhamen checkouts now have a30-minute lifetime, separate from the invoice's
+PAYMENT_EXPIRY_HOURS due date. The same effective deadline governs resume URLs, reuse
+and background reconciliation, including older long-lived attempts. Expired unpaid
+checkouts require credentialed status verification and confirmed provider cancellation
+before replacement; uncertain outcomes keep wallet reservations intact. Webhook-driven
+verification settles ledger/escrow, invoice PAID and order IN_PROGRESS atomically.
+Receipt mail retries every five minutes; invoice expiry runs every ten minutes and
+overdue unaccepted orders are checked at Saudi midnight. See the dated API workflow
+and task register for implementation evidence, release state and outstanding limits.
+
 ## 1. Product and architecture
 
 Giftly connects customers requesting custom gifts with verified couriers in the same city.
@@ -909,6 +919,16 @@ and requires financial review. Callback bodies and browser redirects cannot prov
 Taskiq testing-provider reconciliation runs every five minutes, with20 attempts maximum,
 a shared scheduler lock and five-minute deadline. Run worker and scheduler for recovery.
 Production still rejects Dhamen until vendor authentication/merchant contracts are verified.
+
+Live testing-provider verification on 2026-10-24 found a top-level one-row status
+array, whereas guide v1.5 page30 documents a customerPayments envelope. The adapter
+normalizes that array into the existing exactly-one-row validator, preserving exact
+reference/customer/Decimal amount/integer-state checks and the HTTPS host allowlist.
+Schema rejection maps to PAYMENT_PROVIDER_UNAVAILABLE503, separately from the
+PAYMENTS_DISABLED configuration interlock. The requested checkout payload explicitly
+uses paymentExpiredOnMinutes=30, superseding the earlier45-minute request. The dated
+[incident record](tasks.md#dhamen-deployed-verification-failure--2026-10-24) records
+live evidence and remaining rollout limits. No mobile contract or env changes.
 
 HTTP download and paid-email attachment use the same English Giftly purple renderer.
 GMT+3 affects display only. One-hour bounded Redis reuse fingerprints status, dates,

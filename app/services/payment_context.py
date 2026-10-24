@@ -1,8 +1,18 @@
 """Immutable invoice context for hosted payments and customer session details."""
 
+from datetime import datetime, timedelta
+
 from app.core.money import money_str
-from app.models import Invoice, InvoiceItem
+from app.models import Invoice, InvoiceItem, PaymentIntent
 from app.schemas.invoices import InvoiceItemResponse, InvoiceResponse
+
+
+def payment_session_deadline(intent: PaymentIntent) -> datetime:
+    """Cap legacy Dhamen attempts without changing their immutable provider snapshot."""
+    created_at = getattr(intent, "created_at", None)
+    if intent.checkout_provider == "DHAMEN" and isinstance(created_at, datetime):
+        return min(intent.expires_at, created_at + timedelta(minutes=30))
+    return intent.expires_at
 
 
 def invoice_snapshot(invoice: Invoice, items: list[InvoiceItem]) -> InvoiceResponse:

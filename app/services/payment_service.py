@@ -61,7 +61,7 @@ from app.schemas.payments import DhamenWebhookAck
 from app.services.hosted_payment_service import HostedPaymentService
 from app.services.money_service import MoneyService
 from app.services.order_state import assert_transition
-from app.services.payment_context import invoice_snapshot
+from app.services.payment_context import invoice_snapshot, payment_session_deadline
 from app.services.payment_reservation_service import PaymentReservationService
 from app.services.promo_service import PromoService
 
@@ -161,6 +161,8 @@ class PaymentService:
         return datetime.now(UTC)
 
     def _expiry(self) -> datetime:
+        if self._uses_hosted:
+            return self._now() + timedelta(minutes=30)
         return self._now() + timedelta(hours=self._settings.PAYMENT_EXPIRY_HOURS)
 
     async def create_topup(
@@ -808,7 +810,7 @@ class PaymentService:
                 current.status is not PaymentIntentStatus.NEW
                 or current.gateway_payment_url is None
                 or current.checkout_state != "ACTIVE"
-                or current.expires_at <= self._now()
+                or payment_session_deadline(current) <= self._now()
             ):
                 raise PaymentSessionPendingError()
             return PaymentCheckout(str(current.id), current.gateway_payment_url)

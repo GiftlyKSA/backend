@@ -47,7 +47,9 @@ async def test_checkout_uses_exact_amount_and_one_time_payment() -> None:
         assert request.headers["App-key"] == "test-app-key"
         body = json.loads(request.content, parse_float=Decimal)
         assert body["paymentReferenceId"] == ctx.reference
+        assert body["paymentExpiredOnMinutes"] == 30
         payment = body["customerPayments"][0]
+        assert payment["name"] == ctx.customer.name
         assert payment["amount"] == Decimal("123.45")
         assert isinstance(payment["amount"], Decimal)
         assert payment["enableRecurring"] is False
@@ -78,26 +80,22 @@ async def test_checkout_uses_exact_amount_and_one_time_payment() -> None:
 
 
 @pytest.mark.parametrize("status, expected", [(0, PaymentState.PENDING), (1, PaymentState.PAID)])
+@pytest.mark.parametrize("wrapped", [False, True])
 async def test_status_is_bound_to_reference_customer_and_exact_amount(
-    status: int, expected: PaymentState
+    status: int, expected: PaymentState, wrapped: bool
 ) -> None:
     ctx = context()
+    payment = {
+        "paymentReferenceId": ctx.reference,
+        "customerIdentifier": ctx.customer.external_id,
+        "amount": 123.45,
+        "paymentStatus": status,
+        "paymentUrl": "https://pay.example.com/pay/test",
+    }
     gateway = client(
         lambda request: httpx.Response(
             200,
-            content=json.dumps(
-                {
-                    "customerPayments": [
-                        {
-                            "paymentReferenceId": ctx.reference,
-                            "customerIdentifier": ctx.customer.external_id,
-                            "amount": 123.45,
-                            "paymentStatus": status,
-                            "paymentUrl": "https://pay.example.com/pay/test",
-                        }
-                    ]
-                }
-            ),
+            content=json.dumps({"customerPayments": [payment]} if wrapped else [payment]),
         )
     )
     try:
@@ -120,7 +118,10 @@ async def test_status_is_bound_to_reference_customer_and_exact_amount(
         {"paymentStatus": 1.0},
     ],
 )
-async def test_status_mismatch_or_unknown_state_is_rejected(patch: dict[str, object]) -> None:
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_status_mismatch_or_unknown_state_is_rejected(
+    patch: dict[str, object], wrapped: bool
+) -> None:
     ctx = context()
     payment = {
         "paymentReferenceId": ctx.reference,
@@ -128,10 +129,24 @@ async def test_status_mismatch_or_unknown_state_is_rejected(patch: dict[str, obj
         "amount": "123.45",
         "paymentStatus": 1,
     } | patch
-    gateway = client(lambda request: httpx.Response(200, json={"customerPayments": [payment]}))
+    gateway = client(
+        lambda request: httpx.Response(
+            200, json={"customerPayments": [payment]} if wrapped else [payment]
+        )
+    )
     try:
         with pytest.raises(DomainError):
             await gateway.get_payment_status(ctx)
+    finally:
+        await gateway.aclose()
+
+
+@pytest.mark.parametrize("payload", [[], [{}, {}], ["invalid"], {"customerPayments": []}])
+async def test_status_requires_exactly_one_valid_row(payload: object) -> None:
+    gateway = client(lambda request: httpx.Response(200, json=payload))
+    try:
+        with pytest.raises(DomainError):
+            await gateway.get_payment_status(context())
     finally:
         await gateway.aclose()
 

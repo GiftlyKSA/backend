@@ -17,6 +17,7 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.payments import PaymentSessionResponse
 from app.services.courier_eligibility_service import CourierEligibilityService
+from app.services.payment_context import payment_session_deadline
 from app.services.payment_service import PaymentService, build_payment_service
 
 
@@ -67,7 +68,7 @@ def _response(intent: PaymentIntent) -> PaymentSessionResponse:
     active = (
         intent.status is PaymentIntentStatus.NEW
         and intent.checkout_state == "ACTIVE"
-        and intent.expires_at > datetime.now(UTC)
+        and payment_session_deadline(intent) > datetime.now(UTC)
     )
     purpose = str(getattr(intent, "purpose", PaymentPurpose.ORDER_INVOICE))
     topup = purpose == PaymentPurpose.WALLET_TOPUP
@@ -81,7 +82,7 @@ def _response(intent: PaymentIntent) -> PaymentSessionResponse:
         currency=intent.currency,
         amount_from_wallet=money_str(intent.wallet_reserved_amount),
         amount_from_gateway=money_str(intent.amount),
-        expires_at=intent.expires_at.isoformat(),
+        expires_at=payment_session_deadline(intent).isoformat(),
         payment_url=intent.gateway_payment_url if active else None,
         invoice=context.invoice if context else None,
         purpose=purpose,
