@@ -8493,5 +8493,110 @@
         "description": "How a promo discount is expressed."
       }
     }
+  },
+  "x-giftly-push-events": {
+    "additionalProperties": false,
+    "description": "Only resource references needed to refresh an authorized screen.",
+    "properties": {
+      "event_id": {
+        "format": "uuid",
+        "title": "Event Id",
+        "type": "string"
+      },
+      "event_type": {
+        "enum": [
+          "ORDER_AVAILABLE",
+          "CHAT_MESSAGE",
+          "OCCASION_REMINDER"
+        ],
+        "title": "Event Type",
+        "type": "string"
+      },
+      "type": {
+        "anyOf": [
+          {
+            "enum": [
+              "ORDER_AVAILABLE",
+              "OCCASION_REMINDER"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Type"
+      },
+      "kind": {
+        "anyOf": [
+          {
+            "const": "OCCASION",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Kind"
+      },
+      "order_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Order Id"
+      },
+      "conversation_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Conversation Id"
+      },
+      "occasion_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Occasion Id"
+      },
+      "reminder_version": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Reminder Version"
+      }
+    },
+    "required": [
+      "event_id",
+      "event_type"
+    ],
+    "title": "PushEvent",
+    "type": "object"
   }
 }

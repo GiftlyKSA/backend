@@ -89,10 +89,12 @@ async def test_sweeper_commits_claim_and_closes_sessions_before_provider(
             commits += 1
 
     class Push:
-        async def send_push(self, tokens, title, body):
+        async def send_push(self, tokens, title, body, *, data=None):
             assert open_sessions == 0
             assert commits == 1
             assert "hi" not in body
+            assert data["event_type"] == "CHAT_MESSAGE"
+            assert data["event_id"] == str(claim.message_id)
             if fail == "timeout":
                 await asyncio.Event().wait()
             if fail:
@@ -102,6 +104,7 @@ async def test_sweeper_commits_claim_and_closes_sessions_before_provider(
     token_id = uuid.uuid4()
     claim = ClaimedChatNotification(uuid.uuid4(), uuid.uuid4(), None, uuid.uuid4(), 1)
     repository = SimpleNamespace(
+        conversation_id=AsyncMock(return_value=uuid.uuid4()),
         claim_pending=AsyncMock(return_value=ChatNotificationClaimBatch([claim], 0)),
         token_page=AsyncMock(return_value=[(token_id, "recipient-token")]),
         advance=AsyncMock(return_value=True),

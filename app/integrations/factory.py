@@ -21,6 +21,7 @@ from app.integrations.payments.dhamen import DhamenPaymentClient
 from app.integrations.payments.disabled import DisabledPaymentClient
 from app.integrations.payments.fake import FakePaymentClient
 from app.integrations.push.base import PushClient
+from app.integrations.push.expo import ExpoPushClient
 from app.integrations.push.fake import FakePushClient
 from app.integrations.push.real import RealPushClient
 from app.integrations.sms.base import SmsClient
@@ -129,24 +130,25 @@ def build_push_client(settings: Settings) -> PushClient:
         return FakePushClient(settings.ENVIRONMENT)
     if settings.push_provider == "expo":
         from app.core.db import build_engine, build_session_factory
-        from app.integrations.push.expo import ExpoPushClient
-        from app.services.expo_receipt_service import ExpoReceiptService
+        from app.integrations.push.queued_expo import QueuedExpoPushClient
 
         receipt_settings = settings.model_copy(update={"DB_POOL_SIZE": 1, "DB_MAX_OVERFLOW": 0})
         engine = build_engine(receipt_settings)
-        return ExpoPushClient(
-            receipt_store=ExpoReceiptService(build_session_factory(engine), owned_engine=engine),
-            access_token=(
-                settings.EXPO_ACCESS_TOKEN.get_secret_value()
-                if settings.EXPO_ACCESS_TOKEN
-                else None
-            ),
-            timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
-        )
+        return QueuedExpoPushClient(build_session_factory(engine), engine=engine)
     return RealPushClient(
         timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
         supabase_url=settings.SUPABASE_URL or "",
         service_key=_required_secret(settings.SUPABASE_SERVICE_KEY, "SUPABASE_SERVICE_KEY"),
+    )
+
+
+def build_expo_client(settings: Settings) -> ExpoPushClient:
+    """Construct worker transport separately from the durable enqueue boundary."""
+    return ExpoPushClient(
+        access_token=(
+            settings.EXPO_ACCESS_TOKEN.get_secret_value() if settings.EXPO_ACCESS_TOKEN else None
+        ),
+        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
     )
 
 

@@ -35,6 +35,7 @@ async def test_maintenance_tasks_registered_with_label_schedule_source() -> None
         "app.workers.media_cleanup:run_media_cleanup": "0 * * * *",
         "app.workers.operations:purge_write_operations": "15 * * * *",
         "app.workers.order_notifications:deliver_order_notifications": "* * * * *",
+        "app.workers.push_deliveries:deliver_push_notifications": "* * * * *",
         "app.workers.receipts:deliver_pending_receipts": "*/5 * * * *",
         "app.workers.reconciliation:reconcile_ledger": "0 3 * * *",
     }

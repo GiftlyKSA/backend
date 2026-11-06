@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,9 @@ class ExpoPushReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "expo_push_receipts"
 
     ticket_id: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
+    delivery_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("push_deliveries.id", ondelete="SET NULL"), nullable=True
+    )
     device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     token: Mapped[str] = mapped_column(String(512), nullable=False)
     device_last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -30,6 +33,7 @@ class ExpoPushReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_code: Mapped[str | None] = mapped_column(String(64))
 
     __table_args__ = (
+        Index("idx_expo_receipt_delivery", "delivery_id"),
         Index(
             "idx_expo_push_receipts_pending",
             "available_at",

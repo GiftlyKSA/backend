@@ -38,6 +38,7 @@ class ReceiptClaim:
     lease_id: uuid.UUID
     attempts: int
     expires_at: datetime
+    delivery_id: uuid.UUID | None = None
 
 
 _logger = logging.getLogger(__name__)
@@ -130,11 +131,14 @@ class ExpoReceiptRepository:
             .with_for_update(skip_locked=True)
         )
         claims = []
+        exhausted_deliveries: list[tuple[uuid.UUID, str | None]] = []
         for row in rows:
             if row.expires_at <= now or row.attempts >= 32:
                 row.completed_at = now
                 row.error_code = "ReceiptExpired" if row.expires_at <= now else "RetryExhausted"
                 row.token = ""
+                if row.delivery_id is not None:
+                    exhausted_deliveries.append((row.delivery_id, row.error_code))
                 _logger.warning("Expo receipt recovery ended (%s)", row.error_code)
                 continue
             row.attempts += 1
@@ -147,9 +151,16 @@ class ExpoReceiptRepository:
                     row.lease_id,
                     row.attempts,
                     row.expires_at,
+                    row.delivery_id,
                 )
             )
         await self._session.flush()
+        if exhausted_deliveries:
+            from app.repositories.push_delivery_repository import PushDeliveryRepository
+
+            await PushDeliveryRepository(self._session).resolve_receipts(
+                exhausted_deliveries, now=now
+            )
         return claims
 
     async def finish(
@@ -172,6 +183,7 @@ class ExpoReceiptRepository:
         outcomes: list[tuple[ReceiptClaim, str | None, bool, bool]],
         *,
         now: datetime,
+        retry_after: float = 0,
     ) -> None:
         """Update a bounded batch in one statement, deleting only matched invalid devices."""
         if not outcomes:
@@ -193,7 +205,9 @@ class ExpoReceiptRepository:
                     retry,
                     code,
                     min(
-                        now + timedelta(seconds=min(3600, 60 * 2**claim.attempts)), claim.expires_at
+                        now
+                        + timedelta(seconds=max(retry_after, min(3600, 60 * 2**claim.attempts))),
+                        claim.expires_at,
                     ),
                 )
                 for claim, code, retry, _invalid in outcomes
@@ -227,6 +241,16 @@ class ExpoReceiptRepository:
             if is_invalid and claim.ticket_id in matched
         ]
         await self.remove_invalid_batch(invalid)
+        from app.repositories.push_delivery_repository import PushDeliveryRepository
+
+        await PushDeliveryRepository(self._session).resolve_receipts(
+            [
+                (claim.delivery_id, code)
+                for claim, code, retry, _invalid in outcomes
+                if claim.delivery_id is not None and claim.ticket_id in matched and not retry
+            ],
+            now=now,
+        )
 
     async def remove_invalid_batch(self, snapshots: list[DeviceSnapshot]) -> None:
         """Delete invalid registrations with every original snapshot fence in one query."""
@@ -237,11 +261,8 @@ class ExpoReceiptRepository:
         await self._session.execute(
             delete(DeviceToken)
             .where(
-                tuple_(DeviceToken.id, DeviceToken.token, DeviceToken.last_seen_at).in_(
-                    [
-                        (snapshot.device_id, snapshot.token, snapshot.last_seen_at)
-                        for snapshot in snapshots
-                    ]
+                tuple_(DeviceToken.id, DeviceToken.last_seen_at).in_(
+                    [(snapshot.device_id, snapshot.last_seen_at) for snapshot in snapshots]
                 )
             )
             .execution_options(synchronize_session=False)

@@ -42,6 +42,7 @@ for _module in (
     "gateway_reconciliation",
     "media_cleanup",
     "order_notifications",
+    "push_deliveries",
     "operations",
     "receipts",
     "reconciliation",

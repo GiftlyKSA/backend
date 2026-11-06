@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -35,6 +36,14 @@ async def _deliver_claim(
                     "Occasion reminder",
                     "You have an upcoming saved occasion.",
                     data={
+                        "event_id": str(
+                            uuid.uuid5(
+                                uuid.NAMESPACE_URL,
+                                f"giftly:occasion:{claim.occasion_id}:{claim.version}:{claim.scheduled_at.isoformat()}",
+                            )
+                        ),
+                        "event_type": "OCCASION_REMINDER",
+                        "reminder_version": str(claim.version),
                         "type": "OCCASION_REMINDER",
                         "kind": "OCCASION",
                         "occasion_id": str(claim.occasion_id),

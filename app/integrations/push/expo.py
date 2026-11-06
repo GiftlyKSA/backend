@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +15,18 @@ from pydantic import BaseModel, Field, ValidationError
 from app.integrations.push.base import PushClient
 
 _URL = "https://exp.host/--/api/v2/push"
+
+
+class ExpoSendError(RuntimeError):
+    """A safe provider outcome with a bounded requested cooldown."""
+
+    def __init__(
+        self, code: str, *, retry_after: float = 0, message: str = "Expo send failed."
+    ) -> None:
+        """Retain no provider response bodies or credentials."""
+        super().__init__(message)
+        self.code = code
+        self.retry_after = min(max(retry_after, 0), 86400) if math.isfinite(retry_after) else 0
 
 
 @dataclass(frozen=True)
@@ -68,7 +81,7 @@ class ExpoPushClient(PushClient):
 
     def __init__(
         self,
-        receipt_store: ExpoReceiptStore,
+        receipt_store: ExpoReceiptStore | None = None,
         access_token: str | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
@@ -86,7 +99,8 @@ class ExpoPushClient(PushClient):
     async def aclose(self) -> None:
         """Close the HTTP pool and any resources owned by the receipt store."""
         await self._client.aclose()
-        await self._store.aclose()
+        if self._store is not None:
+            await self._store.aclose()
 
     async def _request_once(self, endpoint: str, payload: object) -> httpx.Response:
         async with self._client.stream("POST", f"{_URL}/{endpoint}", json=payload) as streamed:
@@ -94,7 +108,9 @@ class ExpoPushClient(PushClient):
             if streamed.is_success:
                 async for chunk in streamed.aiter_bytes(chunk_size=65536):
                     if len(content) + len(chunk) > 1024 * 1024:
-                        raise RuntimeError("Expo response exceeds its size limit.")
+                        raise ExpoSendError(
+                            "ProviderUnavailable", message="Expo response exceeds its size limit."
+                        )
                     content.extend(chunk)
             return httpx.Response(
                 streamed.status_code,
@@ -129,6 +145,8 @@ class ExpoPushClient(PushClient):
     ) -> None:
         if len(tickets) != len(tokens):
             raise RuntimeError("Invalid Expo ticket count.")
+        if self._store is None:
+            raise RuntimeError("Direct push delivery requires durable receipt storage.")
         accepted = []
         invalid = []
         failed = False
@@ -153,6 +171,8 @@ class ExpoPushClient(PushClient):
         self, tokens: list[str], title: str, body: str, *, data: dict[str, str] | None = None
     ) -> None:
         """Preserve safe caller hints and save each accepted chunk durably."""
+        if self._store is None:
+            raise RuntimeError("Direct push delivery requires durable receipt storage.")
         for offset in range(0, len(tokens), 100):
             chunk = list(dict.fromkeys(tokens[offset : offset + 100]))
             snapshots = await self._store.snapshot_devices(chunk, data=data)
@@ -182,8 +202,50 @@ class ExpoPushClient(PushClient):
         """Read one bounded receipt batch; absence means it is not available yet."""
         if not ticket_ids or len(ticket_ids) > 1000:
             raise ValueError("Expo receipt batches require 1 to 1000 IDs.")
-        response = await self._post("getReceipts", {"ids": ticket_ids})
+        response = await self._checked_request("getReceipts", {"ids": ticket_ids})
         try:
             return _Receipts.model_validate_json(response.content).data
         except ValidationError:
             raise RuntimeError("Invalid Expo receipts.") from None
+
+    async def send_messages(
+        self, messages: list[dict[str, str | dict[str, str]]]
+    ) -> list[ExpoOutcome]:
+        """Perform one transport attempt; the database owns send retry policy."""
+        if not messages or len(messages) > 100:
+            raise ValueError("Expo send batches require 1 to 100 messages.")
+        response = await self._checked_request("send", messages)
+        try:
+            outcomes = _Tickets.model_validate_json(response.content).data
+        except ValidationError:
+            raise ExpoSendError("ProviderUnavailable") from None
+        if len(outcomes) != len(messages):
+            raise ExpoSendError("ProviderUnavailable")
+        return outcomes
+
+    async def _checked_request(self, endpoint: str, payload: object) -> httpx.Response:
+        try:
+            response = await self._request_once(endpoint, payload)
+        except httpx.TransportError:
+            raise ExpoSendError("ProviderUnavailable") from None
+        if not response.is_success:
+            from datetime import UTC
+            from email.utils import parsedate_to_datetime
+
+            header = response.headers.get("Retry-After", "0")
+            try:
+                cooldown = float(header)
+            except ValueError:
+                try:
+                    cooldown = (parsedate_to_datetime(header) - datetime.now(UTC)).total_seconds()
+                except TypeError, ValueError, OverflowError:
+                    cooldown = 0
+            code = (
+                "ProviderUnavailable"
+                if response.status_code == 429 or response.status_code >= 500
+                else "InvalidCredentials"
+                if response.status_code in {401, 403}
+                else "ProviderError"
+            )
+            raise ExpoSendError(code, retry_after=cooldown)
+        return response

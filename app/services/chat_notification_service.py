@@ -33,16 +33,27 @@ async def _deliver_claim(
     try:
         async with asyncio.timeout(_DELIVERY_TIMEOUT_SECONDS):
             async with factory() as session:
-                page = await ChatNotificationRepository(session).token_page(
-                    recipient_id=claim.recipient_id,
-                    after=claim.cursor_token_id,
-                    limit=_PAGE_SIZE,
+                repository = ChatNotificationRepository(session)
+                conversation_id = await repository.conversation_id(claim)
+                page = (
+                    await repository.token_page(
+                        recipient_id=claim.recipient_id,
+                        after=claim.cursor_token_id,
+                        limit=_PAGE_SIZE,
+                    )
+                    if conversation_id is not None
+                    else []
                 )
             if page:
                 await push.send_push(
                     [token for _, token in page],
                     "New message",
                     "You have a new message about your order.",
+                    data={
+                        "event_id": str(claim.message_id),
+                        "event_type": "CHAT_MESSAGE",
+                        "conversation_id": str(conversation_id),
+                    },
                 )
         async with factory() as session:
             saved = await ChatNotificationRepository(session).advance(

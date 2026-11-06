@@ -563,11 +563,16 @@ async def test_concurrent_workers_create_one_inbox_and_one_push(db_connection) -
                 == 1
             )
         assert len(push.sent) == 1
-        assert push.sent[0].data == {
+        assert {key: push.sent[0].data[key] for key in ("type", "kind", "occasion_id")} == {
             "type": "OCCASION_REMINDER",
             "kind": "OCCASION",
             "occasion_id": str(occasion.id),
         }
+        from app.schemas.push_event import PushEvent
+
+        event = PushEvent.model_validate(push.sent[0].data)
+        assert event.event_type == "OCCASION_REMINDER"
+        assert event.reminder_version == occasion.reminder_version
     finally:
         async with factory() as session:
             await session.execute(delete(User).where(User.id.in_([owner_id, other_user_id])))

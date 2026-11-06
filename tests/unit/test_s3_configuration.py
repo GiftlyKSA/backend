@@ -70,7 +70,7 @@ def test_explicit_s3_never_falls_back_when_missing_configuration(name):
 async def test_explicit_expo_in_development_owns_only_one_database_connection():
     from app.core.db import build_engine
     from app.integrations.factory import build_push_client
-    from app.integrations.push.expo import ExpoPushClient
+    from app.integrations.push.queued_expo import QueuedExpoPushClient
 
     settings = make_test_settings(PUSH_PROVIDER="expo", DB_POOL_SIZE=5, DB_MAX_OVERFLOW=10)
     with patch("app.core.db.build_engine", wraps=build_engine) as constructor:
@@ -81,7 +81,7 @@ async def test_explicit_expo_in_development_owns_only_one_database_connection():
     assert type(receipt_settings) is type(settings)
     assert settings.DB_POOL_SIZE == 5
     assert settings.DB_MAX_OVERFLOW == 10
-    assert isinstance(client, ExpoPushClient)
+    assert isinstance(client, QueuedExpoPushClient)
     await client.aclose()
 
 

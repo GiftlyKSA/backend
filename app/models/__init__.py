@@ -11,6 +11,7 @@ from app.models.notification_models import (
     OrderTimelineEvent,
     OrderTimelineOrigin,
 )
+from app.models.push_delivery import PushDelivery
 from app.models.tables import (
     AdminSession,
     AuditLog,
@@ -51,6 +52,7 @@ from app.models.tables import (
 from app.models.write_operation import WriteOperation
 
 __all__ = [
+    "PushDelivery",
     "ExpoPushReceipt",
     "CourierAvatar",
     "CourierReportSettings",

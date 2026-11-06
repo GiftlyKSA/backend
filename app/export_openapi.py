@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.core.config import get_settings
 from app.main import create_app
+from app.schemas.push_event import PushEvent
 
 _OUTPUT = Path("docs/openapi.json")
 
@@ -19,6 +20,7 @@ def main() -> None:
     """Write the current OpenAPI schema to ``docs/openapi.json``."""
     app = create_app(get_settings())
     schema = app.openapi()
+    schema["x-giftly-push-events"] = PushEvent.model_json_schema(mode="serialization")
     _OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     _OUTPUT.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n")
     print(f"Wrote {_OUTPUT}")

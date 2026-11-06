@@ -1,5 +1,87 @@
 # Giftly backend documentation
 
+## Expo durable device delivery — 2026-11-06
+
+The existing transactional order/chat/reminder outboxes remain the source of truth.
+After commit the API requests a Redis/Taskiq wake-up; it never sends a push. Source
+drainers in the separate worker materialize at most 500 devices per source page into
+`push_deliveries`, committing before advancing their old source cursor. The new
+`deliver_push_notifications` worker job sends up to five pages of 100 device hints.
+The separate scheduler schedules recovery every minute, including when a wake-up
+fails. No worker/scheduler consumer is started by the public API.
+
+`push_deliveries` stores a stable event UUID, device/user references, allowlisted
+navigation hints, attempts, due/expiry times, a fenced lease and safe outcome code.
+It stores no token copy, message content, signed URL or personal display fields.
+The unique `(event_id,device_id)` index prevents source-page replay from resetting
+accepted devices. A partial due index bounds worker selection. Recipient/account,
+city/order availability, chat membership and reminder ownership/version are checked
+with batched SQL immediately before dispatch. New receipt rows reference their
+delivery and keep the legacy token column empty; legacy receipts remain supported.
+
+States are `PENDING`, `LEASED`, `ACCEPTED`, `PLATFORM_ACCEPTED`, `FAILED`, `EXPIRED`.
+ACCEPTED means Expo returned a ticket. PLATFORM_ACCEPTED means its final receipt
+reported Apple/Google acceptance, not phone display or human reading. Neither state
+changes inbox `read_at`. Device outcomes and tickets commit together after network
+I/O. A crash/ambiguous timeout between provider acceptance and this commit can still
+duplicate a push; event IDs let mobile deduplicate its effects. Exactly-once physical
+delivery is not promised.
+
+There are at most eight claimed send attempts and a 24-hour device-delivery window
+from materialization, further restricted by current domain eligibility. Occasion
+delivery expiry is additionally clamped to the original scheduled reminder plus one
+day, so annual schedule advancement cannot extend an old reminder's lifetime. Transient
+network/provider errors and rate errors use exponential backoff with jitter and
+honor bounded `Retry-After` values. Payload/credential failures terminate visibly.
+Shared Redis sliding-window coordination allows at most 500 sends per second across
+worker replicas using the same Redis; coordination failure defers sending. Pure rate
+or coordination deferrals do not consume a provider attempt. Each send has a
+20-second outer deadline and a 60-second database lease. The worker runtime retains
+its existing bounded concurrency; it does not hold database transactions during I/O.
+
+Receipts become eligible after 15 minutes. Missing/unavailable receipts are looked
+up again with bounded backoff, up to the existing 32-lookup/24-hour limits. A final
+transient platform error closes that receipt and requeues its owned delivery for a
+new send, subject to the delivery attempt/expiry bounds. Legacy unlinked receipts
+cannot reconstruct a safe resend payload and terminate with the recorded final error.
+Permanent errors close the receipt.
+An invalid token is removed only if its device ID and last-seen snapshot still match;
+refreshing/reassigning a registration protects it from an older response. Receipt
+lookup exhaustion also terminates linked delivery state.
+
+Batch logs expose only counts, provider failures, invalid registrations, oldest
+queue age and maximum attempt. No payloads, tokens or provider response bodies are
+logged. Due/unique indexes add write/storage cost for each device target but avoid
+whole-collection reads and per-device lookup queries. Terminal delivery/receipt
+history is retained; selecting an automatic retention/purge period remains a product
+decision. Physical user deletion cascades owned delivery rows. No legal retention
+claim or automatic archival policy is introduced.
+
+Configuration: set `PUSH_PROVIDER=expo` on the worker for real delivery, even when
+`ENVIRONMENT=development`. `auto` still selects fakes in development/test.
+`EXPO_ACCESS_TOKEN` stays backend-only when Expo enhanced security is enabled.
+Configure the real EAS project and Apple APNs/Android FCM credentials in Expo; Expo Go
+is not a substitute for a signed development build when verifying remote pushes.
+API, worker and scheduler must use the same PostgreSQL/Redis deployment. The
+scheduler uses its own minimal configuration. Supabase is unnecessary for this flow.
+
+Deployment: pause old scheduler/worker consumers and allow in-flight sends to finish;
+apply forward migration `0040_push_deliveries`, then run the updated API, worker and
+scheduler. The migration creates empty device-delivery state and a nullable receipt
+link; it does not backfill or reopen completed historical source outboxes. Source
+transactions can continue to queue durable intents while workers are paused.
+For rollback, retain the new schema/drainer until new pending deliveries and receipt
+work are resolved; old source cursors may already have advanced after enqueue.
+Do not simply revert to old workers and abandon that queue. Schema downgrade refuses
+to discard delivery history. No migration or live provider verification has been
+performed on CranL as part of this source change.
+
+OS pushes remain new-order availability, chat messages and enabled occasion
+reminders. Other order/invoice/top-up events continue to use the existing inbox
+capture; the courier inbox policy remains unchanged. Expanding push categories or
+adding financial preference switches requires a separate product decision.
+
+
 **Updated:** 2026-10-04 · **Scope:** implemented backend, administration and workers.
 
 | Reference | Contents |

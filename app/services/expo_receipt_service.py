@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.integrations.push.expo import DeviceSnapshot, ExpoOutcome, ExpoPushClient
+from app.integrations.push.expo import DeviceSnapshot, ExpoOutcome, ExpoPushClient, ExpoSendError
 from app.repositories.expo_receipt_repository import ExpoReceiptRepository, ReceiptClaim
 
 _logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ class ExpoReceiptService:
         outcome: ExpoOutcome | None,
     ) -> tuple[ReceiptClaim, str | None, bool, bool]:
         code = outcome.details.get("error") if outcome is not None else None
-        retry = outcome is None or (outcome.status == "error" and code in _RETRYABLE)
+        retry = outcome is None
         safe_code = (
             code
             if code
@@ -87,8 +87,13 @@ class ExpoReceiptService:
                 await session.commit()
             if not claims:
                 break
+            retry_after = 0.0
             try:
                 outcomes = await client.get_receipts([claim.ticket_id for claim in claims])
+            except ExpoSendError as exc:
+                retry_after = exc.retry_after
+                _logger.warning("Expo receipt lookup unavailable.")
+                outcomes = {}
             except RuntimeError:
                 _logger.warning("Expo receipt lookup unavailable.")
                 outcomes = {}
@@ -99,6 +104,7 @@ class ExpoReceiptService:
                 await ExpoReceiptRepository(session).finish_batch(
                     [self._resolution(claim, outcomes.get(claim.ticket_id)) for claim in claims],
                     now=datetime.now(UTC),
+                    retry_after=retry_after,
                 )
                 await session.commit()
         return completed

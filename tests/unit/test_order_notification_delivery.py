@@ -105,6 +105,7 @@ async def test_notification_page_commits_claim_before_push_and_retries_failure(
         assert processed == 1
         assert push.sent == ["courier-token"]
         assert push.data == {
+            "event_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"giftly:order:{claim.order_id}")),
             "event_type": "ORDER_AVAILABLE",
             "type": "ORDER_AVAILABLE",
             "order_id": str(claim.order_id),

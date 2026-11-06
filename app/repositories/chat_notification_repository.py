@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChatNotification, DeviceToken, User
+from app.models import ChatNotification, Conversation, DeviceToken, Message, User
 from app.models.enums import UserStatus
 
 _MAX_ATTEMPTS = 8
@@ -107,6 +107,21 @@ class ChatNotificationRepository:
         if after is not None:
             query = query.where(DeviceToken.id > after)
         return [(row.id, row.token) for row in (await self._session.execute(query)).all()]
+
+    async def conversation_id(self, claim: ClaimedChatNotification) -> uuid.UUID | None:
+        """Only a current participant may receive a message navigation hint."""
+        return await self._session.scalar(
+            select(Conversation.id)
+            .join(Message, Message.conversation_id == Conversation.id)
+            .where(
+                Message.id == claim.message_id,
+                Message.sender_id != claim.recipient_id,
+                or_(
+                    Conversation.customer_id == claim.recipient_id,
+                    Conversation.courier_id == claim.recipient_id,
+                ),
+            )
+        )
 
     async def advance(
         self,

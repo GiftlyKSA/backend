@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -53,6 +54,9 @@ async def _deliver_claim(
                     _TITLE,
                     _BODY,
                     data={
+                        "event_id": str(
+                            uuid.uuid5(uuid.NAMESPACE_URL, f"giftly:order:{claim.order_id}")
+                        ),
                         "event_type": "ORDER_AVAILABLE",
                         "type": "ORDER_AVAILABLE",
                         "order_id": str(claim.order_id),

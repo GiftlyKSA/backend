@@ -20,6 +20,7 @@ class WorkerTask(StrEnum):
     CHAT_NOTIFICATIONS = "app.workers.chat_notifications:deliver_chat_notifications"
     INVOICE_RECEIPTS = "app.workers.receipts:deliver_pending_receipts"
     ORDER_NOTIFICATIONS = "app.workers.order_notifications:deliver_order_notifications"
+    PUSH_DELIVERIES = "app.workers.push_deliveries:deliver_push_notifications"
 
 
 def request_worker_wakeup(session: AsyncSession, task: WorkerTask) -> None:

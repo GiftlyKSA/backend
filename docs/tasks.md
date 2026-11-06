@@ -1,5 +1,46 @@
 # Giftly backend — audit and task register
 
+## Expo per-device delivery implementation — 2026-11-06
+
+| Task | Status | Evidence and system impact |
+| --- | --- | --- |
+| PUSH-DELIVERY | Implemented locally; database/deployment unverified | Adds durable event/device uniqueness, bounded claims, per-device Expo outcomes and ticket correlation. Partial success no longer resets accepted targets. New migration `0040_push_deliveries`; no historical completed-outbox replay. |
+| PUSH-NAVIGATION | Implemented locally; contracts checked | Adds stable `event_id`; new-order legacy fields remain. Chat adds `CHAT_MESSAGE`/`conversation_id`; sender content is excluded and current recipient/domain eligibility is queried before dispatch. HTTP inbox/device contracts remain unchanged. |
+| PUSH-OPERATIONS | Implemented locally; live provider unverified | Separate worker performs network sends/receipts; scheduler recovers every minute. Shared Redis send budget, bounded retry/jitter/expiry, fenced invalid-token cleanup and count-only telemetry. No live pushes or production writes. |
+
+Scope: notification models/repositories/services, Expo transport/queue adapter,
+worker registration, forward migration, focused tests and existing API/operational
+documentation. Existing SMS/profile edits are unrelated and preserved. Source review
+does not establish deployment or provider readiness. Retention and additional OS push
+categories require product decisions; existing events and courier inbox policy remain.
+Migration/rollout/rollback details: [Expo device delivery](documentation.md#expo-durable-device-delivery--2026-11-06).
+
+Verification on 2026-11-06: final focused notification, payload, migration-guard,
+OpenAPI-drift and admin-catalog checks: **76 passed**. Full-project Ruff lint and
+strict mypy passed; `git diff --check` passed. The new eight PostgreSQL cases were
+collected but **skipped** because disposable PostgreSQL was unavailable. The forward
+migration compiled to offline PostgreSQL SQL; this is not a migrated-database proof.
+Query-count regression reads fifty device claims with one batch read; no production
+latency, EXPLAIN plan or capacity improvement is claimed.
+
+The broader unit run completed with **1,335 passed, two skipped and two unrelated
+failures**: the existing OTP test assumes a fixed random code, and an existing media
+fixture omits `purpose`. Later notification-only additions were checked by the final
+focused run. A full-suite attempt was stopped after repeated missing-service
+failures/skips; no full-suite pass is claimed. Both all-files hook stages were run:
+lint/types, YAML/TOML/JSON, merge-marker and private-key checks pass; formatting is
+blocked by pre-existing SMS/OTP edits in `app/integrations/sms/authentica.py`,
+`tests/unit/test_development_otp.py` and `tests/unit/test_integrations_extra.py`.
+Those edits remain intact. No Docker, live provider calls, production data changes,
+commit, push or deployment were performed for this notification implementation.
+
+Independent source review found no confirmed critical/important issue. Its reminder
+expiry observation was addressed by persisting the original occurrence cutoff;
+additional checks retire malformed stored hints and continue through bounded pages
+of obsolete targets rather than delaying every later target until another tick.
+
+
+
 ## Thirty-minute hosted checkout alignment — 2026-10-24
 
 User specification: order -> invoice -> pay -> webhook-triggered authenticated status

@@ -1,5 +1,92 @@
 # Giftly API reference
 
+## Expo device delivery contract — 2026-11-06
+
+The HTTP device and notification-centre operations below retain their existing wire
+contracts. Push delivery adds a stable UUID `event_id`; it is an event identifier,
+not the notification-centre item's `id`. These changes require migration
+`0040_push_deliveries` and the updated worker/scheduler before mobile activation.
+Source or generated documentation alone does not establish deployment.
+
+| Operation | Body / query | Successful response |
+| --- | --- | --- |
+| `POST /api/devices` | `{"token":"ExpoPushToken[device-token]","device_os":"IOS"}`; `ANDROID` is also supported | 201: the same `token` and `device_os` |
+| `DELETE /api/devices` | `{"token":"ExpoPushToken[device-token]"}` | 204, no body |
+| `GET /api/notifications` | Optional `unread_only=false`, `limit=25` (1–100), opaque `cursor` | 200: `items`, nullable `next_cursor`, integer `unread_count` |
+| `GET /api/notifications/unread-count` | None | 200: `{"unread_count":0}` |
+| `POST /api/notifications/{notification_id}/read` | None | 200: the owned notification with its persisted `read_at` |
+| `POST /api/notifications/read-all` | None | 200: `marked_count` and UTC `read_at` |
+
+All operations require `Authorization: Bearer <access_token>`. Device ownership is
+derived from authentication; the existing maximum is ten devices per user. A token
+can transfer to the account currently registering a shared device; unregistration
+can only remove the caller's token. Inbox access requires an active customer or an
+active, verified courier. Courier visibility remains limited to the existing paid,
+customer-cancelled and customer-confirmed order events. No new OS event categories
+are enabled by this change.
+
+Inbox pages are ordered by `(created_at DESC, id DESC)`. Keep the same filter for
+later cursor pages; reset the cursor after filter changes or a stale-cursor 404.
+An empty page is `{"items":[],"next_cursor":null,"unread_count":0}`. Counts and
+read actions are owned database values; inbox responses use `private, no-store`.
+
+Example inbox item:
+
+```json
+{
+  "id":"b3939eb1-090c-4074-8be7-b44975728521",
+  "type":"ORDER_STATUS_CHANGED",
+  "title_key":"notification.order_status_changed.title",
+  "body_key":"notification.order_status_changed.body",
+  "parameters":{"status":"IN_PROGRESS"},
+  "created_at":"2026-11-06T09:00:00Z",
+  "read_at":null,
+  "navigation":{"kind":"ORDER","order_id":"c832236f-8270-490b-9ac9-28dafec07348"}
+}
+```
+
+New-order Expo `data`:
+
+```json
+{"event_id":"d66ab958-8442-56f9-b07c-c10fa86c8dcc","event_type":"ORDER_AVAILABLE","type":"ORDER_AVAILABLE","order_id":"c832236f-8270-490b-9ac9-28dafec07348"}
+```
+
+The event ID is deterministic for the order. Recipients must currently be ACTIVE,
+verified couriers assigned to that order's city, and the order must still be NEW.
+Receive: refresh available orders. Tap: use the existing authorized order read
+before navigating. Never accept an order from push data.
+
+Chat Expo `data`:
+
+```json
+{"event_id":"30fc3a90-d9dc-4ac8-bf1e-7e055013e047","event_type":"CHAT_MESSAGE","conversation_id":"df19a933-fb6e-412d-96ca-acb944263729"}
+```
+
+For chat, `event_id` is the persisted message UUID. Current conversation membership,
+order participants, account status and courier verification are checked before
+dispatch. The payload contains no message text. Refresh/reopen the conversation
+through existing authorized operations; it conveys no permission or read receipt.
+Existing message-send, WebSocket and duplicate-safe-send contracts are unchanged.
+
+Occasion pushes retain `type`, `kind` and `occasion_id`, adding `event_type`,
+`event_id` and string `reminder_version`. Their stable event ID includes the occasion,
+version and scheduled occurrence. Current owner, customer eligibility and reminder
+version/enabled state remain required. Rescheduling/disabling invalidates old sends.
+
+The generated OpenAPI files include the transport-only `x-giftly-push-events` schema.
+No new HTTP endpoint is implied by that extension. All push data values are strings.
+IDs must be validated on mobile, and destinations reauthorized on opening. Deduplicate
+refresh/navigation actions using event IDs with bounded account-scoped storage.
+Keep receive and tap handling distinct so receiving a hint does not consume its tap.
+
+Push transport and inbox read state are separate. Expo acceptance/receipts do not
+prove device display or human reading. Delivery can be delayed, duplicated or absent;
+refresh normal API data on foreground/reconnect. Never use a push to establish payment
+success. Existing safe error envelopes remain in force: authentication 401,
+eligibility 403, inaccessible item/cursor 404, device quota 409
+`DEVICE_LIMIT_REACHED`, validation 422 and 429 with `Retry-After` when rate limited.
+
+
 ## Dhamen thirty-minute checkout workflow — 2026-10-24
 
 Order creation/acceptance and invoice issuance are local Giftly operations. Issuance

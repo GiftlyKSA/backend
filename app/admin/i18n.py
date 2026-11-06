@@ -15,6 +15,11 @@ LANGUAGES = {"ar", "en"}
 THEMES = {"light", "dark"}
 
 ARABIC: dict[str, str] = {
+    "Push Deliveries": "عمليات إرسال الإشعارات",
+    "Delivery Id": "معرّف إرسال الإشعار",
+    "Event Id": "معرّف الحدث",
+    "Payload": "بيانات الإشعار",
+    "State": "الحالة",
     "Expo Push Receipts": "إيصالات إشعارات إكسبو",
     "Ticket Id": "معرّف تذكرة الإشعار",
     "Device Id": "معرّف الجهاز",
