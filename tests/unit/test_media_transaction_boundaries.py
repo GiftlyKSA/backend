@@ -114,6 +114,7 @@ async def test_confirm_releases_reads_before_storage_and_rechecks_before_mutatio
     row = SimpleNamespace(
         storage_key=f"orders/pending/{uuid4()}.jpg",
         owner_user_id=actor,
+        purpose="ORDER_REQUEST",
         content_type="image/jpeg",
         byte_size=12,
         attached_at=None,

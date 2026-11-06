@@ -39,6 +39,17 @@ expiry observation was addressed by persisting the original occurrence cutoff;
 additional checks retire malformed stored hints and continue through bounded pages
 of obsolete targets rather than delaying every later target until another tick.
 
+Release follow-up on 2026-11-06: user authorized production deployment. Notification
+changes were isolated from the unrelated OTP/profile work and committed as
+`81bf2d9`. The unrelated work is preserved locally. Supplying the missing `purpose`
+field to the existing media-confirmation test fixture restores the intended
+transaction-boundary regression without changing application behavior or assertions.
+Against the isolated release, the complete unit suite passes **1,339 tests**, with
+two skips and one existing upstream deprecation warning. Commit and full-project
+pre-push checks pass. PostgreSQL/Redis integration and deployment evidence will be
+recorded after CI and rollout; the earlier mixed-worktree limitations above are
+historical evidence, not the state of this isolated release.
+
 
 
 ## Thirty-minute hosted checkout alignment — 2026-10-24
