@@ -42,6 +42,7 @@ class CancelOrderRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     reason: Annotated[str, StringConstraints(max_length=255)] | None = None
+    reorder: bool = False
 
 
 class OrderSummary(BaseModel):
@@ -76,6 +77,13 @@ class OrderDetail(BaseModel):
     current_actor_has_rated: bool = Field(
         ..., description="Whether the authenticated actor has rated this order."
     )
+
+
+class CancelOrderResponse(OrderDetail):
+    """Cancellation result with the customer's optional replacement reference."""
+
+    cancelled_reason: str | None = None
+    replacement_order_id: UUID | None = None
 
 
 class OrderListResponse(BaseModel):

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Select, func, literal_column, select, tuple_
+from sqlalchemy import Select, func, insert, literal, literal_column, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -199,6 +199,52 @@ class OrderRepository:
         """Serialize quota decisions before order locks, without blocking FK references."""
         await self._session.scalar(
             select(User.id).where(User.id == actor_id).with_for_update(key_share=True)
+        )
+
+    async def recent_cancellations(
+        self, actor_id: uuid.UUID, since: datetime, limit: int
+    ) -> list[datetime]:
+        """Read at most the quota threshold from the cancellation index."""
+        return [
+            value
+            for value in await self._session.scalars(
+                select(Order.cancelled_at)
+                .where(Order.cancelled_by == actor_id, Order.cancelled_at > since)
+                .order_by(Order.cancelled_at.desc())
+                .limit(limit)
+            )
+            if value is not None
+        ]
+
+    async def copy_request_media(self, source: Order, replacement: Order) -> None:
+        """Reference the source customer's attached request photos in one statement."""
+        await self._session.execute(
+            insert(OrderMedia).from_select(
+                [
+                    "id",
+                    "order_id",
+                    "uploaded_by_user_id",
+                    "media_type",
+                    "storage_key",
+                    "content_type",
+                    "byte_size",
+                    "captured_at",
+                ],
+                select(
+                    func.gen_random_uuid(),
+                    literal(replacement.id),
+                    OrderMedia.uploaded_by_user_id,
+                    OrderMedia.media_type,
+                    OrderMedia.storage_key,
+                    OrderMedia.content_type,
+                    OrderMedia.byte_size,
+                    OrderMedia.captured_at,
+                ).where(
+                    OrderMedia.order_id == source.id,
+                    OrderMedia.uploaded_by_user_id == source.customer_id,
+                    OrderMedia.media_type == MediaType.CUSTOMER_REQUEST,
+                ),
+            )
         )
 
     async def update_admin_details(

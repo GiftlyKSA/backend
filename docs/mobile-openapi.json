@@ -2239,7 +2239,7 @@
           "orders"
         ],
         "summary": "Cancel Order",
-        "description": "Cancel an order before it is in progress.",
+        "description": "Cancel an order before progress and optionally place a replacement.",
         "operationId": "cancel_order_api_orders__order_id__cancel_post",
         "parameters": [
           {
@@ -2269,7 +2269,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderDetail"
+                  "$ref": "#/components/schemas/CancelOrderResponse"
                 }
               }
             }
@@ -4328,6 +4328,11 @@
               }
             ],
             "title": "Reason"
+          },
+          "reorder": {
+            "type": "boolean",
+            "title": "Reorder",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -8491,6 +8496,121 @@
         ],
         "title": "PromoDiscountType",
         "description": "How a promo discount is expressed."
+      },
+      "CancelOrderResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id"
+          },
+          "courier_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier Id"
+          },
+          "delivery_city": {
+            "type": "string",
+            "title": "Delivery City"
+          },
+          "delivery_city_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Delivery City Id"
+          },
+          "delivery_date": {
+            "type": "string",
+            "title": "Delivery Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "total_amount": {
+            "type": "string",
+            "title": "Total Amount"
+          },
+          "assigned_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned At"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "current_actor_has_rated": {
+            "type": "boolean",
+            "title": "Current Actor Has Rated",
+            "description": "Whether the authenticated actor has rated this order."
+          },
+          "cancelled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled Reason"
+          },
+          "replacement_order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Order Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "customer_id",
+          "courier_id",
+          "delivery_city",
+          "delivery_city_id",
+          "delivery_date",
+          "description",
+          "total_amount",
+          "assigned_at",
+          "created_at",
+          "current_actor_has_rated"
+        ],
+        "title": "CancelOrderResponse",
+        "description": "Cancellation result with the customer's optional replacement reference."
       }
     }
   },

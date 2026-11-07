@@ -14,12 +14,13 @@ from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
     InvalidStateTransitionError,
+    RateLimitedError,
     ValidationDomainError,
 )
 from app.core.redis import build_redis
 from app.integrations.storage.fake import FakeStorageClient
-from app.models import CourierProfile, User
-from app.models.enums import OrderStatus, UserRole, UserStatus
+from app.models import CourierProfile, OrderMedia, User
+from app.models.enums import MediaType, OrderStatus, UserRole, UserStatus
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.media_repository import MediaRepository
 from app.repositories.message_repository import MessageWriter
@@ -31,6 +32,7 @@ from app.services.media_service import MediaService
 from app.services.order_service import NewOrderInput, OrderService
 from app.services.rating_service import RatingService
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -193,4 +195,57 @@ async def test_create_enforces_customer_active_limit(
     for _ in range(5):
         await svc.create_order(customer_id=customer.id, data=_input())
     with pytest.raises(ConflictError):
+        await svc.create_order(customer_id=customer.id, data=_input())
+
+
+async def test_reorder_copies_photos_and_fifth_cancellation_blocks_creation(
+    db_session: AsyncSession, redis_client: Redis
+) -> None:
+    svc = _service(db_session, redis_client)
+    customer = await _customer(db_session)
+    order = await svc.create_order(customer_id=customer.id, data=_input(description="Flowers"))
+    courier = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.COURIER)
+    db_session.add(courier)
+    await db_session.flush()
+    order.courier_id = courier.id
+    order.status = OrderStatus.ASSIGNED
+    keys = {"test/reorder-one.jpg", "test/reorder-two.jpg"}
+    db_session.add_all(
+        [
+            OrderMedia(
+                order_id=order.id,
+                uploaded_by_user_id=customer.id,
+                media_type=MediaType.CUSTOMER_REQUEST,
+                storage_key=key,
+                content_type="image/jpeg",
+                byte_size=12,
+            )
+            for key in keys
+        ]
+    )
+    await db_session.flush()
+
+    cancelled = await svc.cancel_order(
+        order_id=order.id, actor_id=customer.id, reason="Change courier", reorder=True
+    )
+    assert cancelled.replacement_order_id is not None
+    replacement = await svc.get_order_for_actor(
+        order_id=cancelled.replacement_order_id, actor_id=customer.id
+    )
+    assert replacement.status is OrderStatus.NEW
+    assert replacement.courier_id is None
+    assert replacement.description == "Flowers"
+    assert replacement.delivery_date == order.delivery_date
+    assert (
+        set(
+            await db_session.scalars(
+                select(OrderMedia.storage_key).where(OrderMedia.order_id == replacement.id)
+            )
+        )
+        == keys
+    )
+    for _ in range(4):
+        pending = await svc.create_order(customer_id=customer.id, data=_input())
+        await svc.cancel_order(order_id=pending.id, actor_id=customer.id, reason="Changed plans")
+    with pytest.raises(RateLimitedError):
         await svc.create_order(customer_id=customer.id, data=_input())

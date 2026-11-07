@@ -632,12 +632,24 @@ add it only when representative plans justify it.
 - **Screens:** Waiting `/waiting/[id]`; Order detail `/order/[id]`.
 - **Who / authorization:** Authenticated customer or assigned eligible courier; bearer access token.
 - **Path, query, headers:** `order_id: UUID string` (path).
-- **Request body:** `CancelOrderRequest` — `reason?: string | null`
-- **Response:** HTTP 200; `OrderDetail` — `id: string`; `status: string`; `customer_id: string`; `courier_id: string | null`; `delivery_city: string`; `delivery_city_id: UUID string`; `delivery_date: string`; `description: string | null`; `total_amount: string`; `assigned_at: string | null`; `created_at: string`; `current_actor_has_rated: boolean`
+- **Request body:** `CancelOrderRequest` includes `reason?: string | null` (max 255 characters) and `reorder?: boolean` (default `false`). Send a nonblank reason for either UI action. Legacy cancel-only callers may omit it and receive a fallback reason.
+- **Response:** HTTP 200 with the original order's `OrderDetail` fields plus `cancelled_reason: string | null` and `replacement_order_id: UUID | null`. The replacement reference is visible only to the customer.
 - **Before:** Participant order still in a cancellable pre-progress state.
 - **Then / dependent API:** Refresh `GET /api/orders/{order_id}` and owned list.
 
-**When/how (65 words):** Cancel a participant order before work is in progress, optionally recording a short reason. The service rechecks the locked state, so a concurrent acceptance or payment transition may cause a rejection; display the server result rather than optimistic finality. A known backend gap can leave an issued invoice and wallet reservation pending when cancelling from `WAITING_PAYMENT`; do not promise immediate funds release in that state.
+The customer can request a replacement only in `ASSIGNED` or `WAITING_PAYMENT` with
+an assigned courier and no settled payment. The backend retains the original request,
+date, city and private photos in a new `NEW` order without transferring the invoice,
+chat or assignment. It rejects an unresolved hosted checkout until the existing
+payment flow confirms closure. Cancel and replacement commit together. Retrying a
+successful cancel-and-reorder returns the same replacement ID.
+
+Five successful customer cancellations within a rolling hour start a one-hour block
+on the customer's cancellations and new orders. The fifth cancellation can proceed
+with `reorder: false`. A fifth attempt with `reorder: true` returns HTTP 409 without
+changing the original order. During a block, cancellation and order creation return
+HTTP 429 with `RATE_LIMITED` and `Retry-After` in seconds. Courier cancellations do
+not count toward this limit, and couriers cannot request a replacement.
 
 ### POST /api/orders/{order_id}/deliver
 

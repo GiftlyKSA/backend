@@ -40,6 +40,7 @@ from app.schemas.fulfillment import (
 )
 from app.schemas.orders import (
     CancelOrderRequest,
+    CancelOrderResponse,
     CreateOrderRequest,
     OrderDetail,
     OrderListResponse,
@@ -321,21 +322,30 @@ async def accept_order(
     return response
 
 
-@router.post("/{order_id}/cancel", response_model=OrderDetail)
+@router.post("/{order_id}/cancel", response_model=CancelOrderResponse)
 async def cancel_order(
     request: Request,
     db: DbDep,
     order_id: uuid.UUID,
     body: CancelOrderRequest,
     actor: Annotated[Actor, Depends(_eligible_participant)],
-) -> OrderDetail:
-    """Cancel an order before it is in progress."""
+) -> CancelOrderResponse:
+    """Cancel an order before progress and optionally place a replacement."""
     service = _service(request, db)
-    order = await service.cancel_order(order_id=order_id, actor_id=actor.id, reason=body.reason)
+    order = await service.cancel_order(
+        order_id=order_id, actor_id=actor.id, reason=body.reason, reorder=body.reorder
+    )
     view = await service.view_existing_order_for_actor(
         order=order, actor_id=actor.id, role=actor.role
     )
-    return _detail(view)
+    replacement_id = order.replacement_order_id if order.customer_id == actor.id else None
+    if body.reorder and replacement_id is not None:
+        request_worker_wakeup(db, WorkerTask.ORDER_NOTIFICATIONS)
+    return CancelOrderResponse(
+        **_detail(view).model_dump(),
+        cancelled_reason=order.cancelled_reason,
+        replacement_order_id=replacement_id,
+    )
 
 
 @router.post("/{order_id}/deliver", response_model=OrderDetail)

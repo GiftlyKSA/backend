@@ -22,11 +22,12 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
     OrderAlreadyAssignedError,
+    RateLimitedError,
     ValidationDomainError,
 )
 from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.money import ZERO
-from app.models import Order
+from app.models import City, Invoice, Order
 from app.models.enums import InvoiceStatus, MediaType, MessageType, OrderStatus, UserRole
 from app.repositories.city_repository import CityRepository
 from app.repositories.courier_repository import CourierRepository
@@ -45,6 +46,8 @@ from app.services.rating_service import RatingService
 _MAX_CUSTOMER_ACTIVE = 5
 _MAX_REQUEST_MEDIA = 3
 _ACCEPT_LOCK_TTL = 10
+_CANCELLATION_LIMIT = 5
+_CANCELLATION_WINDOW = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,7 @@ class OrderService:
         else:
             raise ValidationDomainError("Select an active city from the city list.")
         await self._orders.lock_actor(customer_id)
+        await self._check_cancellation_limit(customer_id, datetime.now(UTC))
         if await self._orders.count_customer_active(customer_id) >= _MAX_CUSTOMER_ACTIVE:
             raise ConflictError("You have reached the maximum number of active orders.")
 
@@ -189,7 +193,7 @@ class OrderService:
         return order
 
     async def cancel_order(
-        self, *, order_id: uuid.UUID, actor_id: uuid.UUID, reason: str | None
+        self, *, order_id: uuid.UUID, actor_id: uuid.UUID, reason: str | None, reorder: bool = False
     ) -> Order:
         """Cancel an order before progress, releasing any issued invoice reservations.
 
@@ -201,29 +205,93 @@ class OrderService:
         participant = await self._orders.get_for_actor(order_id, actor_id)
         if participant is None:
             raise NotFoundError("Order not found.")
+        customer_cancelling = participant.customer_id == actor_id
+        if reorder and not customer_cancelling:
+            raise ForbiddenError("Only the customer can reorder.")
+        if customer_cancelling:
+            await self._orders.lock_actor(actor_id)
         # Existing invoice mutations take the invoice lock before the order lock.
         candidate = await self._invoices.get_active_for_order(order_id)
         invoice = await self._invoices.lock(candidate.id) if candidate is not None else None
         order = await self._orders.lock_for_actor(order_id, actor_id)
         if order is None:
             raise NotFoundError("Order not found.")
+        if customer_cancelling != (order.customer_id == actor_id):
+            raise ConflictError("The order's participants changed; retry cancellation.")
+        if order.status is OrderStatus.CANCELLED and (
+            not reorder or order.replacement_order_id is not None
+        ):
+            return order
+        now = datetime.now(UTC)
+        recent = await self._check_cancellation_limit(actor_id, now) if customer_cancelling else 0
         assert_transition(order.status, OrderStatus.CANCELLED)
-        active = await self._invoices.get_active_for_order(order_id)
+        city = await self._reorder_city(order, reason, recent, now.date()) if reorder else None
+        await self._cancel_invoice(order, invoice)
+        order.status = OrderStatus.CANCELLED
+        order.cancelled_reason = (reason or "").strip() or "No reason provided."
+        order.cancelled_at = now
+        order.cancelled_by = actor_id if customer_cancelling else None
+        order.total_amount = ZERO
+        await self._orders.flush()
+        if city is not None:
+            await self._create_replacement(order, city)
+        return order
+
+    async def _reorder_city(
+        self, order: Order, reason: str | None, recent: int, today: date
+    ) -> City:
+        if not reason or not reason.strip():
+            raise ValidationDomainError("Enter a cancellation reason.")
+        if order.courier_id is None or order.status not in {
+            OrderStatus.ASSIGNED,
+            OrderStatus.WAITING_PAYMENT,
+        }:
+            raise ConflictError("Only an accepted, unpaid order can be reordered.")
+        if recent == _CANCELLATION_LIMIT - 1:
+            raise ConflictError(
+                "Cancel without reordering. This cancellation starts a one-hour block."
+            )
+        if not today <= order.delivery_date <= today + timedelta(days=180):
+            raise ValidationDomainError("The original delivery date is no longer available.")
+        return await self._cities.require_active_id(order.delivery_city_id)
+
+    async def _cancel_invoice(self, order: Order, invoice: Invoice | None) -> None:
+        active = await self._invoices.get_active_for_order(order.id)
         if active is not None and (invoice is None or active.id != invoice.id):
             raise ConflictError("The order's invoice changed; retry cancellation.")
         if invoice is not None and invoice.status is InvoiceStatus.ISSUED:
             await self._reservations.expire_for_invoice(invoice.id)
             await self._promos.release(invoice_id=invoice.id)
             invoice.status = InvoiceStatus.CANCELLED
-        elif invoice is not None:
+        elif invoice is not None or order.status is OrderStatus.WAITING_PAYMENT:
             raise ConflictError("The order's invoice changed; retry cancellation.")
-        elif order.status is OrderStatus.WAITING_PAYMENT:
-            raise ConflictError("The order's invoice changed; retry cancellation.")
-        order.status = OrderStatus.CANCELLED
-        order.cancelled_reason = reason
-        order.total_amount = ZERO
+
+    async def _create_replacement(self, order: Order, city: City) -> None:
+        if await self._orders.count_customer_active(order.customer_id) >= _MAX_CUSTOMER_ACTIVE:
+            raise ConflictError("You have reached the maximum number of active orders.")
+        replacement = await self._orders.create(
+            customer_id=order.customer_id,
+            description=order.description,
+            delivery_city=city,
+            delivery_date=order.delivery_date,
+            address_note=order.delivery_address_note,
+        )
+        await self._orders.copy_request_media(order, replacement)
+        order.replacement_order_id = replacement.id
         await self._orders.flush()
-        return order
+
+    async def _check_cancellation_limit(self, actor_id: uuid.UUID, now: datetime) -> int:
+        recent = await self._orders.recent_cancellations(
+            actor_id, now - 2 * _CANCELLATION_WINDOW, _CANCELLATION_LIMIT
+        )
+        if (
+            len(recent) == _CANCELLATION_LIMIT
+            and recent[0] > now - _CANCELLATION_WINDOW
+            and recent[0] - recent[-1] < _CANCELLATION_WINDOW
+        ):
+            remaining = recent[0] + _CANCELLATION_WINDOW - now
+            raise RateLimitedError(max(1, int(remaining.total_seconds()) + 1))
+        return sum(at > now - _CANCELLATION_WINDOW for at in recent)
 
     async def get_order_for_actor(self, *, order_id: uuid.UUID, actor_id: uuid.UUID) -> Order:
         """Return an order the actor participates in, else 404 (no existence leak)."""

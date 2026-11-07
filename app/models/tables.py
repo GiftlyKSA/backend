@@ -379,8 +379,21 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    replacement_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        unique=True,
+    )
 
     __table_args__ = (
+        Index(
+            "idx_orders_cancelled_by_at",
+            "cancelled_by",
+            "cancelled_at",
+            postgresql_where=text("cancelled_by IS NOT NULL"),
+        ),
         Index(
             "idx_orders_customer_description_prefix",
             "customer_id",

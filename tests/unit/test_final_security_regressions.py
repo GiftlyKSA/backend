@@ -134,8 +134,12 @@ def order_service():
 
 async def test_cancel_checks_locked_state_after_concurrent_payment():
     service = order_service()
-    service._orders.get_for_actor.return_value = SimpleNamespace(status=OrderStatus.WAITING_PAYMENT)
-    service._orders.lock_for_actor.return_value = SimpleNamespace(status=OrderStatus.IN_PROGRESS)
+    service._orders.get_for_actor.return_value = SimpleNamespace(
+        customer_id=uuid4(), status=OrderStatus.WAITING_PAYMENT
+    )
+    service._orders.lock_for_actor.return_value = SimpleNamespace(
+        customer_id=uuid4(), status=OrderStatus.IN_PROGRESS
+    )
     with pytest.raises(InvalidStateTransitionError):
         await service.cancel_order(order_id=uuid4(), actor_id=uuid4(), reason=None)
     service._orders.flush.assert_not_awaited()
@@ -207,7 +211,9 @@ async def test_topup_expiry_filters_purpose_before_limit():
 
 async def test_cancel_rechecks_participation_under_lock():
     service = order_service()
-    service._orders.get_for_actor.return_value = SimpleNamespace(status=OrderStatus.ASSIGNED)
+    service._orders.get_for_actor.return_value = SimpleNamespace(
+        customer_id=uuid4(), status=OrderStatus.ASSIGNED
+    )
     service._orders.lock_for_actor.return_value = None
     with pytest.raises(NotFoundError):
         await service.cancel_order(order_id=uuid4(), actor_id=uuid4(), reason=None)

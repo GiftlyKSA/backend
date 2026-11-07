@@ -225,9 +225,129 @@
               }
             ],
             "title": "Reason"
+          },
+          "reorder": {
+            "default": false,
+            "title": "Reorder",
+            "type": "boolean"
           }
         },
         "title": "CancelOrderRequest",
+        "type": "object"
+      },
+      "CancelOrderResponse": {
+        "description": "Cancellation result with the customer's optional replacement reference.",
+        "properties": {
+          "assigned_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned At"
+          },
+          "cancelled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled Reason"
+          },
+          "courier_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Courier Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_actor_has_rated": {
+            "description": "Whether the authenticated actor has rated this order.",
+            "title": "Current Actor Has Rated",
+            "type": "boolean"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "delivery_city": {
+            "title": "Delivery City",
+            "type": "string"
+          },
+          "delivery_city_id": {
+            "format": "uuid",
+            "title": "Delivery City Id",
+            "type": "string"
+          },
+          "delivery_date": {
+            "title": "Delivery Date",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "replacement_order_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Order Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_amount": {
+            "title": "Total Amount",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "customer_id",
+          "courier_id",
+          "delivery_city",
+          "delivery_city_id",
+          "delivery_date",
+          "description",
+          "total_amount",
+          "assigned_at",
+          "created_at",
+          "current_actor_has_rated"
+        ],
+        "title": "CancelOrderResponse",
         "type": "object"
       },
       "ChallengeConfirm": {
@@ -7167,7 +7287,7 @@
     },
     "/api/orders/{order_id}/cancel": {
       "post": {
-        "description": "Cancel an order before it is in progress.",
+        "description": "Cancel an order before progress and optionally place a replacement.",
         "operationId": "cancel_order_api_orders__order_id__cancel_post",
         "parameters": [
           {
@@ -7196,7 +7316,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderDetail"
+                  "$ref": "#/components/schemas/CancelOrderResponse"
                 }
               }
             },
