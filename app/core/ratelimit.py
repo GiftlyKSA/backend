@@ -96,8 +96,10 @@ class RateLimiter:
             if retry_after > 0:
                 return RateLimitDecision(allowed=False, retry_after_seconds=retry_after)
             return RateLimitDecision(allowed=True, retry_after_seconds=0)
-        except Exception:  # noqa: BLE001 - dependency failures must not disable protection.
-            _logger.warning("Rate-limit backend unavailable; denying request")
+        except Exception as exc:  # noqa: BLE001 - dependency failures must not disable protection.
+            _logger.warning(
+                "Rate-limit backend unavailable (%s); denying request", type(exc).__name__
+            )
             return RateLimitDecision(allowed=False, retry_after_seconds=0, unavailable=True)
 
     async def check_guarded(self, identity: str, *, blocked_key: str) -> RateLimitDecision:

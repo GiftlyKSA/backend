@@ -15,6 +15,7 @@ from app.schemas.chat import MessageResponse, SendMessageRequest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel, ValidationError
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from tests.conftest import make_test_settings
 
@@ -71,8 +72,8 @@ async def test_invalid_bearer_token_uses_anonymous_policy():
     assert redis.windows == {"ratelimit:ip:127.0.0.1": 3600}
 
 
-@pytest.mark.parametrize("path", ["/v1/admin/admin", "/v1/admin/admin/tables", "/api/admin/users"])
-async def test_admin_http_limit_is_100_per_minute_and_separate_from_public(path):
+@pytest.mark.parametrize("path", ["/v1/admin/admin", "/v1/admin/admin/tables"])
+async def test_admin_dashboard_bypasses_general_http_limit(path):
     app = FastAPI()
     redis = CounterRedis()
     app.state.redis = redis
@@ -83,16 +84,34 @@ async def test_admin_http_limit_is_100_per_minute_and_separate_from_public(path)
         return {"ok": True}
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        for _ in range(100):
+        for _ in range(101):
             assert (await client.get(path)).status_code == 200
-        blocked = await client.get(path)
-        assert blocked.status_code == 429
-        assert blocked.headers["Retry-After"] == "60"
-        assert (await client.get("/api/example")).status_code == 404
-    assert redis.windows == {
-        "ratelimit:admin:ip:127.0.0.1": 60,
-        "ratelimit:ip:127.0.0.1": 3600,
-    }
+        assert (await client.get("/v1/admin/admin-extra")).status_code == 404
+    assert redis.counts == {"ratelimit:ip:127.0.0.1": 1}
+
+
+@pytest.mark.parametrize("path", ["/v1/admin/admin/login", "/api/admin", "/api/admin/users"])
+async def test_admin_routes_bypass_general_limiter_during_redis_outage(path):
+    app = FastAPI()
+
+    class UnavailableRedis:
+        async def eval(self, *args: object) -> int:
+            raise RedisConnectionError("Redis unavailable")
+
+    app.state.redis = UnavailableRedis()
+    main._install_middleware(app, make_test_settings(RATE_LIMIT_ENABLED=True))
+
+    @app.post(path)
+    async def example() -> dict[str, bool]:
+        return {"ok": True}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post(path)).status_code == 200
+        for public_path in ("/api/example", "/api/admin-extra"):
+            unavailable = await client.post(public_path)
+            assert unavailable.status_code == 503
+            assert unavailable.headers["Retry-After"] == "1"
+            assert unavailable.json()["error"]["code"] == "RATE_LIMIT_UNAVAILABLE"
 
 
 async def test_api_text_is_returned_as_json_with_nosniff():
@@ -176,8 +195,6 @@ def test_admin_templates_escape_text_and_attribute_values(templates) -> None:
         "RATE_LIMIT_WINDOW_SECONDS",
         "RATE_LIMIT_ANONYMOUS_MAX_REQUESTS",
         "RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS",
-        "RATE_LIMIT_ADMIN_MAX_REQUESTS",
-        "RATE_LIMIT_ADMIN_WINDOW_SECONDS",
     ],
 )
 def test_http_throttle_settings_cannot_disable_limits_with_zero(field) -> None:

@@ -123,8 +123,9 @@ coverage, generated schema, dependencies and image/decoder checks. Generate Open
 in development mode so the catalog also inventories explicitly development-only routes;
 keep `mobile-openapi.json` synchronized and run its drift test.
 
-Current HTTP defaults: authenticated 60 requests/minute; anonymous 30/hour;
-admin 100/minute. Redis limiter failures return 503 rather than bypassing controls.
+Public HTTP defaults are 60 requests per minute for authenticated users and 30 per
+hour for anonymous clients. Redis limiter failures return 503. Admin routes bypass
+the general limiter, and dashboard login has a dedicated brute-force throttle.
 Dates/timestamps, pagination, decimal money, safe literal-text rendering and production
 limitations are detailed in the API reference.
 

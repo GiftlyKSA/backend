@@ -301,11 +301,15 @@ def _install_request_guards(
         if rejected is not None:
             return rejected
 
-        # Health probes and CORS preflight are never throttled.
+        path = request.url.path
         if (
             not settings.RATE_LIMIT_ENABLED
             or request.method == "OPTIONS"
-            or request.url.path.startswith("/api/health")
+            or path.startswith("/api/health")
+            or path == "/v1/admin/admin"
+            or path.startswith("/v1/admin/admin/")
+            or path == "/api/admin"
+            or path.startswith("/api/admin/")
         ):
             return await call_next(request)
 
@@ -321,15 +325,6 @@ def _install_request_guards(
             if authenticated
             else settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
         )
-        path = request.url.path
-        if (
-            path == "/v1/admin/admin"
-            or path.startswith("/v1/admin/admin/")
-            or path.startswith("/api/admin/")
-        ):
-            identity = f"admin:{identity}"
-            max_requests = settings.RATE_LIMIT_ADMIN_MAX_REQUESTS
-            window_seconds = settings.RATE_LIMIT_ADMIN_WINDOW_SECONDS
         limiter = RateLimiter(
             request.app.state.redis, max_requests=max_requests, window_seconds=window_seconds
         )

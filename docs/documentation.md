@@ -227,11 +227,12 @@ failure returns `503 RATE_LIMIT_UNAVAILABLE`; it does not disable the limiter.
 | --- | --- | --- |
 | Authenticated public HTTP | 60 / 60 seconds | Verified bearer-token identity. |
 | Anonymous public HTTP | 30 / 3,600 seconds | Client IP, subject to trusted proxy configuration. |
-| Admin routes/dashboard | 100 / 60 seconds | Admin bearer identity or cookie-only client IP. |
+| Dashboard login attempts | 5 / 300 seconds | Username and source IP. |
 | Chat messages | 30 / 60 seconds | Authenticated user; separate frame cap. |
 | OTP issuance | 3 / 300 seconds; 1,800-second block | Phone number. |
 
-Health probes and CORS preflight are exempt. Rate windows are shared across processes.
+Admin routes, health probes and CORS preflight are exempt from the general HTTP
+limiter. Rate windows are shared across processes through atomic Redis counters.
 An edge firewall can complement these controls; it cannot replace application ownership
 checks, transactional money invariants or authenticated callbacks.
 
