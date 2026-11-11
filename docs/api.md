@@ -245,6 +245,10 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 ## Integration conventions
 
+- Parse timestamps as UTC ISO 8601 strings with either `Z` or `+00:00`. Format them
+  in `Asia/Riyadh` wherever the screen uses Saudi business time. For example,
+  `2026-11-12T21:10:00Z` displays as November 13 at 00:10 in Riyadh. Keep date-only
+  fields such as `delivery_date` and `occasion_date` as calendar dates.
 - HTTP limits default to 100 requests per 60 seconds per verified bearer-token identity
   or anonymous client IP. OTP limits also apply. HTTP 429 includes `Retry-After` in
   seconds. The optional `error.scope` identifies the affected operations. `http`

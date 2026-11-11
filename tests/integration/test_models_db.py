@@ -15,7 +15,7 @@ from app.models.enums import (
     UserRole,
     WalletType,
 )
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,25 @@ async def test_system_wallets_are_seeded(db_session: AsyncSession) -> None:
         WalletType.SYSTEM_REVENUE,
         WalletType.SYSTEM_GATEWAY,
     } <= seeded
+
+
+async def test_migrated_timestamp_columns_preserve_timezones(db_session: AsyncSession) -> None:
+    columns = (
+        await db_session.execute(
+            text(
+                """
+                SELECT table_name, column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND (data_type LIKE 'timestamp%' OR data_type = 'date')
+                """
+            )
+        )
+    ).all()
+    types = {(table, column): data_type for table, column, data_type in columns}
+    assert types[("orders", "created_at")] == "timestamp with time zone"
+    assert types[("orders", "delivery_date")] == "date"
+    assert "timestamp without time zone" not in types.values()
 
 
 async def test_order_invoice_roundtrip(db_session: AsyncSession) -> None:

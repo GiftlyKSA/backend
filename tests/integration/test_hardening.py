@@ -127,6 +127,39 @@ async def test_rate_limiter_fails_closed_on_backend_error() -> None:
     assert decision.retry_after_seconds == 0
 
 
+async def test_guarded_rate_limiter_denies_revoked_sessions_and_repairs_expiry() -> None:
+    redis = build_redis(_settings())
+    identity = f"test:{uuid.uuid4()}"
+    counter = f"ratelimit:{identity}"
+    blocked_key = f"test:deny:{uuid.uuid4()}"
+    try:
+        await redis.ping()
+    except Exception as exc:  # noqa: BLE001
+        await redis.aclose()
+        pytest.skip(f"Redis unavailable: {exc}")
+
+    try:
+        limiter = RateLimiter(redis, max_requests=3, window_seconds=60)
+        await redis.set(blocked_key, "1", ex=60)
+        denied = await limiter.check_guarded(identity, blocked_key=blocked_key)
+        assert denied.blocked
+        assert not denied.allowed
+        assert await redis.get(counter) is None
+
+        await redis.delete(blocked_key)
+        await redis.set(counter, 3)
+        limited = await limiter.check_guarded(identity, blocked_key=blocked_key)
+        assert not limited.allowed
+        assert not limited.blocked
+        assert limited.retry_after_seconds == 60
+        assert 0 < await redis.pttl(counter) <= 60_000
+    finally:
+        try:
+            await redis.delete(counter, blocked_key)
+        finally:
+            await redis.aclose()
+
+
 async def test_guarded_rate_limiter_checks_ban_and_window_in_one_round_trip() -> None:
     redis = _GuardRedis(-1)
     limiter = RateLimiter(redis, max_requests=3, window_seconds=60)  # type: ignore[arg-type]

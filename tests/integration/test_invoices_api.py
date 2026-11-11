@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import secrets as _secrets
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -21,7 +21,7 @@ from app.main import create_app
 from app.models import CourierProfile, Promo, User
 from app.models.enums import PromoDiscountType, UserStatus
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from tests.conftest import make_test_settings
 
@@ -248,7 +248,12 @@ async def test_customer_can_list_current_promos_without_promo_ids() -> None:
     app = create_app(settings)
     older_code = f"OLD{uuid.uuid4().hex[:8].upper()}"
     newer_code = f"NEW{uuid.uuid4().hex[:8].upper()}"
+    inactive_code = f"OFF{uuid.uuid4().hex[:8].upper()}"
+    expired_code = f"END{uuid.uuid4().hex[:8].upper()}"
+    exhausted_code = f"MAX{uuid.uuid4().hex[:8].upper()}"
+    fixture_codes = {older_code, newer_code, inactive_code, expired_code, exhausted_code}
     now = datetime.now(UTC)
+    starts_at = (now - timedelta(minutes=5)).astimezone(timezone(timedelta(hours=3)))
     async with factory() as session:  # type: ignore[operator]
         session.add_all(
             [
@@ -269,9 +274,10 @@ async def test_customer_can_list_current_promos_without_promo_ids() -> None:
                     min_order_amount=Decimal("0.00"),
                     max_usages_per_user=1,
                     created_at=now,
+                    starts_at=starts_at,
                 ),
                 Promo(
-                    code=f"OFF{uuid.uuid4().hex[:8].upper()}",
+                    code=inactive_code,
                     description="Inactive promo",
                     discount_type=PromoDiscountType.FIXED,
                     fixed_amount=Decimal("5.00"),
@@ -280,7 +286,7 @@ async def test_customer_can_list_current_promos_without_promo_ids() -> None:
                     is_active=False,
                 ),
                 Promo(
-                    code=f"END{uuid.uuid4().hex[:8].upper()}",
+                    code=expired_code,
                     description="Expired promo",
                     discount_type=PromoDiscountType.FIXED,
                     fixed_amount=Decimal("5.00"),
@@ -289,7 +295,7 @@ async def test_customer_can_list_current_promos_without_promo_ids() -> None:
                     ends_at=now - timedelta(seconds=1),
                 ),
                 Promo(
-                    code=f"MAX{uuid.uuid4().hex[:8].upper()}",
+                    code=exhausted_code,
                     description="Exhausted promo",
                     discount_type=PromoDiscountType.FIXED,
                     fixed_amount=Decimal("5.00"),
@@ -306,20 +312,26 @@ async def test_customer_can_list_current_promos_without_promo_ids() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
             customer = await _register(client, app, _phone(), "CUSTOMER")
             headers = {"Authorization": f"Bearer {customer['access_token']}"}
-            response = await client.get("/api/promos", headers=headers)
+            response = await client.get("/api/promos", params={"limit": 100}, headers=headers)
 
         assert response.status_code == 200, response.text
-        items = response.json()["items"]
+        items = [item for item in response.json()["items"] if item["code"] in fixture_codes]
         assert [item["code"] for item in items] == [newer_code, older_code]
         assert items[0]["discount_type"] == "PERCENT"
         assert items[0]["percent_value"] == "10.00"
         assert items[0]["fixed_amount"] is None
+        wire_start = datetime.fromisoformat(items[0]["starts_at"])
+        assert wire_start.utcoffset() == timedelta(0)
+        assert wire_start == starts_at
         assert items[1]["discount_type"] == "FIXED"
         assert items[1]["fixed_amount"] == "15.00"
         assert "id" not in items[0]
         assert "Cache-Control" in response.headers
         assert "no-store" in response.headers["Cache-Control"]
     finally:
+        async with factory() as session:  # type: ignore[operator]
+            await session.execute(delete(Promo).where(Promo.code.in_(fixture_codes)))
+            await session.commit()
         await app.state.redis.aclose()
         await engine.dispose()
         await app.state.engine.dispose()

@@ -1,5 +1,25 @@
 # Giftly backend — audit and task register
 
+## Rate-limit follow-up — 2026-11-12
+
+CranL API startup confirmed 100 HTTP requests per minute per account or anonymous
+client IP, 120 incoming chat messages per minute per account and 30 WebSocket
+handshakes per minute. The separate sign-in, refresh and payment-callback budgets
+are available behind `RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED`. They remain disabled
+while collecting traffic and ingress evidence. The worker and scheduler do not
+apply the public API limiter.
+
+The full suite passed on Python 3.15.1 with disposable PostgreSQL 16 and Redis 7:
+1,748 passed, 90.85% line coverage, and two native media checks skipped. The migrated
+schema contained 158 timezone-aware timestamp columns and zero naive timestamp columns.
+
+| Finding | Type | Importance / urgency | Current behavior and proposed change |
+| --- | --- | --- | --- |
+| RL-01 — Validate ingress identity before changing budgets | Security / availability | 8 / 7 | HTTP buckets use `request.client.host` in `app/main.py`. Check trusted proxy handling and legitimate traffic behind shared IPs in CranL before enabling separate budgets. Measure per-scope 429s and use documented provider retry behavior to size callbacks. Preserve OTP checks and webhook verification. |
+| RL-02 — Bound logging during Redis outages | Performance / reliability | 6 / 6 | `RateLimiter._log_failure` in `app/core/ratelimit.py` writes a warning for every failed check. A high request rate during an outage can add log I/O and obscure the first failure. Measure under a synthetic outage, then retain the first warning per scope with bounded periodic counts. Keep HTTP 503 and chat failure behavior. |
+| RL-03 — Avoid duplicate signature checks on protected HTTP routes | CPU / performance | 5 / 4 | `app/main.py::_client_identity` and `app/core/deps.py::require_auth` decode the same access token. Profile authenticated requests first. If signature verification is material, reuse the verified claims within the same request and preserve current revocation, account-status and role checks. Add regression coverage before changing this boundary. |
+| RL-04 — Measure Redis script and pool cost | Performance | 4 / 3 | `RateLimiter.check` and `check_guarded` send the Lua source with each `EVAL`. Benchmark cached script execution against the existing calls, including an empty script cache and Redis reconnects. Keep each normal check atomic and within one Redis round trip. Track pool waits and error rates before changing connection sizes. |
+
 ## Index review for the rate-limit rollout — 2026-11-12
 
 The limiter uses Redis and adds no PostgreSQL queries. Existing indexes already cover

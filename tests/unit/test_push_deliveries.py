@@ -3,17 +3,21 @@
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import httpx
 import pytest
 from app.integrations.push.expo import DeviceSnapshot, ExpoOutcome, ExpoPushClient, ExpoSendError
+from app.repositories.expo_receipt_repository import ReceiptClaim
 from app.repositories.push_delivery_repository import DeliveryClaim, PushDeliveryRepository
 from app.schemas.push_event import PushEvent
-from app.services import push_delivery_service
+from app.services import expo_receipt_service, push_delivery_service
+from app.workers import push_deliveries
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
+
+from tests.conftest import make_test_settings
 
 
 def event() -> PushEvent:
@@ -214,14 +218,85 @@ async def test_claim_is_batched_and_fences_current_ownership_and_domain_permissi
 
 
 def test_final_transient_receipt_is_not_polled_again():
-    from app.services.expo_receipt_service import ExpoReceiptService
-
-    service = ExpoReceiptService(AsyncMock())
+    service = expo_receipt_service.ExpoReceiptService(AsyncMock())
     result = service._resolution(
         SimpleNamespace(), ExpoOutcome(status="error", details={"error": "MessageRateExceeded"})
     )
     assert result[1:] == ("MessageRateExceeded", False, False)
     assert service._resolution(SimpleNamespace(), None)[2] is True
+
+
+@pytest.mark.parametrize("provider_unavailable", [False, True])
+async def test_receipt_drain_persists_outcomes_and_retry_cooldown(
+    monkeypatch, provider_unavailable
+):
+    delivery = claim()
+    receipt = ReceiptClaim("ticket", delivery.device, uuid4(), 1, delivery.expires_at)
+    repository = SimpleNamespace(
+        claim_pending=AsyncMock(side_effect=[[receipt], []]),
+        finish_batch=AsyncMock(),
+    )
+    session = AsyncMock()
+    session.__aenter__.return_value = session
+    monkeypatch.setattr(expo_receipt_service, "ExpoReceiptRepository", lambda _: repository)
+
+    async def get_receipts(ticket_ids):
+        assert ticket_ids == [receipt.ticket_id]
+        session.commit.assert_awaited_once()
+        session.__aexit__.assert_awaited_once()
+        if provider_unavailable:
+            raise ExpoSendError("ProviderUnavailable", retry_after=45)
+        return {
+            receipt.ticket_id: ExpoOutcome(status="error", details={"error": "DeviceNotRegistered"})
+        }
+
+    client = SimpleNamespace(get_receipts=AsyncMock(side_effect=get_receipts))
+    service = expo_receipt_service.ExpoReceiptService(lambda: session)
+    assert await service.drain(client) == int(not provider_unavailable)
+    client.get_receipts.assert_awaited_once()
+    repository.finish_batch.assert_awaited_once()
+    (resolutions,) = repository.finish_batch.await_args.args
+    if provider_unavailable:
+        assert resolutions == [(receipt, "ProviderError", True, False)]
+        assert repository.finish_batch.await_args.kwargs["retry_after"] == 45
+    else:
+        assert resolutions == [(receipt, "DeviceNotRegistered", False, True)]
+        assert repository.finish_batch.await_args.kwargs["retry_after"] == 0
+    assert session.commit.await_count == 3
+
+
+@pytest.mark.parametrize("provider", ["fake", "expo"])
+async def test_scheduled_push_job_only_allocates_resources_for_expo(monkeypatch, provider):
+    settings = make_test_settings(PUSH_PROVIDER=provider)
+    engine, redis, client = AsyncMock(), AsyncMock(), AsyncMock()
+    engine_builder = Mock(return_value=engine)
+    redis_builder = Mock(return_value=redis)
+    expo_builder = Mock(return_value=client)
+    session_factory = Mock()
+    drain = AsyncMock(side_effect=RuntimeError("test drain failure"))
+    monkeypatch.setattr(push_deliveries, "get_worker_settings", lambda: settings)
+    monkeypatch.setattr(push_deliveries, "build_engine", engine_builder)
+    monkeypatch.setattr(push_deliveries, "build_redis", redis_builder)
+    monkeypatch.setattr(push_deliveries, "build_expo_client", expo_builder)
+    monkeypatch.setattr(push_deliveries, "build_session_factory", lambda _: session_factory)
+    monkeypatch.setattr(push_deliveries, "deliver_pushes", drain)
+
+    if provider == "fake":
+        await push_deliveries.deliver_push_notifications()
+        engine_builder.assert_not_called()
+        redis_builder.assert_not_called()
+        expo_builder.assert_not_called()
+        drain.assert_not_awaited()
+        return
+
+    with pytest.raises(RuntimeError, match="test drain failure"):
+        await push_deliveries.deliver_push_notifications()
+    drain.assert_awaited_once_with(session_factory, client, redis)
+    pool_settings = engine_builder.call_args.args[0]
+    assert (pool_settings.DB_POOL_SIZE, pool_settings.DB_MAX_OVERFLOW) == (1, 0)
+    client.aclose.assert_awaited_once()
+    redis.aclose.assert_awaited_once()
+    engine.dispose.assert_awaited_once()
 
 
 async def test_growing_claim_pages_do_not_add_per_device_reads():

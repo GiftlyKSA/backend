@@ -13,6 +13,7 @@ from app.models.enums import UserRole
 from app.routers.chat import _pump_socket_to_chat, send_chat_media, send_message
 from app.schemas.chat import SendChatMediaRequest, SendMessageRequest
 from app.services.chat_service import ChatMessage
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from tests.conftest import make_test_settings
 
@@ -42,6 +43,30 @@ async def test_chat_rate_limit_sends_one_notice_without_processing_throttled_fra
         "ws_chat",
         20,
     )
+
+
+@pytest.mark.parametrize(
+    ("decision", "error"),
+    [
+        (RateLimitDecision(False, 0, blocked=True), UnauthorizedError),
+        (RateLimitDecision(False, 0, unavailable=True), RedisConnectionError),
+    ],
+)
+async def test_chat_security_guard_stops_before_database_work(decision, error):
+    actor = Actor(uuid4(), UserRole.CUSTOMER, "session")
+    websocket = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(settings=make_test_settings())),
+        receive_text=AsyncMock(return_value='{"text":"Hello"}'),
+        send_text=AsyncMock(),
+    )
+    factory = AsyncMock()
+    with patch("app.routers.chat.RateLimiter") as limiter:
+        limiter.return_value.check_guarded = AsyncMock(return_value=decision)
+        with pytest.raises(error):
+            await _pump_socket_to_chat(websocket, uuid4(), actor, uuid4(), factory, AsyncMock())
+
+    factory.assert_not_called()
+    websocket.send_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio
