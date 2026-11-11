@@ -82,7 +82,7 @@ async def test_exact_limit_body_is_replayed_to_parser():
     assert json.loads(body) == {"body": "12345678"}
 
 
-@pytest.mark.parametrize("path", ["/api/example", "/api/auth/send-otp", "/api/admin/users"])
+@pytest.mark.parametrize("path", ["/api/example", "/api/auth/send-otp", "/api/admin-extra/users"])
 async def test_redis_outage_returns_safe_503_before_route(path):
     app = FastAPI()
     app.state.redis = AsyncMock()
