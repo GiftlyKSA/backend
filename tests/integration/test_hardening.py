@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 
@@ -80,6 +81,44 @@ async def test_rate_limiter_allows_then_blocks() -> None:
         await redis.aclose()
 
 
+@pytest.mark.parametrize("guarded,limit", [(False, 100), (True, 120)])
+async def test_rate_limiter_shares_quota_and_reports_subsecond_expiry(guarded, limit) -> None:
+    settings = _settings()
+    first = build_redis(settings)
+    second = build_redis(settings)
+    identity = f"test:{uuid.uuid4()}"
+    counter = f"ratelimit:{identity}"
+    blocked_key = f"test:deny:{uuid.uuid4()}"
+    try:
+        try:
+            await first.ping()
+        except Exception as exc:  # noqa: BLE001
+            pytest.skip(f"Redis unavailable: {exc}")
+        limiters = [
+            RateLimiter(client, max_requests=limit, window_seconds=60) for client in (first, second)
+        ]
+
+        async def check(index: int):
+            limiter = limiters[index % 2]
+            if guarded:
+                return await limiter.check_guarded(identity, blocked_key=blocked_key)
+            return await limiter.check(identity)
+
+        decisions = await asyncio.gather(*(check(index) for index in range(limit + 1)))
+        assert sum(decision.allowed for decision in decisions) == limit
+        assert all(not decision.unavailable for decision in decisions)
+        await first.pexpire(counter, 400)
+        blocked = await check(0)
+        assert not blocked.allowed
+        assert blocked.retry_after_seconds == 1
+        await first.pexpire(counter, 1)
+        await asyncio.sleep(0.01)
+        assert (await check(1)).allowed
+    finally:
+        await first.aclose()
+        await second.aclose()
+
+
 async def test_rate_limiter_fails_closed_on_backend_error() -> None:
     limiter = RateLimiter(_BoomRedis(), max_requests=1, window_seconds=60)  # type: ignore[arg-type]
     decision = await limiter.check("whoever")
@@ -102,7 +141,8 @@ async def test_guarded_rate_limiter_fails_closed_on_backend_error() -> None:
     limiter = RateLimiter(_BoomRedis(), max_requests=1, window_seconds=60)  # type: ignore[arg-type]
     decision = await limiter.check_guarded("ws:user", blocked_key="auth:banned:user")
 
-    assert decision.blocked is True
+    assert decision.unavailable is True
+    assert decision.blocked is False
     assert decision.allowed is False
 
 

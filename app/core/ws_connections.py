@@ -25,6 +25,7 @@ async def check_websocket_handshake(
         redis,
         max_requests=settings.WS_HANDSHAKE_MAX_REQUESTS,
         window_seconds=settings.WS_HANDSHAKE_WINDOW_SECONDS,
+        scope="ws_handshake",
     )
     return await limiter.check(f"ws-handshake:{account_id}")
 

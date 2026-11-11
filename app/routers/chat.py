@@ -540,18 +540,39 @@ async def _pump_socket_to_chat(
         redis,
         max_requests=settings.WS_RATE_LIMIT_MAX_MESSAGES,
         window_seconds=settings.WS_RATE_LIMIT_WINDOW_SECONDS,
+        scope="ws_chat",
     )
+    throttled_until = 0.0
+    clock = asyncio.get_running_loop()
     while True:
         raw = await websocket.receive_text()
         if len(raw.encode("utf-8")) > settings.WS_MAX_FRAME_BYTES:
             continue  # oversized frame: dropped before any decrypt/persist work
+        if clock.time() < throttled_until:
+            continue
         decision = await limiter.check_guarded(
             f"ws:{actor.id}", blocked_key=f"jwt:denylist:{actor.jti}"
         )
+        if decision.unavailable:
+            raise RedisConnectionError("Chat rate-limit backend unavailable.")
         if decision.blocked:
             raise UnauthorizedError("This session is no longer valid.")
         if not decision.allowed:
-            continue  # over the per-user message ceiling: dropped
+            throttled_until = clock.time() + decision.retry_after_seconds
+            await _send_socket_frame(
+                websocket,
+                json.dumps(
+                    {
+                        "error": {
+                            "code": "RATE_LIMITED",
+                            "message": "Too many chat messages. Please try again later.",
+                            "scope": "ws_chat",
+                            "retry_after_seconds": decision.retry_after_seconds,
+                        }
+                    }
+                ),
+            )
+            continue
         await _require_live_authorization(websocket, conversation_id)
         body = _extract_send_request(raw)
         if body is None:

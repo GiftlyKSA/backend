@@ -1,5 +1,34 @@
 # Giftly backend — audit and task register
 
+## Index review for the rate-limit rollout — 2026-11-12
+
+The limiter uses Redis and adds no PostgreSQL queries. Existing indexes already cover
+city radar, owner order chronology and date filters, customer cancellation history,
+message and timeline keyset reads, unread notification pages, and payment recovery.
+The priorities below are based on repository queries and migration definitions.
+The first two have disposable PostgreSQL measurements. Production latency,
+selectivity and plan choice remain unconfirmed.
+
+| Review item | Evidence | Proposed next step |
+| --- | --- | --- |
+| [AUD-26](#aud-26-current) — Customer order creation | The authoritative active-order quota counts through historical rows while holding the customer lock. A narrow active-only index helped on synthetic data when the status predicate remained visible to a generic plan. | Measure the actual prepared query with a fixed internal active-status predicate and bound the count at the quota. Add a partial customer index only if both custom and generic plans use it. |
+| [AUD-25](#aud-25-current) — Conversation inbox | The participant OR can sort substantial matching history even though both participant/activity indexes exist. | Compare bounded ordered branches and merge them using the current keyset, ownership and deduplication rules. Reuse the indexes already present. |
+| Courier earnings — `courier_report_repository._proceeds` | The wallet/date index helps locate ledger rows. Proceeds still filter for settled escrow release entries with order and invoice references. | Measure a partial wallet/date index with that exact predicate on a representative ledger. Prefer query consolidation first when repeated aggregates dominate. |
+| Available promos — `promo_repository.list_available` | The active-window index filters by eligibility dates. Newest-first sorting uses creation time and code. | Test a partial newest-first index on active promos if the table grows and sort work is material. Keep time and redemption eligibility checks in the query. |
+| Media cleanup — `media_repository.reserve_expired` | The unattached creation-time index covers age. The reservation query orders by deletion state and creation time, which may still require sorting. | Measure a separate bounded pass for unreserved rows and due retries. Compare each predicate and ordering before adding an index, and preserve the attachment fence. |
+| Push due work — `push_delivery_repository.claim` | A partial due index already exists. Its state predicate may be harder to match when the planner uses a generic plan for bound values. | Check custom and generic plans before adding another index. Use only trusted fixed state constants if the predicate needs to be made visible to the planner. |
+
+For any follow-up, compare `EXPLAIN (ANALYZE, BUFFERS)`, rows visited, index size,
+and write cost on disposable data. This rollout adds no index migration.
+
+The quota check was remeasured on a 100,000-row temporary table with 50,000 orders
+for one customer and two active rows. With a forced generic plan, five-run median
+execution time was 6.626 ms through the owner index and 6.932 ms after adding the
+candidate partial index while keeping bound status values. Expressing the fixed
+internal status set in SQL yielded an index-only scan at 0.012 ms, with two local
+buffer blocks versus 513. The candidate occupied 16 KiB in this sparse fixture.
+These measurements exclude network and application latency.
+
 ## Expo per-device delivery implementation — 2026-11-06
 
 | Task | Status | Evidence and system impact |

@@ -121,15 +121,19 @@ class Settings(BaseSettings):
 
     # Hardening: global request throttle and body-size guard.
     RATE_LIMIT_ENABLED: bool = True
-    RATE_LIMIT_MAX_REQUESTS: int = Field(default=60, ge=1)
+    RATE_LIMIT_MAX_REQUESTS: int = Field(default=100, ge=1)
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, ge=1)
-    RATE_LIMIT_ANONYMOUS_MAX_REQUESTS: int = Field(default=30, ge=1)
-    RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS: int = Field(default=3600, ge=1)
+    RATE_LIMIT_ANONYMOUS_MAX_REQUESTS: int = Field(default=100, ge=1)
+    RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS: int = Field(default=60, ge=1)
+    RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED: bool = False
+    RATE_LIMIT_SIGN_IN_MAX_REQUESTS: int = Field(default=100, ge=1)
+    RATE_LIMIT_REFRESH_MAX_REQUESTS: int = Field(default=100, ge=1)
+    RATE_LIMIT_PAYMENT_CALLBACK_MAX_REQUESTS: int = Field(default=100, ge=1)
     MAX_REQUEST_BODY_BYTES: int = 1_048_576
 
     # WebSocket chat guards (audit SEC-4/LOG-3): per-user message throttle + frame cap.
-    WS_RATE_LIMIT_MAX_MESSAGES: int = 30
-    WS_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    WS_RATE_LIMIT_MAX_MESSAGES: int = Field(default=120, ge=1)
+    WS_RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, ge=1)
     WS_HANDSHAKE_MAX_REQUESTS: int = Field(default=30, ge=1, le=120)
     WS_HANDSHAKE_WINDOW_SECONDS: int = Field(default=60, ge=1, le=300)
     WS_MAX_FRAME_BYTES: int = Field(default=4096, ge=1, le=4096)

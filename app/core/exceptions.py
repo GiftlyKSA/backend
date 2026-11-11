@@ -170,10 +170,13 @@ class RateLimitedError(DomainError):
     message = "Too many requests. Please try again later."
     status_code = 429
 
-    def __init__(self, retry_after_seconds: int, message: str | None = None) -> None:
+    def __init__(
+        self, retry_after_seconds: int, message: str | None = None, *, scope: str | None = None
+    ) -> None:
         """Record the retry-after hint for the ``Retry-After`` header."""
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+        self.scope = scope
 
 
 class PromoError(ValidationDomainError):

@@ -89,7 +89,7 @@ class AccountChangeService:
         if decision.unavailable:
             raise AccountChangeUnavailableError()
         if not decision.allowed:
-            raise RateLimitedError(decision.retry_after_seconds)
+            raise RateLimitedError(decision.retry_after_seconds, scope="account_change")
         now = self._now()
         row = AccountChangeChallenge(
             id=uuid.uuid4(),

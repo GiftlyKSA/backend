@@ -225,14 +225,27 @@ failure returns `503 RATE_LIMIT_UNAVAILABLE`; it does not disable the limiter.
 
 | Bucket | Default | Identity |
 | --- | --- | --- |
-| Authenticated public HTTP | 60 / 60 seconds | Verified bearer-token identity. |
-| Anonymous public HTTP | 30 / 3,600 seconds | Client IP, subject to trusted proxy configuration. |
+| Authenticated public HTTP | 100 / 60 seconds | Verified bearer-token identity. |
+| Anonymous public HTTP | 100 / 60 seconds | Client IP, subject to trusted proxy configuration. |
 | Dashboard login attempts | 5 / 300 seconds | Username and source IP. |
-| Chat messages | 30 / 60 seconds | Authenticated user; separate frame cap. |
+| Chat messages | 120 / 60 seconds | Authenticated user with a separate frame-size cap. |
+| WebSocket handshakes | 30 / 60 seconds | Authenticated account, shared by chat and order connections. |
 | OTP issuance | 3 / 300 seconds; 1,800-second block | Phone number. |
 
 Admin routes, health probes and CORS preflight are exempt from the general HTTP
 limiter. Rate windows are shared across processes through atomic Redis counters.
+The API owns these limits. The worker and scheduler use their existing job and
+provider budgets. The limiter logs Redis failure type, scope, request ID when
+available, and latency. Successful Redis decisions are sampled every 256 checks
+per process. Use ingress status counts alongside samples to assess 429 and 503 rates.
+
+`RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED` defaults to false. When enabled, sign-in
+(send OTP, verify OTP, and register), refresh, and the Dhamen callback each use a
+separate IP counter. Configure their ceilings independently with
+`RATE_LIMIT_SIGN_IN_MAX_REQUESTS`, `RATE_LIMIT_REFRESH_MAX_REQUESTS`, and
+`RATE_LIMIT_PAYMENT_CALLBACK_MAX_REQUESTS`. They use the anonymous HTTP window.
+Review trusted proxy attribution and observed traffic before enabling the split.
+Keep the existing OTP and payment validation in the route services.
 An edge firewall can complement these controls; it cannot replace application ownership
 checks, transactional money invariants or authenticated callbacks.
 

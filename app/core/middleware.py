@@ -130,13 +130,21 @@ class BodySizeMiddleware:
         await self.app(scope, replay, send)
 
 
-def _envelope(code: str, message: str) -> dict[str, object]:
+def _envelope(code: str, message: str, scope: str | None = None) -> dict[str, object]:
     """Build the domain error envelope with the current request id."""
-    return {"error": {"code": code, "message": message, "request_id": current_request_id()}}
+    error = {"code": code, "message": message, "request_id": current_request_id()}
+    if scope is not None:
+        error["scope"] = scope
+    return {"error": error}
 
 
 def error_response(
-    status_code: int, code: str, message: str, *, headers: dict[str, str] | None = None
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    headers: dict[str, str] | None = None,
+    scope: str | None = None,
 ) -> JSONResponse:
     """Render a domain error envelope as a JSON response.
 
@@ -144,7 +152,7 @@ def error_response(
     so every error the client sees carries the same shape and the current request id.
     """
     return JSONResponse(
-        status_code=status_code, content=_envelope(code, message), headers=headers or {}
+        status_code=status_code, content=_envelope(code, message, scope), headers=headers or {}
     )
 
 
@@ -154,9 +162,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _handle_domain(request: Request, exc: DomainError) -> JSONResponse:
         headers = {}
+        scope = None
         if isinstance(exc, RateLimitedError):
             headers["Retry-After"] = str(exc.retry_after_seconds)
-        return error_response(exc.status_code, exc.code, exc.message, headers=headers)
+            scope = exc.scope
+        return error_response(exc.status_code, exc.code, exc.message, headers=headers, scope=scope)
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:

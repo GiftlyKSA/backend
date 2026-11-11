@@ -290,7 +290,9 @@ class OrderService:
             and recent[0] - recent[-1] < _CANCELLATION_WINDOW
         ):
             remaining = recent[0] + _CANCELLATION_WINDOW - now
-            raise RateLimitedError(max(1, int(remaining.total_seconds()) + 1))
+            raise RateLimitedError(
+                max(1, int(remaining.total_seconds()) + 1), scope="order_cancellation"
+            )
         return sum(at > now - _CANCELLATION_WINDOW for at in recent)
 
     async def get_order_for_actor(self, *, order_id: uuid.UUID, actor_id: uuid.UUID) -> Order:

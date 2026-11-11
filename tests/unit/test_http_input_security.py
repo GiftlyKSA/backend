@@ -10,7 +10,9 @@ import pytest
 from app import main, schemas
 from app.admin.router import _TEMPLATES
 from app.admin.table_router import _TEMPLATES as TABLE_TEMPLATES
+from app.core.exceptions import RateLimitedError
 from app.core.jwt import create_access_token
+from app.core.middleware import register_exception_handlers
 from app.schemas.chat import MessageResponse, SendMessageRequest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -33,8 +35,8 @@ class CounterRedis:
         return window if self.counts[key] > limit else 0
 
 
-@pytest.mark.parametrize("authenticated,limit,window", [(True, 60, 60), (False, 30, 3600)])
-async def test_http_policy_enforces_identity_specific_limit(authenticated, limit, window):
+@pytest.mark.parametrize("authenticated", [True, False])
+async def test_http_policy_enforces_identity_specific_limit(authenticated):
     settings = make_test_settings(RATE_LIMIT_ENABLED=True)
     app = FastAPI()
     redis = CounterRedis()
@@ -50,15 +52,16 @@ async def test_http_policy_enforces_identity_specific_limit(authenticated, limit
         token, _, _ = create_access_token(settings, user_id=uuid4(), role="CUSTOMER")
         headers["Authorization"] = f"Bearer {token}"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        for _ in range(limit):
+        for _ in range(100):
             assert (await client.get("/api/example", headers=headers)).status_code == 200
         blocked = await client.get("/api/example", headers=headers)
         assert blocked.status_code == 429
-        assert blocked.headers["Retry-After"] == str(window)
+        assert blocked.headers["Retry-After"] == "60"
         assert blocked.json()["error"]["code"] == "RATE_LIMITED"
+        assert blocked.json()["error"]["scope"] == "http"
         assert (await client.get("/api/health")).status_code == 404
         assert (await client.options("/api/example")).status_code == 405
-    assert list(redis.windows.values()) == [window]
+    assert list(redis.windows.values()) == [60]
 
 
 async def test_invalid_bearer_token_uses_anonymous_policy():
@@ -69,7 +72,7 @@ async def test_invalid_bearer_token_uses_anonymous_policy():
     main._install_middleware(app, settings)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.get("/api/example", headers={"Authorization": "Bearer invalid"})
-    assert redis.windows == {"ratelimit:ip:127.0.0.1": 3600}
+    assert redis.windows == {"ratelimit:http:60:ip:127.0.0.1": 60}
 
 
 @pytest.mark.parametrize("path", ["/v1/admin/admin", "/v1/admin/admin/tables"])
@@ -87,7 +90,64 @@ async def test_admin_dashboard_bypasses_general_http_limit(path):
         for _ in range(101):
             assert (await client.get(path)).status_code == 200
         assert (await client.get("/v1/admin/admin-extra")).status_code == 404
-    assert redis.counts == {"ratelimit:ip:127.0.0.1": 1}
+    assert redis.counts == {"ratelimit:http:60:ip:127.0.0.1": 1}
+
+
+async def test_optional_endpoint_budgets_use_separate_ip_keys():
+    settings = make_test_settings(
+        RATE_LIMIT_ENABLED=True,
+        RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED=True,
+        RATE_LIMIT_ANONYMOUS_MAX_REQUESTS=1,
+        RATE_LIMIT_SIGN_IN_MAX_REQUESTS=1,
+        RATE_LIMIT_REFRESH_MAX_REQUESTS=1,
+        RATE_LIMIT_PAYMENT_CALLBACK_MAX_REQUESTS=1,
+    )
+    app = FastAPI()
+    redis = CounterRedis()
+    app.state.redis = redis
+    main._install_middleware(app, settings)
+
+    async def example() -> dict[str, bool]:
+        return {"ok": True}
+
+    paths = {
+        "/api/example": "http",
+        "/api/auth/send-otp": "sign_in",
+        "/api/auth/refresh": "token_refresh",
+        "/api/webhooks/dhamen": "payment_callback",
+    }
+    for path in paths:
+        app.add_api_route(path, example, methods=["POST"])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for path, scope in paths.items():
+            assert (await client.post(path)).status_code == 200
+            blocked = await client.post(path)
+            assert blocked.status_code == 429
+            assert blocked.json()["error"]["scope"] == scope
+    assert len(redis.counts) == len(paths)
+
+
+async def test_operation_limit_scope_does_not_block_unrelated_http_requests():
+    app = FastAPI()
+    app.state.redis = CounterRedis()
+    main._install_middleware(app, make_test_settings(RATE_LIMIT_ENABLED=True))
+    register_exception_handlers(app)
+
+    @app.post("/api/orders/cancel")
+    async def cancel() -> None:
+        raise RateLimitedError(3600, scope="order_cancellation")
+
+    @app.get("/api/profile")
+    async def profile() -> dict[str, bool]:
+        return {"ok": True}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        blocked = await client.post("/api/orders/cancel")
+        assert blocked.status_code == 429
+        assert blocked.headers["Retry-After"] == "3600"
+        assert blocked.json()["error"]["scope"] == "order_cancellation"
+        assert (await client.get("/api/profile")).status_code == 200
 
 
 @pytest.mark.parametrize("path", ["/v1/admin/admin/login", "/api/admin", "/api/admin/users"])

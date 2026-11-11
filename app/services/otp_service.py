@@ -93,7 +93,7 @@ class OtpService:
             RateLimitedError: The phone is blocked or over its request window.
         """
         if scope and not await self._redis.set(f"otp:cooldown:{phone}", "1", ex=60, nx=True):
-            raise RateLimitedError(60)
+            raise RateLimitedError(60, scope="otp")
         code = (
             str(secrets.randbelow(90_000) + 10_000)
             if self._settings.ENVIRONMENT is Environment.DEVELOPMENT
@@ -113,7 +113,7 @@ class OtpService:
             self._settings.OTP_BLOCK_SECONDS,
         )
         if not issued:
-            raise RateLimitedError(self._settings.OTP_BLOCK_SECONDS)
+            raise RateLimitedError(self._settings.OTP_BLOCK_SECONDS, scope="otp")
         await self._sms.send_otp(phone, code)
 
         return code if self._settings.ENVIRONMENT is Environment.DEVELOPMENT else None
@@ -137,5 +137,5 @@ class OtpService:
             self._settings.OTP_TTL_SECONDS,
         )
         if result == -1:
-            raise RateLimitedError(self._settings.OTP_TTL_SECONDS)
+            raise RateLimitedError(self._settings.OTP_TTL_SECONDS, scope="otp")
         return bool(result == 1)

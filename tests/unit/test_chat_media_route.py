@@ -1,5 +1,6 @@
 """Post-validation authentication and post-commit media delivery behavior."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -7,12 +8,40 @@ from uuid import uuid4
 import pytest
 from app.core.deps import Actor
 from app.core.exceptions import UnauthorizedError
+from app.core.ratelimit import RateLimitDecision
 from app.models.enums import UserRole
 from app.routers.chat import _pump_socket_to_chat, send_chat_media, send_message
 from app.schemas.chat import SendChatMediaRequest, SendMessageRequest
 from app.services.chat_service import ChatMessage
 
 from tests.conftest import make_test_settings
+
+
+async def test_chat_rate_limit_sends_one_notice_without_processing_throttled_frames():
+    actor = Actor(uuid4(), UserRole.CUSTOMER, "session")
+    websocket = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(settings=make_test_settings())),
+        receive_text=AsyncMock(side_effect=['{"text":"Hello"}'] * 3 + [StopAsyncIteration]),
+        send_text=AsyncMock(),
+    )
+    with (
+        patch("app.routers.chat.RateLimiter") as limiter,
+        patch("app.routers.chat._require_live_authorization", new=AsyncMock()) as authorize,
+    ):
+        limiter.return_value.check_guarded = AsyncMock(return_value=RateLimitDecision(False, 20))
+        with pytest.raises(StopAsyncIteration):
+            await _pump_socket_to_chat(websocket, uuid4(), actor, uuid4(), AsyncMock(), AsyncMock())
+
+    assert limiter.call_args.kwargs["max_requests"] == 120
+    limiter.return_value.check_guarded.assert_awaited_once()
+    authorize.assert_not_awaited()
+    websocket.send_text.assert_awaited_once()
+    payload = json.loads(websocket.send_text.await_args.args[0])["error"]
+    assert (payload["code"], payload["scope"], payload["retry_after_seconds"]) == (
+        "RATE_LIMITED",
+        "ws_chat",
+        20,
+    )
 
 
 @pytest.mark.asyncio
@@ -87,7 +116,7 @@ async def test_websocket_acknowledges_saved_message_when_delivery_fails():
         patch("app.routers.chat.RateLimiter") as limiter,
     ):
         limiter.return_value.check_guarded = AsyncMock(
-            return_value=SimpleNamespace(blocked=False, allowed=True)
+            return_value=SimpleNamespace(blocked=False, allowed=True, unavailable=False)
         )
         with pytest.raises(StopAsyncIteration):
             await _pump_socket_to_chat(websocket, conversation, actor, uuid4(), lambda: db, redis)

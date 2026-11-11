@@ -12,45 +12,43 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from itertools import count
+from time import perf_counter
 
 from redis.asyncio import Redis
 
-_logger = logging.getLogger("app.ratelimit")
+from app.core.middleware import current_request_id
 
-# One atomic round trip (audit SEC-6/PERF-5): INCR, set/repair the TTL (a TTL of -1
-# means a crash stranded the counter without an expiry), and return the retry-after
-# seconds when over the ceiling, else 0.
+_logger = logging.getLogger("app.ratelimit")
+_decision_samples = count()
+_SAMPLE_EVERY = 256
+
 _WINDOW_LUA = """
 local count = redis.call('INCR', KEYS[1])
-if count == 1 or redis.call('TTL', KEYS[1]) < 0 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
+local window = tonumber(ARGV[1]) * 1000
+local ttl = -1
+if count > 1 then
+    ttl = redis.call('PTTL', KEYS[1])
+end
+if ttl < 0 then
+    redis.call('PEXPIRE', KEYS[1], window)
+    ttl = window
 end
 if count > tonumber(ARGV[2]) then
-    local ttl = redis.call('TTL', KEYS[1])
-    if ttl > 0 then return ttl end
-    return tonumber(ARGV[1])
+    return math.max(1, math.ceil(ttl / 1000))
 end
 return 0
 """
 
-# WebSocket frames need both a ban check and a rate-limit decision. Keeping the ban
-# key as KEYS[2] makes the script Redis Cluster-safe while collapsing both guards into
-# one round trip.
-_GUARDED_WINDOW_LUA = """
+# The counter and denylist check share one script on the current Redis instance.
+_GUARDED_WINDOW_LUA = (
+    """
 if redis.call('EXISTS', KEYS[2]) == 1 then
     return -1
 end
-local count = redis.call('INCR', KEYS[1])
-if count == 1 or redis.call('TTL', KEYS[1]) < 0 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-if count > tonumber(ARGV[2]) then
-    local ttl = redis.call('TTL', KEYS[1])
-    if ttl > 0 then return ttl end
-    return tonumber(ARGV[1])
-end
-return 0
 """
+    + _WINDOW_LUA
+)
 
 
 @dataclass(frozen=True)
@@ -73,11 +71,45 @@ class RateLimitDecision:
 class RateLimiter:
     """A fixed-window per-identity request throttle over Redis."""
 
-    def __init__(self, redis: Redis, *, max_requests: int, window_seconds: int) -> None:
+    def __init__(
+        self, redis: Redis, *, max_requests: int, window_seconds: int, scope: str = "shared"
+    ) -> None:
         """Hold the Redis client and the window tuning."""
         self._redis = redis
         self._max = max_requests
         self._window = window_seconds
+        self._scope = scope
+
+    def _log_failure(self, exc: Exception, started: float) -> None:
+        _logger.warning(
+            "Rate-limit backend unavailable (%s); denying request",
+            type(exc).__name__,
+            extra={
+                "request_id": current_request_id(),
+                "extra_fields": {
+                    "scope": self._scope,
+                    "outcome": "unavailable",
+                    "exception_type": type(exc).__name__,
+                    "elapsed_ms": round((perf_counter() - started) * 1000, 2),
+                },
+            },
+        )
+
+    def _sample_decision(self, retry_after: int, started: float) -> None:
+        if next(_decision_samples) % _SAMPLE_EVERY != 0:
+            return
+        _logger.info(
+            "Sampled rate-limit decision",
+            extra={
+                "request_id": current_request_id(),
+                "extra_fields": {
+                    "scope": self._scope,
+                    "outcome": "limited" if retry_after > 0 else "allowed",
+                    "elapsed_ms": round((perf_counter() - started) * 1000, 2),
+                    "sample_every": _SAMPLE_EVERY,
+                },
+            },
+        )
 
     def _key(self, identity: str) -> str:
         return f"ratelimit:{identity}"
@@ -91,15 +123,15 @@ class RateLimiter:
             request with an explicit unavailable decision.
         """
         key = self._key(identity)
+        started = perf_counter()
         try:
             retry_after = int(await self._redis.eval(_WINDOW_LUA, 1, key, self._window, self._max))
+            self._sample_decision(retry_after, started)
             if retry_after > 0:
                 return RateLimitDecision(allowed=False, retry_after_seconds=retry_after)
             return RateLimitDecision(allowed=True, retry_after_seconds=0)
         except Exception as exc:  # noqa: BLE001 - dependency failures must not disable protection.
-            _logger.warning(
-                "Rate-limit backend unavailable (%s); denying request", type(exc).__name__
-            )
+            self._log_failure(exc, started)
             return RateLimitDecision(allowed=False, retry_after_seconds=0, unavailable=True)
 
     async def check_guarded(self, identity: str, *, blocked_key: str) -> RateLimitDecision:
@@ -110,6 +142,7 @@ class RateLimiter:
         revoked session.
         """
         key = self._key(identity)
+        started = perf_counter()
         try:
             result = int(
                 await self._redis.eval(
@@ -121,11 +154,12 @@ class RateLimiter:
                     self._max,
                 )
             )
-        except Exception:  # noqa: BLE001 - security guard deliberately fails closed.
-            _logger.warning("Guarded rate-limit backend unavailable; denying", exc_info=True)
-            return RateLimitDecision(allowed=False, retry_after_seconds=0, blocked=True)
+        except Exception as exc:  # noqa: BLE001 - security guard deliberately fails closed.
+            self._log_failure(exc, started)
+            return RateLimitDecision(allowed=False, retry_after_seconds=0, unavailable=True)
         if result == -1:
             return RateLimitDecision(allowed=False, retry_after_seconds=0, blocked=True)
+        self._sample_decision(result, started)
         if result > 0:
             return RateLimitDecision(allowed=False, retry_after_seconds=result)
         return RateLimitDecision(allowed=True, retry_after_seconds=0)

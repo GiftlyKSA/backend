@@ -245,10 +245,21 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 ## Integration conventions
 
-- HTTP limits default to 60 requests per 60 seconds per verified bearer-token identity,
-  or 30 requests per 3,600 seconds per unauthenticated IP. Public login/registration
-  requests share that IP budget; OTP limits also apply. On HTTP 429, respect
-  `Retry-After` and avoid automatic retry loops. Deployment settings can override defaults.
+- HTTP limits default to 100 requests per 60 seconds per verified bearer-token identity
+  or anonymous client IP. OTP limits also apply. HTTP 429 includes `Retry-After` in
+  seconds. The optional `error.scope` identifies the affected operations. `http`
+  covers general API calls, `order_cancellation` covers customer order creation and
+  cancellation, and `otp` and `account_change` cover their respective flows.
+  When separate endpoint budgets are enabled, `sign_in`, `token_refresh`, and
+  `payment_callback` identify those limits. Use the affected request to handle older
+  or unknown scopes conservatively. On `503 RATE_LIMIT_UNAVAILABLE`, preserve pending
+  input and use bounded backoff for reads or operations with established retry safety.
+- The chat socket allows 120 incoming messages per 60 seconds per account. A rejected
+  frame is not persisted. The sender can receive a bounded error frame with
+  `error.code = "RATE_LIMITED"`, `error.scope = "ws_chat"`, and numeric
+  `error.retry_after_seconds`. Retain pending text and reuse its existing client
+  message ID when retry-safe sending is enabled. Chat and order handshake limits
+  are separate from message limits.
 - User text is plain text, not executable HTML. Names, descriptions, invoice text,
   reviews, and chat content may contain literal HTML/JavaScript-looking characters;
   preserve them and display them through text widgets or DOM `textContent`. Never use

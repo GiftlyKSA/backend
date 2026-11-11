@@ -207,7 +207,7 @@ async def test_invalid_socket_payload_reports_error_then_accepts_valid_message(i
         patch("app.routers.chat.RateLimiter") as limiter,
     ):
         limiter.return_value.check_guarded = AsyncMock(
-            return_value=SimpleNamespace(blocked=False, allowed=True)
+            return_value=SimpleNamespace(blocked=False, allowed=True, unavailable=False)
         )
         with pytest.raises(StopAsyncIteration):
             await _pump_socket_to_chat(

@@ -20,8 +20,10 @@ async def test_handshake_limit_is_account_scoped_and_uses_bounded_defaults(monke
     constructor = {}
 
     class RecordingLimiter:
-        def __init__(self, redis, *, max_requests: int, window_seconds: int) -> None:
-            constructor.update(max_requests=max_requests, window_seconds=window_seconds)
+        def __init__(self, redis, *, max_requests: int, window_seconds: int, scope: str) -> None:
+            constructor.update(
+                max_requests=max_requests, window_seconds=window_seconds, scope=scope
+            )
 
         async def check(self, identity: str) -> RateLimitDecision:
             constructor["identity"] = identity
@@ -36,6 +38,7 @@ async def test_handshake_limit_is_account_scoped_and_uses_bounded_defaults(monke
     assert constructor == {
         "max_requests": 30,
         "window_seconds": 60,
+        "scope": "ws_handshake",
         "identity": f"ws-handshake:{account_id}",
     }
 

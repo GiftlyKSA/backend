@@ -75,8 +75,25 @@ async def _close_shared_resources(app: FastAPI) -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize shared resources before serving requests and close them on shutdown."""
+    settings: Settings = app.state.settings
     try:
-        logger.info("application_dependencies_ready")
+        logger.info(
+            "application_dependencies_ready",
+            extra={
+                "extra_fields": {
+                    "http_rate_enabled": settings.RATE_LIMIT_ENABLED,
+                    "http_max_requests": settings.RATE_LIMIT_MAX_REQUESTS,
+                    "http_window_seconds": settings.RATE_LIMIT_WINDOW_SECONDS,
+                    "anonymous_max_requests": settings.RATE_LIMIT_ANONYMOUS_MAX_REQUESTS,
+                    "anonymous_window_seconds": settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS,
+                    "ws_max_messages": settings.WS_RATE_LIMIT_MAX_MESSAGES,
+                    "ws_window_seconds": settings.WS_RATE_LIMIT_WINDOW_SECONDS,
+                    "ws_handshake_max_requests": settings.WS_HANDSHAKE_MAX_REQUESTS,
+                    "ws_handshake_window_seconds": settings.WS_HANDSHAKE_WINDOW_SECONDS,
+                    "separate_endpoint_budgets": settings.RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED,
+                },
+            },
+        )
 
         yield
 
@@ -290,6 +307,17 @@ def _install_request_guards(
 ) -> None:
     """Install header and throttle checks ahead of actual body-byte enforcement."""
     app.add_middleware(BodySizeMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
+    sign_in = ("sign_in", settings.RATE_LIMIT_SIGN_IN_MAX_REQUESTS)
+    endpoint_limits = {
+        "/api/auth/send-otp": sign_in,
+        "/api/auth/verify-otp": sign_in,
+        "/api/auth/register": sign_in,
+        "/api/auth/refresh": ("token_refresh", settings.RATE_LIMIT_REFRESH_MAX_REQUESTS),
+        "/api/webhooks/dhamen": (
+            "payment_callback",
+            settings.RATE_LIMIT_PAYMENT_CALLBACK_MAX_REQUESTS,
+        ),
+    }
 
     @app.middleware("http")
     async def _request_guards(
@@ -313,23 +341,29 @@ def _install_request_guards(
         ):
             return await call_next(request)
 
-        identity = _client_identity(request, settings)
-        authenticated = identity.startswith("user:")
-        max_requests = (
-            settings.RATE_LIMIT_MAX_REQUESTS
-            if authenticated
-            else settings.RATE_LIMIT_ANONYMOUS_MAX_REQUESTS
-        )
-        window_seconds = (
-            settings.RATE_LIMIT_WINDOW_SECONDS
-            if authenticated
-            else settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
-        )
+        endpoint_limit = endpoint_limits.get(path) if request.method == "POST" else None
+        if endpoint_limit is None or not settings.RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED:
+            scope = "http"
+            identity = _client_identity(request, settings)
+            if identity.startswith("user:"):
+                max_requests = settings.RATE_LIMIT_MAX_REQUESTS
+                window_seconds = settings.RATE_LIMIT_WINDOW_SECONDS
+            else:
+                max_requests = settings.RATE_LIMIT_ANONYMOUS_MAX_REQUESTS
+                window_seconds = settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
+        else:
+            scope, max_requests = endpoint_limit
+            host = request.client.host if request.client else "unknown"
+            identity = f"ip:{host}"
+            window_seconds = settings.RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS
         limiter = RateLimiter(
-            request.app.state.redis, max_requests=max_requests, window_seconds=window_seconds
+            request.app.state.redis,
+            max_requests=max_requests,
+            window_seconds=window_seconds,
+            scope=endpoint_limit[0] if endpoint_limit is not None else scope,
         )
-
-        decision = await limiter.check(identity)
+        # A changed window starts a fresh counter instead of retaining the previous expiry.
+        decision = await limiter.check(f"{scope}:{window_seconds}:{identity}")
 
         if decision.unavailable:
             return error_response(
@@ -337,6 +371,7 @@ def _install_request_guards(
                 "RATE_LIMIT_UNAVAILABLE",
                 "Request validation is temporarily unavailable. Please try again later.",
                 headers={"Retry-After": "1"},
+                scope=scope,
             )
 
         if not decision.allowed:
@@ -344,11 +379,8 @@ def _install_request_guards(
                 429,
                 "RATE_LIMITED",
                 "Too many requests. Please try again later.",
-                headers={
-                    "Retry-After": str(
-                        decision.retry_after_seconds,
-                    ),
-                },
+                headers={"Retry-After": str(decision.retry_after_seconds)},
+                scope=scope,
             )
 
         return await call_next(request)
@@ -375,6 +407,7 @@ def _install_cors(
         allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Retry-After", "X-Request-ID"],
     )
 
 
