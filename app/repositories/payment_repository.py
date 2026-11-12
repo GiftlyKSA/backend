@@ -254,6 +254,15 @@ class PaymentRepository:
         """Return a payment intent by id, or None."""
         return await self._session.get(PaymentIntent, intent_id)
 
+    async def get_dhamen_intents(self, ids: list[uuid.UUID]) -> dict[uuid.UUID, PaymentIntent]:
+        """Load the bounded batch of existing Dhamen references in one read."""
+        rows = await self._session.scalars(
+            select(PaymentIntent)
+            .where(PaymentIntent.id.in_(ids), PaymentIntent.checkout_provider == "DHAMEN")
+            .order_by(PaymentIntent.id)
+        )
+        return {row.id: row for row in rows}
+
     async def lock_intent_by_payment_link(self, payment_link_id: str) -> PaymentIntent | None:
         """Load a payment intent by Local payment simulation ID FOR UPDATE."""
         result: PaymentIntent | None = await self._session.scalar(

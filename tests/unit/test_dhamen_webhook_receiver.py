@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from tests.conftest import make_test_settings
 
 
-@pytest.mark.parametrize("failure", [None, "settlement", "commit"])
+@pytest.mark.parametrize("failure", [None, "settlement", "commit", "ignored"])
 async def test_webhook_acknowledges_only_committed_settlement(
     monkeypatch: pytest.MonkeyPatch, failure: str | None
 ) -> None:
@@ -20,6 +20,7 @@ async def test_webhook_acknowledges_only_committed_settlement(
     app.state.clients = Mock()
     session = AsyncMock()
     session.info = {}
+    session.in_transaction = Mock(return_value=failure != "ignored")
     manager = AsyncMock()
     manager.__aenter__.return_value = session
     app.state.session_factory = Mock(return_value=manager)
@@ -47,7 +48,7 @@ async def test_webhook_acknowledges_only_committed_settlement(
         base_url="https://giftly.test",
     ) as client:
         response = await client.post("/api/webhooks/dhamen", json={"test": "batch"})
-    if failure:
+    if failure in {"settlement", "commit"}:
         assert response.status_code == 500
         session.rollback.assert_awaited_once()
         assert events == (["settle"] if failure == "settlement" else ["settle", "commit"])
@@ -57,6 +58,6 @@ async def test_webhook_acknowledges_only_committed_settlement(
         assert events == ["settle", "commit"]
         session.rollback.assert_not_called()
         dispatch.assert_awaited_once_with(session)
-        assert session.info["worker_wakeups"]
-    if failure:
+        assert bool(session.info.get("worker_wakeups")) == (failure != "ignored")
+    if failure in {"settlement", "commit"}:
         dispatch.assert_not_awaited()

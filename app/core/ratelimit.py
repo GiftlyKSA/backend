@@ -22,6 +22,8 @@ from app.core.middleware import current_request_id
 _logger = logging.getLogger("app.ratelimit")
 _decision_samples = count()
 _SAMPLE_EVERY = 256
+_FAILURE_LOG_INTERVAL = 60.0
+_failure_logs: dict[str, tuple[float, int]] = {}
 
 _WINDOW_LUA = """
 local count = redis.call('INCR', KEYS[1])
@@ -81,6 +83,13 @@ class RateLimiter:
         self._scope = scope
 
     def _log_failure(self, exc: Exception, started: float) -> None:
+        now = perf_counter()
+        next_log, suppressed = _failure_logs.get(self._scope, (0.0, 0))
+        failures = suppressed + 1
+        if now < next_log:
+            _failure_logs[self._scope] = (next_log, failures)
+            return
+        _failure_logs[self._scope] = (now + _FAILURE_LOG_INTERVAL, 0)
         _logger.warning(
             "Rate-limit backend unavailable (%s); denying request",
             type(exc).__name__,
@@ -90,7 +99,8 @@ class RateLimiter:
                     "scope": self._scope,
                     "outcome": "unavailable",
                     "exception_type": type(exc).__name__,
-                    "elapsed_ms": round((perf_counter() - started) * 1000, 2),
+                    "elapsed_ms": round((now - started) * 1000, 2),
+                    "failures": failures,
                 },
             },
         )

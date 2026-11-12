@@ -11,16 +11,20 @@ import os
 import secrets as _secrets
 from datetime import date, timedelta
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 import pytest
+from app.admin.deps import SESSION_COOKIE
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
 from app.core.jwt import create_access_token
+from app.core.security import make_csrf_token, sha256_hex
 from app.integrations.storage.fake import FakeStorageClient
 from app.main import create_app
 from app.models import CourierProfile, User
-from app.models.enums import UserRole, UserStatus
+from app.models.enums import UserStatus
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from tests.conftest import make_test_settings
@@ -229,6 +233,13 @@ async def test_full_lifecycle_deliver_approve_rate() -> None:
 
 async def test_dispute_and_admin_resolves_refund() -> None:
     settings, engine, factory = await _make_stack()
+    settings = settings.model_copy(
+        update={
+            "ADMIN_DASHBOARD_ENABLED": True,
+            "ADMIN_USERNAME": "audit-admin",
+            "ADMIN_PASSWORD": SecretStr("fixture-admin-password"),
+        }
+    )
     app = create_app(settings)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
@@ -242,20 +253,28 @@ async def test_dispute_and_admin_resolves_refund() -> None:
             assert disputed.status_code == 201, disputed.text
             dispute_id = disputed.json()["id"]
 
-            # Mint an ADMIN token for a seeded admin user.
-            async with factory() as s:
-                admin = User(phone=_phone(), role=UserRole.ADMIN, status=UserStatus.ACTIVE)
-                s.add(admin)
-                await s.commit()
-                admin_id = admin.id
-            token, _jti, _ttl = create_access_token(settings, user_id=admin_id, role="ADMIN")
-            admin_h = {"Authorization": f"Bearer {token}"}
-
-            resolved = await client.post(
-                f"/api/admin/disputes/{dispute_id}/resolve",
-                headers=admin_h,
-                json={"outcome": "RESOLVED_CUSTOMER", "note": "Refunded in full."},
+            path = f"/v1/admin/admin/actions/disputes/{dispute_id}/resolve"
+            body = {"outcome": "RESOLVED_CUSTOMER", "note": "Refunded in full."}
+            token, _jti, _ttl = create_access_token(settings, user_id=uuid4(), role="ADMIN")
+            bearer = {"Authorization": f"Bearer {token}"}
+            assert (await client.post(path, headers=bearer, json=body)).status_code == 401
+            assert (await client.post(path, headers=cust_h, json=body)).status_code == 401
+            retired = await client.post(
+                f"/api/admin/disputes/{dispute_id}/resolve", headers=bearer, json=body
             )
+            assert retired.status_code == 404
+            login = await client.post(
+                "/v1/admin/admin/login",
+                data={"username": "audit-admin", "password": "fixture-admin-password"},
+            )
+            assert login.status_code == 303
+            assert (await client.post(path, json=body)).status_code == 403
+            assert settings.ADMIN_SESSION_SECRET is not None
+            csrf = make_csrf_token(
+                sha256_hex(client.cookies[SESSION_COOKIE]),
+                settings.ADMIN_SESSION_SECRET.get_secret_value(),
+            )
+            resolved = await client.post(path, headers={"X-CSRF-Token": csrf}, json=body)
             assert resolved.status_code == 200, resolved.text
             assert resolved.json()["status"] == "RESOLVED_CUSTOMER"
 
@@ -265,13 +284,6 @@ async def test_dispute_and_admin_resolves_refund() -> None:
             wallet = await client.get("/api/wallets/me", headers=cust_h)
             assert wallet.json()["balance"] == "1000.00"
 
-            # A non-admin cannot resolve.
-            forbidden = await client.post(
-                f"/api/admin/disputes/{dispute_id}/resolve",
-                headers=cust_h,
-                json={"outcome": "RESOLVED_COURIER"},
-            )
-            assert forbidden.status_code == 403
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

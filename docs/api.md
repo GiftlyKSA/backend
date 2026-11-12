@@ -207,7 +207,9 @@ Updated 2026-10-04. This is maintained API documentation, not an implementation 
 
 The [non-admin OpenAPI 3.1 specification](mobile-openapi.json) inventories 83 supported
 non-admin HTTP operations, including the public hosted-payment browser return page.
-[Full OpenAPI](openapi.json) also includes administrative API operations.
+[Full OpenAPI](openapi.json) includes the documented development and provider routes.
+Administrative financial actions require a dashboard session and are outside the
+mobile API contract.
 Schemas are authoritative for types, optional values, limits and status codes. The notes
 below describe screens, prerequisites, dependencies and WebSocket reconciliation.
 No endpoint should be inferred for an unsupported screen: it will be added later.
@@ -245,6 +247,10 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 
 ## Integration conventions
 
+- HTTP 408 `REQUEST_BODY_TIMEOUT` means the server stopped reading an incomplete
+  body before invoking the endpoint. HTTP 503 `DATABASE_TIMEOUT` means a database
+  command exceeded its deadline. Use existing reconciliation or idempotency
+  behavior before retrying a write whose outcome is uncertain.
 - Parse timestamps as UTC ISO 8601 strings with either `Z` or `+00:00`. Format them
   in `Asia/Riyadh` wherever the screen uses Saudi business time. For example,
   `2026-11-12T21:10:00Z` displays as November 13 at 00:10 in Riyadh. Keep date-only
@@ -280,6 +286,24 @@ Screens listed as gaps still need later backend work; do not build or guess rout
 - Production wallet top-up and invoice payment currently return HTTP 503 `PAYMENTS_DISABLED`; The Dhamen testing adapter does not establish verified production integration. Do not enable checkout UI as if it works. `/api/dev/*` exists only in development; the simulation webhook is absent in production. Direct S3 upload requires a signed PUT and then confirmation before attaching a key.
 - This document describes the current backend, not a proposed API. Each **When/how** paragraph explains practical use and recovery. **Before** is the prerequisite; **Then / dependent API** tells the UI agent which subsequent call consumes or follows this result.
 - **Future API work:** If a screen or action has no matching endpoint documented here, do not create, assume, or integrate a new route for it. Mark that feature as awaiting backend support; its route and contract will be added later in a separate backend change. Use only the implemented calls below for the current UI integration.
+
+## Dashboard financial actions
+
+Public OTP and token refresh are for customer and courier accounts. Existing ADMIN
+bearer credentials are rejected. Sign in to the dashboard to obtain the session
+cookie and use that session's CSRF token in `X-CSRF-Token` for JSON actions.
+The dashboard must be enabled. Missing or invalid sessions return 401 and a
+missing or invalid CSRF token returns 403.
+
+| Action | Method and path |
+| --- | --- |
+| Resolve a dispute | `POST /v1/admin/admin/actions/disputes/{dispute_id}/resolve` |
+| Approve a withdrawal | `POST /v1/admin/admin/actions/withdrawals/{withdrawal_id}/approve` |
+| Reject a withdrawal | `POST /v1/admin/admin/actions/withdrawals/{withdrawal_id}/reject` |
+| Mark a withdrawal paid | `POST /v1/admin/admin/actions/withdrawals/{withdrawal_id}/paid` |
+
+The action bodies, ledger transitions and response models follow the existing
+financial services. The former bearer-only `/api/admin/*` paths are retired.
 
 ## Service health (not a mobile screen)
 

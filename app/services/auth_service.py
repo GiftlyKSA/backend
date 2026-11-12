@@ -50,7 +50,8 @@ async def validate_access_claims(
 def validate_account_claims(claims: AccessClaims, user: User | AccountState | None) -> None:
     """Validate a currently selected account against its access credentials."""
     if (
-        user is None
+        claims.role == UserRole.ADMIN.value
+        or user is None
         or user.deleted_at is not None
         or user.status in {UserStatus.BANNED, UserStatus.DELETED}
         or user.role.value != claims.role
@@ -123,6 +124,8 @@ class AuthService:
         user = await self._users.get_for_update(user.id)
         if user is None or user.phone != phone or user.deleted_at is not None:
             raise UnauthorizedError("This account is no longer available.")
+        if user.role is UserRole.ADMIN:
+            raise UnauthorizedError("Administrators must sign in through the dashboard.")
         if user.status in {UserStatus.BANNED, UserStatus.DELETED}:
             # A ban blocks fresh logins too, not just live tokens (audit SEC-1).
             raise UnauthorizedError("This account has been suspended.")
@@ -246,7 +249,7 @@ class AuthService:
         """
         token_hash = sha256_hex(raw_refresh)
         user = await self._repo.lock_refresh_owner(token_hash)
-        if user is None:
+        if user is None or user.role is UserRole.ADMIN:
             raise UnauthorizedError("Invalid refresh token.")
         row = await self._repo.get_refresh_token(token_hash)
         now = self._now()

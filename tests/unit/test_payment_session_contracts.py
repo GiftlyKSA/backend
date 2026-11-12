@@ -168,7 +168,15 @@ async def test_callback_batch_locks_every_intent_before_any_settlement() -> None
     payments.lock_session_batch.side_effect = lock_batch
     service._wallets.lock_payment_batch.side_effect = lambda **kwargs: events.append(("wallets",))
     service._verify_dhamen_payments = AsyncMock(return_value=[(item, None) for item in intents])
-    service._gateway.parse_notifications.return_value = ()
+    service._gateway.parse_notifications.return_value = (
+        SimpleNamespace(
+            should_reconcile=True,
+            notification_id="1",
+            batch_id="test",
+            notification_type="Deposit_Notification",
+            references=(),
+        ),
+    )
     service._hosted.apply_locked_status = AsyncMock(side_effect=settle)
     await service.handle_dhamen_notifications(raw_body=b"{}")
     assert service._hosted.apply_locked_status.await_count == 2
@@ -223,7 +231,7 @@ async def test_late_paid_callback_persists_review_before_any_batch_settlement() 
             (item, PaymentStatus(PaymentState.PAID, item.amount)) for item in (normal, late)
         ]
     )
-    service._gateway.parse_notifications.return_value = ()
+    service._gateway.parse_notifications.return_value = (SimpleNamespace(should_reconcile=True),)
     service._hosted.apply_locked_status = AsyncMock()
     with pytest.raises(PaymentSessionPendingError):
         await service.handle_dhamen_notifications(raw_body=b"{}")

@@ -1,53 +1,400 @@
 # Giftly backend — audit and task register
 
-## Rate-limit follow-up — 2026-11-12
+<a id="implementation-plan-2026-11-12"></a>
+## Implementation plan — 2026-11-12
 
-CranL API startup confirmed 100 HTTP requests per minute per account or anonymous
-client IP, 120 incoming chat messages per minute per account and 30 WebSocket
-handshakes per minute. The separate sign-in, refresh and payment-callback budgets
-are available behind `RATE_LIMIT_SEPARATE_ENDPOINTS_ENABLED`. They remain disabled
-while collecting traffic and ingress evidence. The worker and scheduler do not
-apply the public API limiter.
+Runtime baseline is published `master` at `c2671f9`. This plan includes the
+unpublished November audit below. Treat its Authentica and participant-phone changes
+as local until their exact release diff is reviewed. The previous release passed
+1,748 tests on disposable PostgreSQL and Redis with 90.85% line coverage. Two native
+media decoder checks were skipped. Production throughput and query distributions
+remain unconfirmed.
 
-The full suite passed on Python 3.15.1 with disposable PostgreSQL 16 and Redis 7:
-1,748 passed, 90.85% line coverage, and two native media checks skipped. The migrated
-schema contained 158 timezone-aware timestamp columns and zero naive timestamp columns.
+### Execution order
 
-| Finding | Type | Importance / urgency | Current behavior and proposed change |
-| --- | --- | --- | --- |
-| RL-01 — Validate ingress identity before changing budgets | Security / availability | 8 / 7 | HTTP buckets use `request.client.host` in `app/main.py`. Check trusted proxy handling and legitimate traffic behind shared IPs in CranL before enabling separate budgets. Measure per-scope 429s and use documented provider retry behavior to size callbacks. Preserve OTP checks and webhook verification. |
-| RL-02 — Bound logging during Redis outages | Performance / reliability | 6 / 6 | `RateLimiter._log_failure` in `app/core/ratelimit.py` writes a warning for every failed check. A high request rate during an outage can add log I/O and obscure the first failure. Measure under a synthetic outage, then retain the first warning per scope with bounded periodic counts. Keep HTTP 503 and chat failure behavior. |
-| RL-03 — Avoid duplicate signature checks on protected HTTP routes | CPU / performance | 5 / 4 | `app/main.py::_client_identity` and `app/core/deps.py::require_auth` decode the same access token. Profile authenticated requests first. If signature verification is material, reuse the verified claims within the same request and preserve current revocation, account-status and role checks. Add regression coverage before changing this boundary. |
-| RL-04 — Measure Redis script and pool cost | Performance | 4 / 3 | `RateLimiter.check` and `check_guarded` send the Lua source with each `EVAL`. Benchmark cached script execution against the existing calls, including an empty script cache and Redis reconnects. Keep each normal check atomic and within one Redis round trip. Track pool waits and error rates before changing connection sizes. |
+1. **Protect request and authorization boundaries.** Take [phase 1](#plan-phase-1)
+   to address admission, identity, resource limits and measurement. Keep provider
+   and policy dependencies explicit. Record current settings and a rollback baseline.
+2. **Fix delivery and financial correctness.** Complete [phase 2](#plan-phase-2)
+   in small slices. Establish attempt, retry and ownership semantics before adding
+   cleanup, faster queue selection or wake-up coalescing.
+3. **Reduce database work and I/O.** Take [phase 3](#plan-phase-3) and
+   [the index experiments](#plan-postgres) one query or resource lifetime at a time.
+   Prefer existing indexes, bounded queries and fewer round trips.
 
-## Index review for the rate-limit rollout — 2026-11-12
+Each implementation slice starts with a reproducer or a measured baseline. Keep API
+contracts, ownership predicates, UTC instants, lock ordering, payment interlocks and
+idempotency intact. Verify each change under concurrency, dependency failure and
+rollback. Use a forward migration only when the fix requires a schema change.
 
-The limiter uses Redis and adds no PostgreSQL queries. Existing indexes already cover
-city radar, owner order chronology and date filters, customer cancellation history,
-message and timeline keyset reads, unread notification pages, and payment recovery.
-The priorities below are based on repository queries and migration definitions.
-The first two have disposable PostgreSQL measurements. Production latency,
-selectivity and plan choice remain unconfirmed.
+<a id="plan-phase-1"></a>
+### Phase 1 — Security and resource limits
 
-| Review item | Evidence | Proposed next step |
+| Task | Implementation and dependency | Acceptance check |
 | --- | --- | --- |
-| [AUD-26](#aud-26-current) — Customer order creation | The authoritative active-order quota counts through historical rows while holding the customer lock. A narrow active-only index helped on synthetic data when the status predicate remained visible to a generic plan. | Measure the actual prepared query with a fixed internal active-status predicate and bound the count at the quota. Add a partial customer index only if both custom and generic plans use it. |
-| [AUD-25](#aud-25-current) — Conversation inbox | The participant OR can sort substantial matching history even though both participant/activity indexes exist. | Compare bounded ordered branches and merge them using the current keyset, ownership and deduplication rules. Reuse the indexes already present. |
-| Courier earnings — `courier_report_repository._proceeds` | The wallet/date index helps locate ledger rows. Proceeds still filter for settled escrow release entries with order and invoice references. | Measure a partial wallet/date index with that exact predicate on a representative ledger. Prefer query consolidation first when repeated aggregates dominate. |
-| Available promos — `promo_repository.list_available` | The active-window index filters by eligibility dates. Newest-first sorting uses creation time and code. | Test a partial newest-first index on active promos if the table grows and sort work is material. Keep time and redemption eligibility checks in the query. |
-| Media cleanup — `media_repository.reserve_expired` | The unattached creation-time index covers age. The reservation query orders by deletion state and creation time, which may still require sorting. | Measure a separate bounded pass for unreserved rows and due retries. Compare each predicate and ordering before adding an index, and preserve the attachment fence. |
-| Push due work — `push_delivery_repository.claim` | A partial due index already exists. Its state predicate may be harder to match when the planner uses a generic plan for bound values. | Check custom and generic plans before adding another index. Use only trusted fixed state constants if the predicate needs to be made visible to the planner. |
+| [AUD-14](#aud-14) · Admin API authentication | Decide whether privileged API access is needed. If mobile authentication is customer/courier only, reject ADMIN issuance and refresh in `auth_service.py` and plan revocation of existing credentials. If required, design a distinct MFA-bound admin API flow first. Preserve dashboard password/TOTP. | Cover existing ADMIN access and refresh credentials, dashboard login, banned accounts and ordinary mobile login. Rollout requires a decision on affected admin clients. |
+| [AUD-15](#aud-15) · Slow HTTP bodies | In `core/middleware.py`, bound idle reads and total body duration alongside the existing byte limit. Release buffers on timeout/disconnect. In `main.py`, use exact health exemptions and handle genuine CORS preflights without buffering a body. Coordinate timeouts with ingress and supported body sizes. | Test normal, slow, oversized, disconnected and trickling requests with synthetic ASGI input. Under concurrency, timed-out requests release slots and memory, never invoke the handler, and preserve stable errors. |
+| RL-01 · Trusted ingress identity | Inventory CranL's effective forwarding chain and `FORWARDED_ALLOW_IPS`. Verify that only trusted proxies set the address used for anonymous buckets. Keep separate sign-in, refresh and callback budgets disabled until shared-IP and provider retry behavior are understood. | Compare application attribution to trusted ingress metadata with approved fixtures. Test header handling locally, shared networks and distinct users. Keep OTP and provider verification independent of rate limits. |
+| [AUD-16](#aud-16) · WebSocket handshakes | Account-scoped admission before SQL is already shipped for chat and order sockets. After RL-01, evaluate a bounded ingress/IP budget for pre-auth work and check that all supported transports have a handshake deadline. Reuse the existing shared lease and fresh access checks. | Existing 30/min account policy still applies. Invalid auth stops before SQL. Check reconnects, fan-out, rejected attempts and Redis outage behavior with synthetic connections. |
+| [AUD-30](#aud-30) · Legacy chat credential logging | Provider and rollout dependency. Request supported upstream sanitization or plan removal of query-token compatibility after clients migrate to existing header/subprotocol authentication. Keep application logging protections. Respect the previous exclusion on remote credential-log work until separately authorized. | Approved synthetic canaries confirm that the relevant collector omits credentials. Validate authorized reconnects and legacy-client impact before retirement. |
+| [AUD-32](#aud-32) · OTP purpose binding | Release gate for the local Authentica work. Confirm a supported challenge reference or an equivalent provider-supported purpose-bound flow. Fence pending/active markers and successful consumption by exact challenge. Keep sensitive provider flows gated if binding cannot be established. | Use provider fakes for overlapping purposes, failed/ambiguous issuance, resend races and one-time consumption. Real provider verification requires separate approval. |
+| [AUD-36](#aud-36) · OTP lock lifetime | After AUD-32 defines challenge identity, take a short fenced snapshot/reservation, release the DB session during provider verification, then re-lock and recheck proof owner, attempt, expiry and credential version. | With a one-connection test pool, slow verification permits unrelated reads. Concurrent changes and replays cannot grant stale or duplicate proofs. |
+| [AUD-44](#aud-44) · Participant phone provenance | Gate the local response field on evidence for the current phone. Clear that evidence on unverified/admin edits. Omit unverified or legacy numbers until a documented verification path establishes ownership. | Exercise phone change, recycled/admin-assigned and legacy numbers. Preserve participant authorization and omit the field without evidence. |
+| [AUD-33](#aud-33) · Dhamen callback work | Discard ignored hints before writes, batch distinct reference lookups, and bound provider verification by request deadline and in-flight capacity. Use verified provider state and existing settlement locks. A public hint alone never authorizes writes to the ledger. | Prove ignored-only hints write no receipts. Bound SQL and provider calls, preserve acknowledgement/retry semantics, and test atomic settlement under overlap and timeout. Keep the existing production interlock. |
 
-For any follow-up, compare `EXPLAIN (ANALYZE, BUFFERS)`, rows visited, index size,
-and write cost on disposable data. This rollout adds no index migration.
+#### Measurement, timeouts and cleanup
 
-The quota check was remeasured on a 100,000-row temporary table with 50,000 orders
-for one customer and two active rows. With a forced generic plan, five-run median
-execution time was 6.626 ms through the owner index and 6.932 ms after adding the
-candidate partial index while keeping bound status values. Expressing the fixed
-internal status set in SQL yielded an index-only scan at 0.012 ms, with two local
-buffer blocks versus 513. The candidate occupied 16 KiB in this sparse fixture.
-These measurements exclude network and application latency.
+| Task | Implementation and dependency | Acceptance check |
+| --- | --- | --- |
+| [AUD-28](#aud-28) · Resource telemetry | Extend existing query metrics and sampled operational logs with bounded labels for route/task class, outcome, pool wait, queue age, cache hits/evictions and deadline events. Reuse available telemetry and avoid recording query values, IDs, tokens or raw paths as labels. | Demonstrate capped event volume and usable p50/p95/p99 views under synthetic concurrency. Confirm telemetry has no sensitive fields and little overhead. |
+| [AUD-22](#aud-22) · PostgreSQL pooler behavior | Confirm effective direct/pooler topology, mode and locked SQLAlchemy/asyncpg behavior. Test driver and dialect caches independently. Measure parse overhead, connection reuse and transaction behavior before changing options. | Test reconnection, concurrent transactions and migrations against a matching disposable pooler. Keep a previous-settings rollback. |
+| [AUD-19](#aud-19) · SQL and lock deadlines | Size transaction-local statement/lock deadlines and outer operation budgets by API, admin and worker workload after AUD-22. Account for pool checkout and multiple statements. Keep migration/export budgets separate and map timeout rollback to the existing safe error contract. | Test blocked locks and slow statements, cancellation, released connections and safe idempotent retry. Verify no pooled transaction inherits another workload's settings. |
+| [AUD-27](#aud-27) · Shutdown | Register cleanup for each owned client and pool, covering setup failure and shutdown. Attempt every close with a total deadline and safe error visibility. Apply to worker-owned resources when touching their lifecycle. | Fail or stall each close in turn and verify other resources still close, cancellation is preserved, and a partial startup leaves no resources behind. |
+| RL-02 · Redis outage warnings | Emit the first failure and bounded periodic counts by limiter scope. Keep fail-closed results, correlation where available, and useful operational timing. | Under an injected outage, log writes stay bounded while HTTP 503 and socket behavior are preserved. |
+| RL-03 · Duplicate JWT verification | Profile the signature work in `main.py` and `core/deps.py`. If material, reuse verified claims bound to the same request credentials. Continue to check revocation, account eligibility and roles at authorization. | Compare authenticated CPU and p95. Cover missing, expired, revoked, changed and wrong-role credentials, and cross-request isolation. |
+| RL-04 · Redis script and pool overhead | Compare cached Lua execution with the existing atomic check. Measure pool wait and fallback after script eviction/reconnect. Change pool sizes only with a connection budget across replicas. | Preserve one normal network round trip and unchanged counts, precise reset, denylist behavior and outage handling. |
+
+<a id="plan-phase-2"></a>
+### Phase 2 — Delivery, financial correctness and maintenance
+
+| Task | Implementation and dependency | Acceptance check |
+| --- | --- | --- |
+| [AUD-17](#aud-17) · Worker saturation | Give each drainer a page cap and elapsed-time budget sized against its schedule and lease. Commit claims before network calls. Return unfinished work to durable recovery and keep interactive/critical work progressing before considering queue separation. | Flood disposable queues with synthetic jobs, stall a provider, and verify bounded concurrency, recoverable work and progress of unrelated tasks. |
+| [AUD-18](#aud-18) · Reminder ownership | Require current owner and CUSTOMER role in final selection. If ownership changes can occur without a new schedule version, add a forward trigger change that invalidates the old claim. | Race committed owner/role changes with a claimed reminder and prove the old target cannot be selected and the current schedule remains deliverable. |
+| [AUD-34](#aud-34) · Push eligibility | After capacity admission, batch the last registration/recipient eligibility recheck before send. Fence receipt processing to the original registration. Keep payloads minimally identifying because the provider call and membership changes cannot share a transaction. | Race reassignment, logout and revoked membership before send. Verify stale targets detected at the boundary are retired and the new registration is preserved. |
+| [AUD-35](#aud-35) · Push retry accounting | Separate claim/admission deferrals from actual transport attempts with a fenced transition. A send with an ambiguous result still consumes its attempt. Preserve expiry and cap handling. | Repeated local deferrals still allow one later successful send. Provider failures and unknown outcomes remain bounded and accepted deliveries stay terminal. |
+| [AUD-20](#aud-20) · Receipt starvation | Give failures explicit due/retry state and finite backoff. Claim a bounded ready batch in due order with lease fencing and preserve durable audit/reconciliation for terminal failures. Benchmark IDX-03 after the retry contract is defined. | Repeatedly fail older invoices and verify later ready invoices progress. Test parallel claims, partial worker failure, lease expiry and provider idempotency behavior. |
+| [AUD-23](#aud-23) · Zero payout | Omit the zero courier leg while maintaining exact balanced nonzero legs, unchanged rounding, and the ledger's zero-leg guard. | Cover tiny prices, 100% commission, ordinary settlement, disputes and duplicate retries. Committed entries balance exactly. |
+| [AUD-31](#aud-31) · Registration conflicts | Translate only expected phone/email uniqueness constraints. Preserve rollback of the entire registration and let unexpected DB failures surface safely. Keep error details independent of database constraint text. | Concurrent registrations commit one winner with no orphan rows. Known conflicts return the stable response and unrelated failures remain visible. |
+| [AUD-38](#aud-38) · Push/receipt retention | Define terminal retention from replay, receipt and support requirements. Keep active leases, pending receipts and the deduplication horizon intact. Add bounded deletion only after that policy and the AUD-35 lifecycle are settled. | Race cleanup with claims, late receipts and duplicate events. Compare table/index growth and prove no terminal event becomes sendable again. |
+| [AUD-39](#aud-39) · Abandoned media cleanup | Split new grants and due retries into bounded selections. Batch fenced metadata changes and use storage batches only if per-object results remain reliable. Honor lease time and preserve attached objects. | A large batch uses bounded SQL transactions. Partial deletes, concurrent attachment and lease expiry remain recoverable and previously failed objects make progress. |
+| [AUD-42](#aud-42) · Worker wake-ups | Measure queue lag and redundant enqueue volume after AUD-17/AUD-28. If material, coalesce by drainer using a shared expiring owner token and one aggregate deadline after commit. Keep scheduled recovery. | Burst across API instances and race work arrival against drain exit. Redis failure leaves committed work recoverable and enqueue/queue cost declines. |
+| [AUD-29](#aud-29) · Key rotation inventory | Correct CLI and runbook wording first. Inventory retained ciphertext categories, including operation snapshots, and keep old keys until dependencies are cleared. Consider bounded rotation only when operations require it. | Validate report counts and old/new snapshot recovery. Rotation/replay remains restartable and rollback retains needed keys. |
+
+<a id="plan-phase-3"></a>
+### Phase 3 — Remove excess SQL, cache churn and I/O
+
+| Task | Implementation and dependency | Acceptance check |
+| --- | --- | --- |
+| [AUD-26](#aud-26) · Active-order quota | Bound the count at the existing quota under the existing owner lock. Benchmark a narrow `(customer_id)` index with the exact immutable active-status predicate visible to the planner. Bind the caller ID and apply the same decision to both create and reorder. | Concurrent creation and replacement enforce the same limit. Test custom/generic plans, skewed owners and write churn. Add the index only if the combination wins. |
+| [AUD-25](#aud-25) · Conversation inbox | Apply actor and keyset in two ordered, limited participant branches. Merge their bounded rows and deduplicate same-actor results with explicit semantics. Reuse the two existing participant/chronology indexes. | Preserve membership, cursor order, tie handling and page cardinality across history. Compare buffers and sort work for large and small inboxes. |
+| [AUD-41](#aud-41) · Courier reports | Build one owner-scoped statement over the required ranges for totals and buckets, with target logic bounded to its own period if needed. Measure consolidation before an index experiment. | Decimal totals, Riyadh buckets and targets match existing output. Concurrent settlement yields an internally consistent response. |
+| [AUD-21](#aud-21) · Admin invoice PDF | Reuse the immutable snapshot approach from the mobile PDF flow. Verify admin access while reading and end the transaction before cache/render work. | With a one-connection pool and a stalled renderer, a second request can query the DB. Verify private access, cache correctness and PDF parity. |
+| [AUD-40](#aud-40) · Order-media signing | Read a bounded, participant-authorized immutable projection, end the DB transaction, then sign with the existing bounded executor and URL TTL. | A slow signer leaves the pool usable. Preserve ownership, keyset order and private expiry. |
+| [AUD-37](#aud-37) · Repeated media verification | Reuse validation only for a confirmed immutable object identity, such as a verified storage version or strong checksum with overwrite protection. Retain validation when the identity cannot be proven. | The same bytes avoid a second download/decode. Replaced, corrupt, missing and race-deleted objects cannot be attached. |
+| [AUD-24](#aud-24) · Mixed-TTL cache eviction | Separate capacity eviction from expiry. Preserve atomic updates, shared byte/entry bounds, account isolation and version invalidation. Budget old and new namespaces during a mixed-version rollout. | Reproduce mixed-TTL self-eviction in Redis. Check capacity and expiry under concurrent writers, invalidations and backend failure. |
+| [AUD-43](#aud-43) · Admin overview | Profile each aggregate. Consolidate where it reduces DB work. Consider a short-lived admin-only display snapshot or rollup only if the full-history query dominates and the permitted staleness is defined. | Preserve access and dashboard figures, bound cache/rollup maintenance and verify behavior after admin edits and Redis failure. |
+
+<a id="plan-postgres"></a>
+### PostgreSQL experiments and index decisions
+
+Benchmark the repository's compiled SQL with the actual driver and pooler in a
+disposable environment. Use `EXPLAIN (ANALYZE, BUFFERS)` with both custom and generic
+plans, small and highly skewed owners, and first and deep pages. Capture elapsed
+time, buffers, rows filtered/sorted, heap fetches, index size and insert/update
+cost. Keep timestamps and cursor values bound. A partial-index predicate can use
+fixed internal domain constants whose meaning is identical to the existing filter.
+Use moving time cutoffs as query bounds on indexed columns. [Partial indexes](https://www.postgresql.org/docs/16/indexes-partial.html) · [Multicolumn indexes](https://www.postgresql.org/docs/16/indexes-multicolumn.html) · [EXPLAIN](https://www.postgresql.org/docs/16/sql-explain.html)
+
+| Candidate and scope | What to try | Decision gate |
+| --- | --- | --- |
+| AUD-26 · Customer active orders | Existing benchmark scanned 49,998 closed rows. Median was **6.626 ms** with the owner index, **6.932 ms** with the candidate added and status still bound, and **0.012 ms** with a fixed matching active-status predicate and the partial index. Local buffers went from 513 to 2 in the latter plan. | Repeat with compiled create/reorder queries, bounded count and real enum binding. Check status transitions, insert/update cost, index size and sparse/dense histories. |
+| AUD-25 · Conversation inbox | Existing synthetic comparison was **14.737 ms → 0.023 ms** with two bounded participant branches using current indexes. | Repeat with the real projection and cursor, including tie and overlap fixtures. This query change can ship independently of migrations. |
+| IDX-01 · Courier radar, `order_repository.list_available` | Test a fixed `NEW` predicate with existing `idx_orders_radar_keyset`. On 150,000 synthetic orders across three cities, a deep cursor under the generic plan took **0.483 ms / 54 local blocks** with bound status and **0.035 ms / 27 blocks** with fixed status. The custom bound plan already used the radar index at **0.052 ms**. | Start with query-only change. Measure first/deep pages and busy/quiet cities. Apply the same predicate to the cursor anchor. Reject another city index if existing coverage suffices. |
+| IDX-02 · Active promo catalog, `promo_repository.list_available` | Compare existing active-window index with `(created_at DESC, code DESC) WHERE is_active IS TRUE`. A temporary 100,000-row catalog with 5,000 active rows measured **20.434 ms → 0.040 ms**, 1,731 → 14 local blocks, and a 216 KiB candidate. | Check actual catalog size, request frequency, short pages, long expired/exhausted prefixes and update cost. Keep start/end and usage checks in SQL. Add only when representative traffic justifies the write cost. |
+| IDX-03 · Ready invoice receipts, AUD-20 | Current partial index covers pending IDs and the query orders by `paid_at, id`. Once retries have durable due times, test a ready-queue B-tree on `(receipt_next_attempt_at, id)` limited to the exact actionable state, with a stable status predicate and bound due time. | Reproduce starvation first. Measure old leased/failed rows, actual eligibility joins and concurrent claims. Require bounded scans, no duplicate sends and observable terminal failures. |
+| IDX-04 · Push/Expo claims and retention, AUD-35/38 | Check whether the current partial `(available_at, id)` index for push delivery and pending receipt index serve the compiled ready queries. Where safe, align internal state literals to the predicate before adding an index. Consider a terminal-age partial index only for a measured cleanup scan. | Include active/expired leases and a large terminal history. Confirm before/after plans, write churn and deduplication safety. |
+| IDX-05 · Courier settled earnings, AUD-41 | After consolidating aggregates, test `(wallet_id, created_at)` with the exact settled-escrow and reference-presence predicate used by `_proceeds`. Compare against the current wallet chronology index. | Use skewed ledger histories, several reporting windows and actual generic-plan predicates. Reject if it does little for an already selective wallet/date scan or harms ledger writes. |
+| IDX-06 · Abandoned media, AUD-39 | Test two bounded branches using current unattached-age coverage. Compare a narrow `(deleting_at, created_at, id)` partial index for expired reserved rows only if the retry branch still scans or sorts substantial history. | Check large new and retry backlogs together. Verify eventual retry progress, attachment fencing, storage results and write cost. |
+| IDX-07 · Owner invoice history, `invoice_repository.list_for_actor` | Compare both owner roles with existing order-owner and `(order_id, created_at, id)` invoice indexes. Look for large outer sorts or repeated latest-revision probes. Consider an owner-scoped two-stage page or latest-per-order selection only where the same chronology and revision rules hold. | Preserve hidden DRAFT behavior, current vs historical flags, full cursor semantics and separate owners. Add date/revision coverage only if the compiled plan shows a repeatable bottleneck. |
+| IDX-08 · Customer description prefix, `order_repository.list_for_customer` | Verify migration 0032's owner/expression `text_pattern_ops` index on selective and common prefixes with generic and custom plans. A parameterized prefix can lose its range optimization under a generic plan. Compare actual driver behavior and existing indexed exact-ID search before considering a query-specific plan change. | Preserve bound search text, literal wildcard handling, Unicode/collation semantics and owner scope. Avoid global planner settings and duplicate prefix indexes. |
+| IDX-09 · Large chronological reporting tables | Consider BRIN for broad timestamp ranges only if an append-heavy table has strong physical time correlation and the existing B-tree cost is material. Use current B-trees for owner-scoped keyset reads and selective time ranges. | Measure heap pages and rechecks on representative chronological and out-of-order data. No BRIN proposal for the all-time status count, which has no selective timestamp predicate. |
+
+The IDX-01/02 numbers are six-run medians after one warm-up on PostgreSQL 16.9,
+using temporary synthetic tables and prepared SQL shaped like the repositories.
+They measure SQL execution only. Compiled ORM plans, production row counts,
+concurrency and write impact are still to be measured. At high concurrency,
+compare mixed HTTP/WebSocket/worker traffic at stepped request rates with bounded
+fixture sizes. Record p50/p95/p99, throughput, database and Redis waits, queue lag,
+resource use and error rates. A performance release needs an attributable gain
+on the target path with stable correctness, tails and write capacity.
+
+For an approved additive index on a busy table, prefer a dedicated concurrent
+migration following 0025/0036. Check duplicate definitions, lock/DDL capacity,
+progress, disk/WAL use and `indisvalid` after completion or interruption. Keep
+the old query usable during rollout. Roll back the query independently and drop
+the new index concurrently only after confirming no released path needs it.
+[PostgreSQL concurrent index builds](https://www.postgresql.org/docs/16/sql-createindex.html) · [BRIN](https://www.postgresql.org/docs/16/brin-intro.html)
+
+### Implementation results — 2026-11-13
+
+This release contains the Phase 1 changes. The Phase 2 and Phase 3 results below
+describe local candidate changes awaiting their separate release. The audit
+records each finding as originally observed.
+
+#### Phase 1 impact — Security and resource limits
+
+| Tasks | Before | After |
+| --- | --- | --- |
+| AUD-14 | Public phone OTP could mint or refresh an ADMIN credential. Financial JSON actions accepted ADMIN bearer tokens. | ADMIN OTP, refresh and existing bearer credentials are rejected. Financial actions live under `/v1/admin/admin/actions` and require the dashboard cookie and CSRF header. Existing production dashboard TOTP applies. |
+| AUD-15, AUD-19, AUD-27 | Incomplete bodies could retain buffers, SQL commands lacked a driver deadline, and one failed provider close could interrupt shutdown cleanup. | Body reads stop after 10 seconds idle or 30 seconds total and return 408. Asyncpg commands have a configurable 30-second default deadline. An opt-in transaction-local lock deadline returns the same safe 503. Resource closes have independent deadlines. Setting a live lock limit still needs topology and workload evidence. |
+| AUD-33 | Ignored Dhamen hints could create receipts and enqueue work. Relevant references were loaded separately and provider verification had no batch-wide deadline. | Ignored-only batches acknowledge without receipt writes or a worker wake-up. Relevant batches load intents together, record a checkpoint before provider I/O, and share a Redis admission lock and 15-second verification budget. The production payment interlock remains in force. |
+| AUD-28, RL-02, RL-03 | Slow requests and Redis failures could each emit a log line. Protected HTTP requests verified the same JWT twice. | Timing records sample route templates, status and SQL work once per 256 requests. Limiter failures log the first result and periodic counts. A verified token is reused only within the same request and access checks still run. Synthetic signature-only median fell from 71.16 to 37.64 microseconds per request. |
+| AUD-16, AUD-22, AUD-30, RL-01, RL-04 | Account WebSocket budgets were already present. Upstream attribution/redaction and actual pooler mode were still unconfirmed. | Existing handshake controls are retained. Local Uvicorn tests verify that an anonymous bucket uses the forwarded address only from the configured proxy. Documented the driver and dialect cache distinction. Local Redis `EVAL` and `EVALSHA` measured 0.1846 and 0.1789 ms per check. Kept the current atomic path pending a representative benefit. Live upstream and pooler changes remain operational follow-ups. |
+| AUD-32, AUD-36, AUD-44 | The Authentica and participant-phone findings apply to separate local changes. | Kept those changes outside the release. Provider challenge binding, releasing the lock around OTP verification and verified-phone provenance remain release gates for that work. |
+
+#### Phase 2 impact — Delivery, financial correctness and maintenance
+
+| Tasks | Before | After |
+| --- | --- | --- |
+| AUD-17, AUD-42 | Slow drainers could monopolize worker slots. Best-effort wake-ups had one deadline per task. | Delivery entry points have a 45-second budget with durable recovery. Post-commit publication shares one 0.5-second budget. Shared cross-request coalescing remains dependent on queue-lag and duplicate-job measurements. |
+| AUD-18, AUD-34, AUD-35 | Ownership or registration changes could leave stale destinations. Local deferrals counted toward the provider attempt limit. | Owner transfer advances the reminder schedule. Final batched selection rechecks current recipient and device eligibility. Nine local deferrals preserved the push attempt count in testing and eight ambiguous transport outcomes exhausted it. Registration changes after the final DB check can still race a provider call. |
+| AUD-20, IDX-03 | Repeatedly failing older receipts could crowd out newer invoices. The old index ordered by ID. | Durable due times and bounded backoff let ready invoices progress. Exhausted receipts require operator reconciliation. The concurrent ready index visited 111 invoices for 100 eligible candidates on a 100,000-row synthetic fixture with 99,800 future retries. |
+| AUD-23, AUD-31 | A rounded zero payout could prevent settlement. Expected registration races could surface as 500. | Zero payout omits the zero leg and preserves ledger balance. Expected phone/email uniqueness failures return 409 and unrelated database failures keep their error behavior. |
+| AUD-39 | A 100-grant batch could issue 100 DELETEs and due retries could starve. | A 100-grant batch finalizes with one DELETE guarded by its exact reservation. Due retries receive capacity, and storage work has bounded time and safe failure logs. |
+| AUD-29, AUD-38 | Key rotation overstated retained ciphertext coverage. Terminal deliveries had no approved purge policy. | The rotation inventory explicitly identifies retained message and operation ciphertext. Purge remains gated on a replay-safe retention policy and deduplication horizon. |
+
+#### Phase 3 impact — SQL, cache and I/O
+
+| Tasks | Before | After |
+| --- | --- | --- |
+| AUD-26 | Customer creation and reorder counted full matching history under the quota lock. | Both use a bounded count and the concurrent active-only index. A later sparse-owner generic benchmark measured 13.497 → 0.008 ms and 1,561 → 3 local buffer blocks. |
+| AUD-25, IDX-01 | Inbox OR filtering could sort growing history. The generic radar plan could miss the existing NEW-only index. | Inbox reads two bounded ordered participant branches and deduplicates before loading records. Radar uses a fixed internal NEW predicate. Both reuse the existing indexes. |
+| AUD-41, IDX-05 | Separate earnings queries could scan the same history and disagree after a concurrent settlement. | One ledger statement reads totals, buckets and optional target proceeds with consistent snapshot semantics. On a 150,000-row synthetic fixture, the 180-day query measured 6.672 → 5.061 ms and 29,965 → 19,973 local blocks. The extra ledger index remains a candidate. |
+| AUD-21, AUD-40 | PDF rendering and order-media signing could hold a checked-out connection. | Authorization and bounded snapshots happen before the transaction releases its connection. PDF rendering and private URL signing follow. |
+| AUD-24, AUD-43 | Short-TTL writes could evict themselves. Admin overview issued five statements. | Cache expiry and insertion order have distinct indexes and share the same payload budget. Admin overview uses three statements. Its all-time status scan still needs workload evidence before adding a rollup. |
+| AUD-37, IDX-02, IDX-04, IDX-06–09 | The measured promo benefit was synthetic. The other candidates needed deployed workload or provider evidence. | Video validation remains active at attachment until immutable object identity can be verified. Promo, push/Expo, cleanup, invoice history, prefix search and BRIN alternatives retain their individual decision gates. |
+
+The benchmark figures above measure disposable SQL or process-local timings. They
+do not establish deployed p95, pool capacity or provider delivery behavior. Verify
+real workload distributions and mixed traffic before turning on optional budgets
+or adding the remaining candidate indexes.
+
+Verification on disposable PostgreSQL 16 and Redis 7 passed **1,806 tests** with
+**90.97% line coverage**. Two native media decoder tests were skipped because the
+decoder was unavailable. Revisions `0042_active_order_quota`,
+`0043_receipt_retry`, `0044_reminder_owner_fence` and `0045_receipt_due_index`
+passed upgrade, downgrade to 0041 and re-upgrade. The two index builds are
+concurrent. Pause receipt workers across a version change because an old worker
+does not honor the new exhausted state.
+
+The isolated Phase 1 release passed **1,761 tests** with **90.96% line coverage**
+on disposable PostgreSQL and Redis at revision `0041_order_reorder`. Two native
+media tests were skipped because the Windows runner lacked `ffmpeg` and `ffprobe`.
+The lock test verified rollback and connection reuse after a timeout. The proxy
+tests cover local Uvicorn handling. Phase 1 adds no migration.
+
+### Closed, postponed and external work
+
+- **AUD-01–13.** Shipped. Keep their focused regressions as release gates for
+  overlapping slices and retain the historical evidence below.
+- **PUSH-DELIVERY, PUSH-NAVIGATION and PUSH-OPERATIONS.** The code is included in
+  the published baseline. Real provider receipt and device behavior remain
+  unconfirmed. Follow the push work in phase 3.
+- **PUSH-SETUP and STORE-SETUP.** Confirm ownership, credentials and prerequisites
+  before an approved staging verification of Expo registration/delivery or
+  private S3 signing, authorization, upload and deletion. Keep provider setup
+  separate from code and index releases.
+- **FIN-POLICY and FIN-NOTIFY.** Define retention, fund return and account closure
+  rules before changing the current hold/recovery flow. Define notification
+  preferences, channels and deduplication after settlement and delivery rules
+  are agreed.
+- **SEC-16, SEC-17, SEC-19 and other accepted/excluded scope.** Retain the existing
+  decisions under [accepted risks](#accepted-risks-and-exclusions-retained).
+  Changes to privileged CRUD, audit archival, dependency-alert reconciliation,
+  ingress credential collection and real-provider activation require their own
+  scope and evidence.
+
+Before releasing each slice, run focused regression and concurrency tests, then
+`uv run --locked pytest --cov=app --cov-fail-under=85` with disposable PostgreSQL
+and Redis, plus both pre-commit stages. For schema changes, test forward migration,
+the previous runtime against the additive schema, and an explicit rollback or
+forward repair. For runtime changes, check error rate, resource use, job lag and
+health on rollout, and keep the preceding stable revision available.
+
+## Current audit — 2026-11-07
+
+Source baseline is `b24e6ed`, including the Expo and delivery-proof releases. Local
+Authentica and participant-phone edits were reviewed separately because they were
+outside that release. Scores are importance and urgency out of 10. Importance
+reflects impact and reach. Urgency also accounts for exposure, rollout state and
+whether the failure needs a specific workload. This is a static review with
+focused local checks. Production query plans, throughput and provider behavior
+remain unconfirmed. Scores for conditional risks reflect the stated trigger.
+
+### Implementation guardrails
+
+Apply each fix as a small, independently reviewable change under [AGENTS.md](../AGENTS.md).
+Keep authorization and business rules in services, SQL in repositories, and provider I/O
+in adapters or workers. Preserve existing API contracts, transaction boundaries, and
+failure responses. Compare query counts, resource use, and latency before and after
+performance changes. Use disposable PostgreSQL for migration and query-plan checks,
+and synthetic credentials and provider fakes for failure and concurrency tests.
+
+### Priority index for new findings
+
+| Task | Type | Importance | Urgency | Evidence and scope |
+| --- | --- | ---: | ---: | --- |
+| [AUD-32 · Bind provider OTP to its purpose](#aud-32) | Security | 8 | 9 | Local-only release blocker. Provider cross-purpose acceptance unconfirmed. |
+| [AUD-33 · Gate callback writes and bound verification](#aud-33) | Security / SQL / I/O | 7 | 7 | Source-confirmed work amplification on the enabled testing callback path. |
+| [AUD-34 · Narrow the push authorization-to-send race](#aud-34) | Security / correctness | 6 | 7 | Source-confirmed race window. Actual disclosure unconfirmed. |
+| [AUD-35 · Preserve push attempts during local deferrals](#aud-35) | Reliability | 6 | 7 | Source-confirmed attempt accounting. |
+| [AUD-36 · Move provider OTP verification outside row locks](#aud-36) | Runtime / SQL | 6 | 8 | Source-confirmed local-only connection and lock lifetime. |
+| [AUD-37 · Reuse validation for immutable confirmed uploads](#aud-37) | Runtime / CPU / I/O | 6 | 6 | Source-confirmed duplicate file validation. |
+| [AUD-44 · Verify provenance before disclosing participant phones](#aud-44) | Privacy / correctness | 5 | 7 | Local-only. Format checking cannot establish current ownership. |
+| [AUD-38 · Purge terminal push and receipt rows safely](#aud-38) | SQL / storage / privacy | 5 | 6 | No scheduled purge found. Size and growth rate unmeasured. |
+| [AUD-39 · Batch abandoned-object cleanup](#aud-39) | SQL / I/O / reliability | 5 | 5 | Source-confirmed per-object transaction and serial storage I/O. |
+| [AUD-40 · Release order-media reads before signing](#aud-40) | Runtime / SQL | 4 | 5 | Source-confirmed database connection lifetime. |
+| [AUD-41 · Consolidate courier report reads](#aud-41) | SQL / correctness | 4 | 4 | Source-confirmed repeated scans and separate statement snapshots. |
+| [AUD-42 · Coalesce post-commit worker wake-ups](#aud-42) | Redis / runtime | 4 | 4 | Source-confirmed per-transaction enqueue. Backlog impact unmeasured. |
+| [AUD-43 · Bound admin overview aggregation cost](#aud-43) | SQL / scalability | 3 | 3 | Source-confirmed full-history aggregate. Optimization is measurement-gated. |
+
+### Security and privacy
+
+<a id="aud-32"></a>
+#### AUD-32 — Provider verification does not receive Giftly's challenge identity
+
+- **Where.** [OTP service](../app/services/otp_service.py#L121-L145), [verification](../app/services/otp_service.py#L174-L212), [Authentica transport](../app/integrations/sms/authentica.py#L26-L51), [account change](../app/services/account_change_service.py#L93-L110).
+- **Current workflow.** Redis stores a marker per login or account-change scope. Issuance creates the marker before the SMS call finishes. Both operations send to the same provider with the same configured template. The verification payload is `json={"phone": phone, "otp": code}`. Redis consumes the local marker after the provider accepts the code.
+- **Before.** If a provider accepts a code issued for a different local challenge on the same phone, the local marker does not establish which operation generated that code. A failed or ambiguous send can also leave a marker that looks issued. Impact includes accepting a code intended for login as proof for an account change, subject to the other authentication and ownership checks. This is a design gap in the local patch. Cross-purpose acceptance by the real provider is unconfirmed. [Authentica API documentation](https://docs.authentica.sa/).
+- **Fix and expected impact.** Require a provider-supported challenge binding, or use an explicitly supported flow with per-purpose code verification. Keep sensitive production flows gated until binding is demonstrated. Add pending/active issuance states and fence activation or cleanup by marker so a failed send cannot activate a marker or delete a newer request. A Redis mutex alone does not bind a provider code to a purpose.
+- **Implementation sequence.** In the SMS adapter, expose a provider challenge reference only if the documented send and verify flow supports it. In `OtpService`, reserve the scoped marker with its existing TTL and throttles, activate that exact marker after confirmed issuance, and atomically consume it after verification of the same reference. Keep failed or ambiguous sends unusable. If the provider cannot bind challenges, keep the affected sensitive flows gated and resolve the provider design before rollout. Reuse existing Redis scripts and never store plaintext codes or log provider credentials.
+- **Verify.** Cover overlapping login, phone change and recovery, latest-code behavior, failed/ambiguous send, resend racing verification, wrong purpose and replay. Use synthetic codes and a fake provider in regression tests.
+
+<a id="aud-33"></a>
+#### AUD-33 — Unauthenticated Dhamen hints can trigger durable writes and serial provider calls
+
+- **Where.** [Callback route](../app/routers/webhooks.py#L23-L43), [callback processing](../app/services/payment_service.py#L599-L629), [reference loop](../app/services/payment_service.py#L653-L680), [parser bounds](../app/integrations/payments/dhamen_notifications.py#L37-L67), [provider checkpoint](../app/services/hosted_payment_service.py#L114-L121).
+- **Current workflow.** The route treats callbacks as hints. The parser allows up to 100 notifications and 100 references. The service does a lookup and, for matching references, a status call inside `for reference in references:`. It writes one receipt per notification, including ignored types. An ignored-only batch needs no matching payment to reach the receipt writes. The provider status check preserves the settlement trust boundary.
+- **Before.** When recovery is enabled, fabricated ignored notifications can cause writes with caller-controlled IDs. Matching references can cause repeated provider traffic and long response times. The per-reference checkpoint limits held connections over network I/O, but adds transaction round trips. This is a testing-mode abuse and availability finding. Ingress exposure and practical request rates are unconfirmed.
+- **Fix and expected impact.** Discard untrusted ignored hints before durable writes. Apply dedicated callback admission and an end-to-end deadline before expensive work. Batch lookup distinct references with an allowlisted projection and handle repeat hints with a short in-flight lease. Keep authenticated provider verification and atomic settlement, and use a documented provider authenticity mechanism before any production enablement. Only bulk-write trusted receipt metadata where it preserves replay semantics.
+- **Implementation sequence.** In `PaymentService`, return the compatible acknowledgement for ignored-only hints before opening a database transaction. Add admission and one wall-clock budget at the callback boundary, then load eligible references in one parameterized query and release the read transaction before provider I/O. Start with bounded serial verification and short-circuit on budget exhaustion. Only introduce limited concurrency if measurements and the provider quota support it. Re-lock in the existing order and verify amount, currency and reference before atomic settlement. Keep the testing interlock and prove that timeouts or retries cannot partially settle a batch.
+- **Verify.** Assert zero receipt writes for fabricated ignored-only batches, bounded SQL/provider calls for the maximum batch, safe recovery after timeout and unchanged settlement under duplicate delivery.
+
+<a id="aud-34"></a>
+#### AUD-34 — A device or recipient can change after push eligibility is checked
+
+- **Where.** [Eligibility and claim](../app/repositories/push_delivery_repository.py#L96-L218), [commit and send](../app/services/push_delivery_service.py#L47-L82), [shared-device registration](../app/repositories/device_token_repository.py#L28-L42).
+- **Current workflow.** The worker checks current device ownership and domain eligibility while claiming a batch. It commits, obtains Redis send capacity, and sends using the captured token. The claim locks delivery rows, while account switching updates the device registration separately.
+- **Before.** A token reassignment, logout or membership change in that window can allow one stale push. Current text is generic, but a prior account's event and resource ID can still reach the device. Destination APIs independently authorize access. The race window is present in source. An actual stale delivery was not observed.
+- **Fix and expected impact.** Compare owner, registration generation and current eligibility in one bounded batch as close as possible to the provider call. Keep sensitive data out of push and use opaque refresh hints where the product permits. A provider send cannot be atomically revoked by a later database commit, so retain mobile destination authorization and account-switch handling.
+- **Implementation sequence.** Reuse the claim eligibility predicate in a single bounded pre-send query after Redis admission. Match delivery lease, owner and registration generation, retire stale rows with the existing fenced outcome write, and send only the matching subset. Release SQL resources before calling Expo. Preserve event IDs and payload compatibility and keep destination authorization mandatory. Measure the one extra query per batch and document the residual race after the final check.
+- **Verify.** Pause a send after claiming, transfer the token or revoke the actor, and verify that stale claims detected before sending are retired without invalidating the new registration.
+
+<a id="aud-44"></a>
+#### AUD-44 — Participant phone format is checked without verification provenance
+
+- **Where.** [Participant response](../app/services/user_service.py#L119-L160), [projection](../app/repositories/user_repository.py#L111-L145), [admin edits and creation](../app/services/admin_service.py#L428-L459).
+- **Current workflow.** The local participant patch correctly uses the target user's row and canonical format. The new field uses `_SAUDI_E164_PHONE.fullmatch(projection.phone)`. Admin can write a valid-looking number separately from OTP verification. This projection has no verification provenance check.
+- **Before.** An authorized counterparty could see a mistyped, unverified or recycled number. Existing order/conversation authorization still limits who can query the profile. The gap is between returning a canonical account number and promising a verified number.
+- **Fix and expected impact.** Track verified ownership of the current number, reset that state on direct edits, and set it on successful ownership verification. Gate this response field on that state, preserving other profile fields and omitting unknown legacy numbers until verified. Use the existing phone field as the number of record.
+- **Implementation sequence.** Add nullable verification provenance to the existing user row in a forward migration. Set it atomically when the same canonical number is proved by the approved OTP flow. Clear it in the same transaction on any direct number change, including generic admin writes. Leave legacy rows unknown unless there is reliable historical evidence. Extend the existing authorized projection with the verification state in the same query and omit the optional phone for unverified rows. Roll back by disabling phone disclosure while keeping the rest of the profile available.
+- **Verify.** Cover OTP-confirmed numbers, admin edits, legacy rows and both authorized participant directions. Assert unrelated callers still cannot get a participant response.
+
+### Bugs, reliability and resource lifetimes
+
+<a id="aud-35"></a>
+#### AUD-35 — Local deferrals can exhaust push send attempts
+
+- **Where.** [Claim and counter](../app/repositories/push_delivery_repository.py#L199-L252), [outcome rules](../app/repositories/push_delivery_repository.py#L283-L303), [Redis admission](../app/services/push_delivery_service.py#L57-L95).
+- **Current workflow.** Claim increments `row.attempts += 1` before Redis grants send capacity. Redis failure and budget exhaustion produce deferred outcomes. The outcome returns the row to pending, but the next claim can mark it `RetryExhausted` at eight attempts.
+- **Before.** Repeated local deferrals can permanently retire a valid notification even if Expo never received an attempt. The due-time and expiry bounds still prevent indefinite retry.
+- **Fix and expected impact.** Separate lease attempts from possible provider sends, or refund a definitive pre-send deferral in the fenced outcome update. Keep ambiguous network failures charged, preserve expiry and backoff, and avoid hot-looping during Redis outages.
+- **Implementation sequence.** Keep the current schema. Refund the attempt only in the lease-fenced outcome update when the worker can prove no Expo send started. Distinguish a timeout during Redis admission from one after the send began. Continue charging ambiguous sends and retain a nonzero retry delay and the original expiry. A stale worker must be unable to refund another lease or reset a terminal row.
+- **Verify.** Simulate more than eight deferrals, then recovery and one successful send. Separately prove real failures still hit their limit and expired rows stay terminal.
+
+<a id="aud-36"></a>
+#### AUD-36 — Sensitive OTP confirmation holds database locks across provider I/O
+
+- **Where.** [User lock](../app/services/account_change_service.py#L68-L78), [challenge lock and verification](../app/services/account_change_service.py#L148-L170), [HTTP client timeout](../app/integrations/sms/authentica.py#L16-L20).
+- **Current workflow.** The local patch fetches the user for update, locks the challenge row and then awaits provider verification through the OTP service. Before this patch the awaited verification is local Redis work. Production now also depends on an external HTTP round trip.
+- **Before.** Slow SMS verification holds a checked-out PostgreSQL connection and two row locks. Concurrent security actions for the same account can wait. Separate slow requests can consume pool capacity. HTTP phase timeouts alone do not set an end-to-end request budget.
+- **Fix and expected impact.** Capture an owned challenge snapshot, release the transaction, verify with a bounded provider call, then reacquire and compare challenge state, expiry, auth version, phone and purpose before writing. Maintain exactly-once proof consumption. Slow provider I/O then consumes HTTP capacity without pinning PostgreSQL.
+- **Implementation sequence.** Reuse the read-release pattern from recovery. Read a minimal challenge snapshot and release the session before verifying with the pooled provider client under an overall deadline. Reacquire locks in the existing order, rerun ownership and expiry checks, and compare the auth version, phone, purpose and challenge state before writing proof. Reject changed state even if the provider accepted the code. If verification was consumed and finalization fails, require a fresh challenge rather than replaying success.
+- **Verify.** Stall a fake provider with a one-connection pool and show an unrelated query can proceed. Race credential changes and concurrent confirmations and verify stale results cannot issue proofs.
+
+<a id="aud-37"></a>
+#### AUD-37 — Confirmed delivery videos are downloaded and decoded again during attachment
+
+- **Where.** [Confirmation](../app/services/media_service.py#L176-L202), [claim preparation](../app/services/media_service.py#L222-L249), [video verification](../app/services/media_service.py#L330-L401), [recording I/O and decoder](../app/services/chat_media_validation.py#L102-L125), [order route preparation](../app/routers/orders.py#L118).
+- **Current workflow.** Confirmation performs HEAD and content checks. Attaching an already confirmed object performs the same checks again. A request with multiple objects validates each sequentially. Each video is streamed to a temporary file and probed/decoded. The current flow releases the read transaction before that expensive work.
+- **Before.** A maximum-sized ten-video proof can require a second download and decode pass across the same ten objects. This increases storage traffic, temporary-file churn, CPU use and tail latency. Measured user impact depends on clip sizes and workload.
+- **Fix and expected impact.** Persist a trusted validation result tied to an immutable object version or sufficiently strong storage identity. Recheck identity and the current owned, confirmed, unclaimed grant at attachment. If immutability or trusted identity cannot be established, retain full validation. This can replace repeated full-object I/O with bounded metadata checks without weakening validation.
+- **Implementation sequence.** Add nullable validation metadata through a forward migration. Record the trusted object identity and validation result only after full decoding of that exact object. At attach time, reuse the result only when the storage adapter can bind both validation and subsequent reads to the same immutable version or equivalent storage-enforced guarantee. Legacy grants and adapters without that guarantee use the existing full check. Preserve owner, purpose, type, size, duration and atomic claim checks. Roll back by disabling reuse and retaining the original validation path.
+- **Verify.** Count GETs and decoder invocations for unchanged proof, replace or remove an object between confirmation and claim, and cover cleanup races, malformed data, limits and temporary-file cleanup.
+
+### SQL, I/O and operational scalability
+
+<a id="aud-38"></a>
+#### AUD-38 — Terminal push deliveries and Expo receipts accumulate
+
+- **Where.** [Delivery model](../app/models/push_delivery.py#L22-L54), [receipt model](../app/models/expo_push_receipt.py#L15-L42), [delivery completion](../app/repositories/push_delivery_repository.py#L270-L341), [receipt completion](../app/repositories/expo_receipt_repository.py#L193-L265), [worker registration](../app/workers/broker.py#L35-L50).
+- **Current workflow.** Workers expire or complete records, and the pending indexes exclude terminal states. Terminal records remain in the heap and general indexes. The delivery unique constraint remains part of source-page deduplication. Legacy receipt rows may contain raw device tokens. The new receipt path writes an empty token field.
+- **Before.** Storage, index maintenance, backups and potentially sensitive legacy metadata grow with historical send volume. Pending queries already benefit from partial indexes. Actual size and bloat are unmeasured.
+- **Fix and expected impact.** Set a retention period beyond the maximum source replay and receipt windows, then purge terminal rows in bounded indexed batches. Preserve dedupe until the source event can no longer replay, or keep smaller tombstones if needed. Remove legacy token values once processing no longer needs them. Measure WAL and vacuum impact before selecting batch size.
+- **Implementation sequence.** Determine the latest possible source replay and receipt completion dates before enabling deletion. Add an indexed bounded repository purge only where the query plan supports the index cost. Use short transactions, skip locked rows and exclude active leases and unresolved receipts. Keep the existing event/device uniqueness record until the source cannot replay. Start with a count-only rollout, then enable the worker task. Pausing the task halts future deletes, so retention must be reviewed before enabling it.
+- **Verify.** Race cleanup with active leases, delayed receipts and source replays. Measure table/index growth and ensure no already delivered event becomes sendable again.
+
+<a id="aud-39"></a>
+#### AUD-39 — Media cleanup uses up to one database transaction per object
+
+- **Where.** [Cleanup loop](../app/services/media_cleanup_service.py#L41-L55), [reservation and removal](../app/repositories/media_repository.py#L149-L184), [hourly schedule](../app/workers/media_cleanup.py#L16-L27), [storage deletion](../app/integrations/storage/real.py#L165-L168).
+- **Current workflow.** One batch reserves up to 100 grants. Each object is deleted with its own sequential storage call, then a separate SQL delete and commit. The delete predicate checks a non-null reservation, rather than matching the exact reservation captured by the worker.
+- **Before.** An hourly run can make 100 serial storage calls and 100 delete transactions after reservation. A slow batch can outlast the shared lease. Older failed reservations are ordered after new candidates, so steady arrivals can defer retries.
+- **Fix and expected impact.** Batch storage deletes if the adapter returns reliable per-key outcomes, or use bounded parallelism and a hard run budget. Bulk-delete successful rows with the exact reservation fence. Give due retries a fair share of each batch. Keep failed rows recoverable and never delete an attached grant.
+- **Implementation sequence.** Return the reservation identity with each key and commit before storage I/O. Start with one bulk SQL delete for confirmed successes, keeping storage calls unchanged until per-key batch outcomes are proven. If useful, add adapter-level batch deletion or small bounded concurrency within the worker lease budget. Match the exact reservation on finalization and leave unknown outcomes retryable. Reserve a bounded share for due retries without allowing cleanup to touch attached objects.
+- **Verify.** Compare transaction counts at 1 and 100 grants. Inject partial storage failures, lease expiry and backlog. Assert eventual progress for failed rows and preservation of attached media.
+
+<a id="aud-40"></a>
+#### AUD-40 — Order-media signing keeps the database read transaction open
+
+- **Where.** [Route](../app/routers/order_media.py#L22-L38), [page and signing](../app/services/order_media_read_service.py#L44-L81), [session lifetime](../app/core/deps.py#L51-L73).
+- **Current workflow.** The service loads the authorized page, then awaits `asyncio.to_thread(self._sign_page, ...)` before returning from the request session. Signing may wait for executor capacity. This route allows 100 URLs per page.
+- **Before.** A read connection remains occupied during local CPU work and any executor queue wait. The SQL result is bounded and signatures are already generated off the event loop.
+- **Fix and expected impact.** Materialize a bounded, authorized snapshot and release the read transaction before submitting signing work. Preserve private URL lifetime, cursor and authorization. Profile signing before adding a separate executor or concurrency limit.
+- **Implementation sequence.** Copy the authorized page into a typed snapshot containing only the fields needed for the response and cursor. End the read transaction before the existing executor call and never dereference ORM state afterward. Keep page size, ordering, private access and the signed URL TTL unchanged. Check elapsed signing time and pool occupancy before adding executor infrastructure.
+- **Verify.** Block the signer with a one-connection pool and confirm another request can acquire a connection after snapshot creation.
+
+<a id="aud-41"></a>
+#### AUD-41 — Courier earnings totals and chart buckets repeat ledger scans
+
+- **Where.** [Report service](../app/services/courier_report_service.py#L104-L192), [ledger predicate](../app/repositories/courier_report_repository.py#L64-L83), [aggregates](../app/repositories/courier_report_repository.py#L124-L164).
+- **Current workflow.** Current/previous totals and chart buckets query the same owner ledger in separate statements. If a target is enabled, target progress can add another overlapping aggregate. The summary route already uses a single SQL statement.
+- **Before.** Extra database round trips and repeated scans grow in cost for busy couriers. Under PostgreSQL's default read-committed behavior, settlement between the totals and chart queries can yield values from different snapshots.
+- **Fix and expected impact.** Return report totals and buckets from one owner-scoped statement with a shared scan or grouped subquery. Include target data in the same snapshot where practical, without expanding all scans to lifetime history. Preserve decimal strings, Riyadh boundaries and ledger predicates.
+- **Implementation sequence.** Add a single repository query for current and previous totals plus chart buckets using a shared bounded ledger range and grouped or filtered aggregates. Preserve the existing settled-ledger predicate, Decimal serialization and Riyadh bucket rules. Use a separately bounded aggregate in the same statement if the target period extends beyond that range. Compare plans before adding indexes, and keep the existing query if consolidation increases reads or latency on representative data.
+- **Verify.** Compare query count and `EXPLAIN (ANALYZE, BUFFERS)` on skewed courier histories. Inject a settlement between the original reads and verify the consolidated response agrees internally.
+
+<a id="aud-42"></a>
+#### AUD-42 — Worker wake-ups are deduplicated per transaction only
+
+- **Where.** [Wake-up publication](../app/core/worker_dispatch.py#L13-L56), [request commit](../app/core/deps.py#L64-L69), [Expo preparation commit](../app/integrations/push/queued_expo.py#L27-L41).
+- **Current workflow.** Each committing session deduplicates its own wake-ups. It awaits up to 0.5 seconds per task name before returning from dispatch. Separate requests can enqueue many identical drains, in addition to the scheduled recovery jobs.
+- **Before.** Bursts can add redundant Redis jobs, worker contention and post-commit request latency. The durable outbox already preserves work through publication failures. Queue growth and latency impact are workload-dependent.
+- **Fix and expected impact.** Measure first. Use shared short-lived coalescing per drainer with owner-safe release on enqueue failure and an aggregate dispatch budget. Retain scheduled recovery and ensure work arriving during a drain gets a follow-up. Keep payment and order writes transactional.
+- **Implementation sequence.** Instrument queue lag, duplicates and dispatch latency before adding coordination. If needed, use one short-lived Redis marker per drainer and a total publication deadline. Clear a failed publication marker only if its owner token still matches. Let the existing scheduled sweep recover missed or ambiguous publications. Keep the durable outbox as the source of truth and all dispatch after commit. Verify burst coalescing reduces total Redis work rather than merely moving it.
+- **Verify.** Burst committed writes from multiple instances, fail Redis before publication, and race work arrival against drain exit. Track Redis operations, p95 dispatch time, redundant jobs and oldest due age.
+
+<a id="aud-43"></a>
+#### AUD-43 — Admin overview recomputes all-time order counts on every load
+
+- **Where.** [Overview orchestration](../app/services/admin_service.py#L127-L136), [status and daily counts](../app/repositories/admin_read_repository.py#L308-L328).
+- **Current workflow.** The homepage runs multiple serial aggregate statements, including `select(Order.status, func.count()).group_by(Order.status)` over full order history.
+- **Before.** SQL work can grow with the table even though the output is small. Exact cost and frequency are unmeasured. This path requires admin access.
+- **Fix and expected impact.** Check latency and plans first. Consolidate cheap aggregates where it improves round trips. If the all-time scan dominates and brief staleness is acceptable, use a short-lived admin-only dashboard snapshot or maintained rollup. Leave detailed record and financial action reads authoritative.
+- **Implementation sequence.** Measure the overview statements separately. Combine only queries whose plans remain efficient. If full-history counts dominate, cache only the display aggregate behind current admin authorization with a small TTL and bounded key count. Keep financial balances and action eligibility on their existing authoritative paths. Use a safe cache-miss path and consider a maintained rollup only if the measured scan cost justifies the write and reconciliation overhead.
+- **Verify.** Benchmark before and after with representative history. Check private caching, visibility after admin edits and behavior when Redis is unavailable.
+
+### Cross-checks and verification boundaries
+
+- Reviewed auth and account change, participant data, WebSocket admission and live authorization, hosted checkout and callbacks, order and chat media, worker dispatch, Expo sends/receipts, report queries, cache versioning and admin reads. Searched repository and worker call sites for per-row SQL, full scans, unbounded accumulation, and transactions held during I/O. This is not exhaustive dynamic vulnerability coverage.
+- Confirmed the WebSocket handshake budget now runs before account authorization in [chat.py](../app/routers/chat.py#L80-L96) and the route invokes it before authentication. This supersedes the missing application budget described in AUD-16. Anonymous/invalid-token ingress controls and AUD-30 proxy logging remain separate. Keep older evidence below for history.
+- Chat media grant/attachment SQL and order media claims already batch the keys. The abandoned-media cleanup is a separate, bounded N+1 transaction pattern. The courier summary already aggregates in SQL. Bounded Python loops over attachments, chart buckets and push outcomes were not identified as unbounded quadratic loops.
+- The read cache already scopes version keys and caps entry size, count and in-process pending loads. Its version lookup still goes to PostgreSQL on a hit. AUD-24 still applies to [result_cache.py](../app/services/result_cache.py#L20-L37), where a shared capacity index orders eviction by expiry. At capacity a new 30-second order page can evict itself when the resident entries expire later. Benchmark SQL CPU avoided versus Redis latency and use AUD-28 measurements before expanding caching. Keep authorization, unresolved payment state, balances, signed URLs and claim eligibility out of shared result caches.
+- AUD-17, AUD-19, AUD-20 and AUD-21 remain relevant to this release. The new push findings cover distinct paths. Earlier review decisions and evidence remain below. Prior release test numbers describe the isolated release, with local-only changes excluded.
+- Focused unit run passed 70 cases covering push delivery and migration, media transaction boundaries, courier reports, scoped OTP, worker dispatch and result caching.
+- Full unit run on the reviewed checkout returned **1,342 passed, 2 skipped and 1 failed**, with one existing upstream deprecation warning. Worker imports required synthetic test settings. The failure at [test_development_otp.py](../tests/unit/test_development_otp.py#L36-L46) asserts a fixed code without stubbing the generator. The implementation generates a random five-digit value. This result identifies a nondeterministic assertion, without evidence of an OTP runtime regression.
+- No production writes, device notifications, Docker runs, production profiling, disposable PostgreSQL query plans or live provider tests were performed for this review. The proposed regressions and benchmarks are acceptance criteria for each fix.
 
 ## Expo per-device delivery implementation — 2026-11-06
 
@@ -264,7 +611,7 @@ Strengthened the existing regression for 0, 2, 3 and 8 prior assignments, exerci
 
 Delivery limitation observed during this review: the public acceptance description still matches the older runtime, and deployment `_IPDV4nd994VIAaJp54D0` failed with a platform remote-command exit 1 and no build-log excerpt. Published code is not proof of deployment. No production data, account eligibility or payment settings were changed, and no authenticated live acceptance was attempted. The running backend must receive the published release before the removed cap can affect mobile users.
 
-## Current review — 2026-10-16
+## Prior review — 2026-10-16
 
 **Reviewed source:** published `master` **`864530186b305fbc9035b4fb44265d498c21b00a`**.
 **Scope:** backend HTTP/WebSocket authentication and authorization, media, financial
@@ -293,29 +640,30 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 | Finding | Task / purpose | Type | Severity /10 | Urgency /10 | Evidence / status |
 | --- | --- | --- | --- | --- | --- |
-| [AUD-14](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:55) | Align phone-enabled ADMIN API authentication with the MFA policy | security | **7** | **7** | Token issuance reproduced; policy decision required |
-| [AUD-15](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:73) | Bound incomplete request-body reads and narrow throttle exemptions | security / scalability | **6** | **7** | Stalled-body retention reproduced; ingress exposure unverified |
-| [AUD-30](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:332) | Stop upstream capture of legacy chat token queries | security / logging | **6** | **7** | Live non-secret canary retained in CranL request path; provider/configuration blocker |
-| [AUD-16](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:90) | Rate-limit WebSocket handshakes before repeated database authorization | security / perf | **5** | **5** | Rejected-handshake query amplification reproduced |
-| [AUD-17](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:126) | Prevent scheduled delivery drainers from consuming all worker capacity | scalability / reliability | **5** | **4** | Source-derived outage/backlog risk; no production load claim |
-| [AUD-19](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:143) | Add bounded SQL execution and lock-wait budgets | security / perf | **4** | **5** | Local driver/server defaults inspected; deployed limits unknown |
-| [AUD-18](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:107) | Fence reminder delivery against current ownership and role | security / correctness | **4** | **4** | Committed owner-transfer race reproduced on PostgreSQL |
-| [AUD-20](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:160) | Prevent permanently failing receipts from starving newer receipts | reliability | **4** | **4** | 101-invoice, two-sweep starvation reproduced |
-| [AUD-21](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:177) | Release admin invoice PDF connections before rendering | perf / scalability | **4** | **4** | Single-connection pool exhaustion reproduced |
-| [AUD-22](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:194) | Correct prepared-cache assumptions for the actual PostgreSQL pooler | reliability / opt | **4** | **3** | Cache mismatch confirmed; pooler failure conditional |
-| [AUD-24](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:247) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
-| [AUD-23](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:211) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
-| [AUD-25](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:264) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
-| [AUD-26](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:281) | Avoid scanning closed order history for the customer active-order quota | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced; courier assignment cap removed 2026-10-21 |
-| [AUD-27](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:228) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
-| [AUD-28](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:299) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
-| [AUD-29](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:315) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
-| [AUD-31](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:381) | Translate registration uniqueness violations to controlled conflicts | quality / reliability | **2** | **2** | Source-confirmed error-contract defect; reproduction pending |
+| [AUD-14](#aud-14) | Align phone-enabled ADMIN API authentication with the MFA policy | security | **7** | **7** | Token issuance reproduced; policy decision required |
+| [AUD-15](#aud-15) | Bound incomplete request-body reads and narrow throttle exemptions | security / scalability | **6** | **7** | Stalled-body retention reproduced; ingress exposure unverified |
+| [AUD-30](#aud-30) | Stop upstream capture of legacy chat token queries | security / logging | **6** | **7** | Live non-secret canary retained in CranL request path; provider/configuration blocker |
+| [AUD-16](#aud-16) | Rate-limit WebSocket handshakes before repeated database authorization | security / perf | **5** | **5** | Prior amplification reproduced. Application handshake budget now present. |
+| [AUD-17](#aud-17) | Prevent scheduled delivery drainers from consuming all worker capacity | scalability / reliability | **5** | **4** | Source-derived outage/backlog risk; no production load claim |
+| [AUD-19](#aud-19) | Add bounded SQL execution and lock-wait budgets | security / perf | **4** | **5** | Local driver/server defaults inspected; deployed limits unknown |
+| [AUD-18](#aud-18) | Fence reminder delivery against current ownership and role | security / correctness | **4** | **4** | Committed owner-transfer race reproduced on PostgreSQL |
+| [AUD-20](#aud-20) | Prevent permanently failing receipts from starving newer receipts | reliability | **4** | **4** | 101-invoice, two-sweep starvation reproduced |
+| [AUD-21](#aud-21) | Release admin invoice PDF connections before rendering | perf / scalability | **4** | **4** | Single-connection pool exhaustion reproduced |
+| [AUD-22](#aud-22) | Correct prepared-cache assumptions for the actual PostgreSQL pooler | reliability / opt | **4** | **3** | Cache mismatch confirmed; pooler failure conditional |
+| [AUD-24](#aud-24) | Separate cache expiry from capacity-eviction order | perf / opt | **3** | **4** | Mixed-TTL immediate self-eviction reproduced in Redis |
+| [AUD-23](#aud-23) | Settle valid zero-payout invoices without a zero ledger leg | correctness | **3** | **3** | Exact-Decimal zero-leg rejection reproduced |
+| [AUD-25](#aud-25) | Bound the two participant branches of the inbox query before merging | SQL / perf | **3** | **3** | 100k-row synthetic EXPLAIN comparison |
+| [AUD-26](#aud-26) | Avoid scanning closed order history for the customer active-order quota | SQL / opt | **3** | **3** | 100k-row synthetic EXPLAIN; generic-plan caveat reproduced; courier assignment cap removed 2026-10-21 |
+| [AUD-27](#aud-27) | Close every shared resource even when an earlier close fails | reliability / quality | **3** | **3** | Injected first-close failure skips later cleanup |
+| [AUD-28](#aud-28) | Add bounded cache and worker-pressure telemetry | scalability / opt | **2** | **2** | Optional implementation proposal, not a confirmed vulnerability |
+| [AUD-29](#aud-29) | Make the field-key rotation inventory and CLI claims accurate | quality | **2** | **2** | Inventory/documentation inconsistency; existing runbook mitigation |
+| [AUD-31](#aud-31) | Translate registration uniqueness violations to controlled conflicts | quality / reliability | **2** | **2** | Source-confirmed error-contract defect; reproduction pending |
 
 ### Security and authorization
 
 <a id="aud-14-current"></a>
 
+<a id="aud-14"></a>
 #### AUD-14 — Phone-enabled ADMIN accounts can obtain public OTP API tokens without dashboard MFA
 
 | Field | Full detail |
@@ -334,6 +682,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-15-current"></a>
 
+<a id="aud-15"></a>
 #### AUD-15 — Incomplete HTTP bodies can retain memory and tasks indefinitely
 
 | Field | Full detail |
@@ -351,6 +700,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-16-current"></a>
 
+<a id="aud-16"></a>
 #### AUD-16 — Repeated rejected WebSocket handshakes perform fresh database work without a handshake budget
 
 | Field | Full detail |
@@ -368,6 +718,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-18-current"></a>
 
+<a id="aud-18"></a>
 #### AUD-18 — A claimed reminder can still select the former owner's device after ownership changes
 
 | Field | Full detail |
@@ -387,6 +738,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-17-current"></a>
 
+<a id="aud-17"></a>
 #### AUD-17 — Scheduled delivery drainers can overrun their interval and occupy both worker slots
 
 | Field | Full detail |
@@ -404,6 +756,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-19-current"></a>
 
+<a id="aud-19"></a>
 #### AUD-19 — SQL execution and lock waits have no application-owned deadline
 
 | Field | Full detail |
@@ -421,6 +774,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-20-current"></a>
 
+<a id="aud-20"></a>
 #### AUD-20 — Permanently failing paid-invoice receipts starve newer eligible receipts
 
 | Field | Full detail |
@@ -438,6 +792,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-21-current"></a>
 
+<a id="aud-21"></a>
 #### AUD-21 — Admin invoice PDF rendering still holds the read transaction and pool connection
 
 | Field | Full detail |
@@ -455,6 +810,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-22-current"></a>
 
+<a id="aud-22"></a>
 #### AUD-22 — PgBouncer compatibility comments disable a different prepared-statement cache
 
 | Field | Full detail |
@@ -472,6 +828,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-23-current"></a>
 
+<a id="aud-23"></a>
 #### AUD-23 — Valid rounding or commission settings can create an invalid zero ledger leg
 
 | Field | Full detail |
@@ -489,6 +846,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-27-current"></a>
 
+<a id="aud-27"></a>
 #### AUD-27 — A single provider-close failure skips every remaining shared-resource close
 
 | Field | Full detail |
@@ -508,6 +866,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-24-current"></a>
 
+<a id="aud-24"></a>
 #### AUD-24 — Mixed cache TTLs cause new short-lived entries to evict themselves
 
 | Field | Full detail |
@@ -525,6 +884,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-25-current"></a>
 
+<a id="aud-25"></a>
 #### AUD-25 — Inbox participant OR filtering scans/sorts growing history before returning a page
 
 | Field | Full detail |
@@ -542,6 +902,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-26-current"></a>
 
+<a id="aud-26"></a>
 #### AUD-26 — Customer active-order quota count scans closed order history
 
 | Field | Full detail |
@@ -560,6 +921,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-28-current"></a>
 
+<a id="aud-28"></a>
 #### AUD-28 — Add bounded cache and worker-pressure telemetry before further tuning
 
 | Field | Full detail |
@@ -576,6 +938,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-29-current"></a>
 
+<a id="aud-29"></a>
 #### AUD-29 — Key-rotation inventory omits retained operation snapshots while the CLI claims broader coverage
 
 | Field | Full detail |
@@ -593,6 +956,7 @@ ordered by severity, then urgency/impact. Each ID opens its full task record.
 
 <a id="aud-30-current"></a>
 
+<a id="aud-30"></a>
 #### AUD-30 — Upstream request history retains the legacy WebSocket token query
 
 | Field | Full detail |
@@ -642,6 +1006,7 @@ unchanged. AUD-30 adds a concrete upstream mitigation, not a testing task.
 
 <a id="aud-31-current"></a>
 
+<a id="aud-31"></a>
 #### AUD-31 — Registration uniqueness failures escape as unexpected server errors
 
 | Field | Full detail |
@@ -826,19 +1191,19 @@ Do not mistake old local code or unpublished features for the current release.
 
 | Finding | Task | Category | Severity /10 | Urgency /10 | Status |
 | --- | --- | --- | --- | --- | --- |
-| [AUD-01](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:588) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
-| [AUD-02](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:609) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
-| [AUD-03](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:630) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
-| [AUD-04](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:651) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
-| [AUD-05](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:672) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
-| [AUD-06](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:693) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
-| [AUD-07](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:714) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
-| [AUD-08](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:735) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
-| [AUD-09](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:756) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
-| [AUD-10](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:777) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
-| [AUD-11](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:798) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
-| [AUD-12](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:819) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
-| [AUD-13](C:/Users/PC/Desktop/giftly/backend/docs/tasks.md:840) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
+| [AUD-01](#aud-01) | Serialize courier verification resubmission | security | **6** | 7 | Fixed - full suite and security review verified |
+| [AUD-02](#aud-02) | Use a forward migration for local reward enums | opt | **5** | 6 | Fixed - forward migration and rollback verified |
+| [AUD-03](#aud-03) | Fully decode order request and delivery images | security | **5** | 5 | Fixed - bounded full image decoding verified |
+| [AUD-04](#aud-04) | Release invoice PDF read connections before rendering | perf | **5** | 5 | Fixed - immutable PDF snapshot releases DB connection |
+| [AUD-05](#aud-05) | Batch due-reminder inbox inserts | opt | **4** | 4 | Fixed - one bounded conflict-safe inbox insert |
+| [AUD-06](#aud-06) | Bound retained database export downloads | perf | **4** | 4 | Fixed - shared retained-download admission and deadline |
+| [AUD-07](#aud-07) | Cache audit dropdown catalogs safely | opt | **4** | 3 | Fixed - bounded 30-second category label cache |
+| [AUD-08](#aud-08) | Support chronological financial admin browsing | opt | **4** | 3 | Fixed - measured chronological indexes in migration 0036 |
+| [AUD-09](#aud-09) | Use Redis time for PDF cache eviction | perf | **3** | 3 | Fixed - atomic Redis-time pruning and expiry scores |
+| [AUD-10](#aud-10) | Batch order/proof media grant reads and claims | opt | **3** | 3 | Fixed - constant three-statement prepared media flow |
+| [AUD-11](#aud-11) | Consider a small public catalog cache | opt | **2** | 2 | Fixed - bounded five-minute catalog cache; committed invalidation verified |
+| [AUD-12](#aud-12) | Consider private occasion-page caching | opt | **2** | 2 | Fixed - one-hour private calendars; committed invalidation and deadlock regression verified |
+| [AUD-13](#aud-13) | Consider short-lived private order-summary caching | opt | **2** | 2 | Fixed - private 30-second order lists; committed participant/rating invalidation verified |
 
 <a id="detailed-task-records"></a>
 
@@ -849,6 +1214,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-01-task-record"></a>
 
+<a id="aud-01"></a>
 #### AUD-01 task record
 
 **Serialize courier verification resubmission**
@@ -870,6 +1236,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-02-task-record"></a>
 
+<a id="aud-02"></a>
 #### AUD-02 task record
 
 **Use a forward migration for local reward enums**
@@ -891,6 +1258,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-03-task-record"></a>
 
+<a id="aud-03"></a>
 #### AUD-03 task record
 
 **Fully decode order request and delivery images**
@@ -912,6 +1280,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-04-task-record"></a>
 
+<a id="aud-04"></a>
 #### AUD-04 task record
 
 **Release invoice PDF read connections before rendering**
@@ -933,6 +1302,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-05-task-record"></a>
 
+<a id="aud-05"></a>
 #### AUD-05 task record
 
 **Batch due-reminder inbox inserts**
@@ -954,6 +1324,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-06-task-record"></a>
 
+<a id="aud-06"></a>
 #### AUD-06 task record
 
 **Bound retained database export downloads**
@@ -975,6 +1346,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-07-task-record"></a>
 
+<a id="aud-07"></a>
 #### AUD-07 task record
 
 **Cache audit dropdown catalogs safely**
@@ -996,6 +1368,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-08-task-record"></a>
 
+<a id="aud-08"></a>
 #### AUD-08 task record
 
 **Support chronological financial admin browsing**
@@ -1017,6 +1390,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-09-task-record"></a>
 
+<a id="aud-09"></a>
 #### AUD-09 task record
 
 **Use Redis time for PDF cache eviction**
@@ -1038,6 +1412,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-10-task-record"></a>
 
+<a id="aud-10"></a>
 #### AUD-10 task record
 
 **Batch order/proof media grant reads and claims**
@@ -1059,6 +1434,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-11-task-record"></a>
 
+<a id="aud-11"></a>
 #### AUD-11 task record
 
 **Consider a small public catalog cache**
@@ -1080,6 +1456,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-12-task-record"></a>
 
+<a id="aud-12"></a>
 #### AUD-12 task record
 
 **Consider private occasion-page caching**
@@ -1101,6 +1478,7 @@ narratives, reproduced evidence, safeguards and verification limits follow these
 
 <a id="aud-13-task-record"></a>
 
+<a id="aud-13"></a>
 #### AUD-13 task record
 
 **Consider short-lived private order-summary caching**

@@ -9,12 +9,13 @@ import uuid
 import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
+from app.core.exceptions import DomainError
 from app.core.jwt import create_access_token
 from app.core.ratelimit import RateLimiter
 from app.core.redis import build_redis
 from app.main import create_app
 from app.models import User
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from tests.conftest import make_test_settings
 
@@ -258,3 +259,46 @@ async def test_readiness_probe_is_not_throttled() -> None:
     finally:
         await app.state.redis.aclose()
         await app.state.engine.dispose()
+
+
+async def test_database_command_deadline_rolls_back_and_returns_connection() -> None:
+    settings = _settings(DB_COMMAND_TIMEOUT_SECONDS=0.2, DB_POOL_SIZE=1, DB_MAX_OVERFLOW=0)
+    await _skip_unless_db(settings)
+    engine = build_engine(settings)
+    try:
+        with pytest.raises(DomainError) as caught:
+            async with engine.begin() as connection:
+                await connection.execute(text("SELECT pg_sleep(1)"))
+        assert caught.value.code == "DATABASE_TIMEOUT"
+        async with engine.connect() as connection:
+            assert await connection.scalar(text("SELECT 1")) == 1
+    finally:
+        await engine.dispose()
+
+
+async def test_database_lock_deadline_is_transaction_local() -> None:
+    settings = _settings(DB_LOCK_TIMEOUT_MS=150, DB_COMMAND_TIMEOUT_SECONDS=3, DB_POOL_SIZE=1)
+    await _skip_unless_db(settings)
+    locker = build_engine(_settings())
+    engine = build_engine(settings)
+    lock = text("SELECT pg_advisory_xact_lock(:key)")
+    params = {"key": uuid.uuid4().int % (2**63)}
+    try:
+        async with locker.begin() as holding:
+            await holding.execute(lock, params)
+            async with engine.connect() as waiting:
+                driver = (await waiting.get_raw_connection()).driver_connection
+                original = await driver.fetchval("SHOW lock_timeout")
+                with pytest.raises(DomainError) as caught:
+                    async with waiting.begin():
+                        await waiting.execute(text("SET TRANSACTION READ ONLY"))
+                        assert await waiting.scalar(text("SHOW lock_timeout")) == "150ms"
+                        async with asyncio.timeout(1.5):
+                            await waiting.execute(lock, params)
+                assert caught.value.code == "DATABASE_TIMEOUT"
+                assert await driver.fetchval("SHOW lock_timeout") == original
+                async with waiting.begin():
+                    assert await waiting.scalar(text("SELECT 1")) == 1
+    finally:
+        await engine.dispose()
+        await locker.dispose()

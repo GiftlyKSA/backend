@@ -94,6 +94,29 @@ def auth_service(session):
     )
 
 
+async def test_public_auth_denies_admin_otp_refresh_and_existing_access(auth_database):
+    factory, user_id, refresh = auth_database
+    async with factory() as session:
+        user = await session.get(User, user_id)
+        assert user is not None
+        user.role = UserRole.ADMIN
+        await session.commit()
+        service = auth_service(session)
+        service._otp.verify_otp.return_value = True
+        with pytest.raises(UnauthorizedError, match="dashboard"):
+            await service.verify_otp(user.phone, "12345")
+        with pytest.raises(UnauthorizedError, match="Invalid refresh token"):
+            await service.refresh(refresh)
+        token, _, _ = create_access_token(settings(), user_id=user_id, role="ADMIN")
+        claims = decode_access_token(settings(), token)
+        with pytest.raises(UnauthorizedError, match="no longer valid"):
+            await validate_access_claims(
+                claims,
+                redis=AsyncMock(get=AsyncMock(return_value=None)),
+                users=UserRepository(session),
+            )
+
+
 async def test_concurrent_admin_identity_edits_do_not_invert_session_user_locks(auth_database):
     factory, user_id, _ = auth_database
     cookies = [uuid4().hex, uuid4().hex]

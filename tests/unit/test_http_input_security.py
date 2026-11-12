@@ -4,12 +4,14 @@ from collections import Counter
 from importlib import import_module
 from pkgutil import iter_modules
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
 from app import main, schemas
 from app.admin.router import _TEMPLATES
 from app.admin.table_router import _TEMPLATES as TABLE_TEMPLATES
+from app.core import deps
 from app.core.exceptions import RateLimitedError
 from app.core.jwt import create_access_token
 from app.core.middleware import register_exception_handlers
@@ -18,6 +20,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel, ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from tests.conftest import make_test_settings
 
@@ -60,7 +63,7 @@ async def test_http_policy_enforces_identity_specific_limit(authenticated):
         assert blocked.json()["error"]["code"] == "RATE_LIMITED"
         assert blocked.json()["error"]["scope"] == "http"
         assert (await client.get("/api/health")).status_code == 404
-        assert (await client.options("/api/example")).status_code == 405
+        assert (await client.options("/api/example", headers=headers)).status_code == 429
     assert list(redis.windows.values()) == [60]
 
 
@@ -73,6 +76,54 @@ async def test_invalid_bearer_token_uses_anonymous_policy():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.get("/api/example", headers={"Authorization": "Bearer invalid"})
     assert redis.windows == {"ratelimit:http:60:ip:127.0.0.1": 60}
+
+
+@pytest.mark.parametrize(
+    ("peer", "identity"),
+    [("192.0.2.10", "198.51.100.7"), ("192.0.2.20", "192.0.2.20")],
+)
+async def test_anonymous_quota_uses_only_a_trusted_proxy_client_address(peer, identity):
+    app = FastAPI()
+    redis = CounterRedis()
+    app.state.redis = redis
+    main._install_middleware(app, make_test_settings(RATE_LIMIT_ENABLED=True))
+    proxy = ProxyHeadersMiddleware(app, trusted_hosts=["192.0.2.10"])
+    transport = ASGITransport(app=proxy, client=(peer, 12345))
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.get("/api/example", headers={"X-Forwarded-For": "198.51.100.7"})
+
+    assert redis.counts == {f"ratelimit:http:60:ip:{identity}": 1}
+
+
+async def test_throttle_reuses_only_same_request_signature_and_still_checks_access(monkeypatch):
+    settings = make_test_settings(RATE_LIMIT_ENABLED=True)
+    app = FastAPI()
+    app.state.settings = settings
+    app.state.redis = CounterRedis()
+    main._install_middleware(app, settings)
+    decode = Mock(wraps=deps.decode_access_token)
+    validate = AsyncMock()
+    monkeypatch.setattr(deps, "decode_access_token", decode)
+    monkeypatch.setattr(main, "decode_access_token", decode, raising=False)
+    monkeypatch.setattr(deps, "validate_access_claims", validate)
+    monkeypatch.setattr(deps, "set_audit_actor", AsyncMock())
+    user_id = uuid4()
+
+    @app.get("/api/example")
+    async def example(request: main.Request) -> dict[str, str]:
+        actor = await deps.require_auth(request, db=AsyncMock())
+        return {"id": str(actor.id)}
+
+    token, _, _ = create_access_token(settings, user_id=user_id, role="CUSTOMER")
+    headers = {"Authorization": f"Bearer {token}"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for _ in range(2):
+            assert (await client.get("/api/example", headers=headers)).json() == {
+                "id": str(user_id)
+            }
+    assert decode.call_count == 2
+    assert validate.await_count == 2
 
 
 @pytest.mark.parametrize("path", ["/v1/admin/admin", "/v1/admin/admin/tables"])

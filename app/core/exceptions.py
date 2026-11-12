@@ -28,6 +28,14 @@ class DomainError(Exception):
             self.message = message
 
 
+class DatabaseTimeoutError(DomainError):
+    """A database operation exceeded its execution budget."""
+
+    code = "DATABASE_TIMEOUT"
+    message = "The database did not respond in time."
+    status_code = 503
+
+
 class StorageUnavailableError(DomainError):
     """Private storage is unconfigured or temporarily unreachable."""
 

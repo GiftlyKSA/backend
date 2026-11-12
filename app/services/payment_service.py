@@ -9,6 +9,7 @@ payment-link ID, the intent's own status check, and the ledger's idempotency key
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import uuid
@@ -18,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Environment, Settings
@@ -27,11 +29,12 @@ from app.core.exceptions import (
     InvalidWebhookSignatureError,
     NotFoundError,
     PaymentAmountMismatchError,
+    PaymentProviderUnavailableError,
     PaymentsDisabledError,
     PaymentSessionPendingError,
     ValidationDomainError,
 )
-from app.core.locks import redis_lock
+from app.core.locks import LockNotAcquiredError, redis_lock
 from app.core.money import ZERO, parse_money, quantize_money
 from app.integrations.payments.base import (
     PaymentCheckout,
@@ -66,6 +69,7 @@ from app.services.payment_reservation_service import PaymentReservationService
 from app.services.promo_service import PromoService
 
 _WEBHOOK_LOCK_TTL = 15
+_DHAMEN_VERIFY_TIMEOUT_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -601,8 +605,17 @@ class PaymentService:
         self._require_recovery_available()
         if self._gateway.provider != "DHAMEN":
             raise PaymentsDisabledError()
-        notifications = self._gateway.parse_notifications(raw_body)
-        verified = await self._verify_dhamen_payments(notifications)
+        notifications = tuple(
+            item for item in self._gateway.parse_notifications(raw_body) if item.should_reconcile
+        )
+        if not notifications:
+            return DhamenWebhookAck(response_id=str(uuid.uuid4()))
+        try:
+            async with asyncio.timeout(_DHAMEN_VERIFY_TIMEOUT_SECONDS):
+                async with redis_lock(self._redis, "lock:webhook:dhamen", ttl_seconds=30):
+                    verified = await self._verify_dhamen_payments(notifications)
+        except (TimeoutError, LockNotAcquiredError, RedisError) as exc:
+            raise PaymentProviderUnavailableError() from exc
         await self._payments.resume_actor()
         locked = await self._payments.lock_session_batch([intent.id for intent, _ in verified])
         await self._quarantine_late_dhamen_payments(verified, locked)
@@ -614,7 +627,6 @@ class PaymentService:
             await self._hosted.apply_locked_status(locked[intent.id], status)
         raw_hash = hashlib.sha256(raw_body).hexdigest()
         for notification in notifications:
-            await self._payments.resume_actor()
             await self._payments.insert_notification_receipt_if_new(
                 notification_id=notification.notification_id,
                 batch_id=notification.batch_id,
@@ -624,7 +636,7 @@ class PaymentService:
                 else None,
                 transaction_id=None,
                 raw_hash=raw_hash,
-                processing_outcome="RECONCILED" if notification.should_reconcile else "IGNORED",
+                processing_outcome="RECONCILED",
             )
         return DhamenWebhookAck(response_id=str(uuid.uuid4()))
 
@@ -662,22 +674,31 @@ class PaymentService:
                 for reference in notification.references
             }
         )
-        verified = []
+        ids = []
         for reference in references:
             try:
-                intent_id = uuid.UUID(reference)
+                ids.append(uuid.UUID(reference))
             except ValueError as exc:
                 raise ValidationDomainError("Unknown Dhamen payment reference.") from exc
-            intent = await self._payments.get_intent(intent_id)
+        existing = await self._payments.get_dhamen_intents(ids)
+        intents = []
+        checked_at = self._now()
+        for reference, intent_id in zip(references, ids, strict=True):
+            intent = existing.get(intent_id)
             if (
                 intent is None
                 or intent.checkout_provider != "DHAMEN"
                 or intent.gateway_reference != reference
             ):
                 raise NotFoundError("Unknown Dhamen payment reference.")
-            status = await self._hosted.verify_status(intent)
-            verified.append((intent, status))
-        return verified
+            if intent.status is not PaymentIntentStatus.PAID:
+                intent.checkout_checked_at = checked_at
+            intents.append(intent)
+        await self._payments.checkpoint()
+        return [
+            (intent, await self._hosted.verify_status(intent, record_attempt=False))
+            for intent in intents
+        ]
 
     async def _settle_locked(self, event: WebhookEvent) -> WebhookResult:
         candidate = await self._payments.get_intent_by_payment_link(event.payment_link_id)

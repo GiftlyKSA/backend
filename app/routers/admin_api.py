@@ -1,23 +1,19 @@
-"""Admin JSON actions that move money.
-
-Distinct from the HTML admin dashboard (session-cookie auth, read-only for money):
-these are JWT-authenticated actions requiring the ADMIN role. Dispute resolution and
-withdrawal settlement live with ledger services and are guarded here by role.
-"""
+"""Financial actions authorized by the dashboard session and its CSRF token."""
 
 from __future__ import annotations
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import Actor, get_db, get_settings, require_role
-from app.core.exceptions import ValidationDomainError
+from app.admin.deps import AdminContext, AdminRedirect, get_db, require_admin, verify_csrf
+from app.core.deps import get_settings
+from app.core.exceptions import UnauthorizedError, ValidationDomainError
 from app.core.money import money_str, parse_money
 from app.models import Withdrawal
-from app.models.enums import DisputeStatus, UserRole
+from app.models.enums import DisputeStatus
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.dispute_repository import DisputeRepository
@@ -35,10 +31,23 @@ from app.services.media_service import MediaService
 from app.services.money_service import MoneyService
 from app.services.withdrawal_service import WithdrawalService
 
-router = APIRouter(prefix="/api/admin", tags=["admin-api"])
+router = APIRouter(prefix="/v1/admin/admin/actions", include_in_schema=False)
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
-_Admin = require_role(UserRole.ADMIN)
+
+
+async def _action_admin(
+    request: Request, db: DbDep, csrf: Annotated[str, Header(alias="X-CSRF-Token")] = ""
+) -> AdminContext:
+    try:
+        context = await require_admin(request, db)
+    except AdminRedirect as exc:
+        raise UnauthorizedError("Sign in through the administrator dashboard.") from exc
+    verify_csrf(context, csrf, get_settings(request))
+    return context
+
+
+AdminDep = Annotated[AdminContext, Depends(_action_admin)]
 
 
 def _fulfillment(request: Request, db: AsyncSession) -> FulfillmentService:
@@ -85,7 +94,7 @@ async def resolve_dispute(
     db: DbDep,
     dispute_id: uuid.UUID,
     body: ResolveDisputeRequest,
-    admin: Annotated[Actor, Depends(_Admin)],
+    admin: AdminDep,
 ) -> DisputeResponse:
     """Resolve a dispute, moving escrow accordingly (ADMIN only)."""
     try:
@@ -97,7 +106,7 @@ async def resolve_dispute(
 
     dispute = await _fulfillment(request, db).resolve_dispute(
         dispute_id=dispute_id,
-        admin_id=admin.id,
+        admin_id=admin.admin.id,
         outcome=outcome,
         note=body.note,
         courier_amount=parse_money(body.courier_amount) if body.courier_amount else None,
@@ -116,12 +125,12 @@ async def approve_withdrawal(
     request: Request,
     db: DbDep,
     withdrawal_id: uuid.UUID,
-    admin: Annotated[Actor, Depends(_Admin)],
+    admin: AdminDep,
 ) -> WithdrawalResponse:
     """Approve a requested withdrawal while retaining its funds hold."""
     row = await _withdrawals(request, db).approve(
         withdrawal_id=withdrawal_id,
-        admin_id=admin.id,
+        admin_id=admin.admin.id,
         ip=request.client.host if request.client else None,
     )
     return _withdrawal_response(row)
@@ -133,12 +142,12 @@ async def reject_withdrawal(
     db: DbDep,
     withdrawal_id: uuid.UUID,
     body: RejectWithdrawalRequest,
-    admin: Annotated[Actor, Depends(_Admin)],
+    admin: AdminDep,
 ) -> WithdrawalResponse:
     """Reject a requested or approved withdrawal and release its funds."""
     row = await _withdrawals(request, db).reject(
         withdrawal_id=withdrawal_id,
-        admin_id=admin.id,
+        admin_id=admin.admin.id,
         reason=body.reason,
         ip=request.client.host if request.client else None,
     )
@@ -150,12 +159,12 @@ async def mark_withdrawal_paid(
     request: Request,
     db: DbDep,
     withdrawal_id: uuid.UUID,
-    admin: Annotated[Actor, Depends(_Admin)],
+    admin: AdminDep,
 ) -> WithdrawalResponse:
     """Settle an approved external payout through the append-only ledger."""
     row = await _withdrawals(request, db).mark_paid(
         withdrawal_id=withdrawal_id,
-        admin_id=admin.id,
+        admin_id=admin.admin.id,
         ip=request.client.host if request.client else None,
     )
     return _withdrawal_response(row)

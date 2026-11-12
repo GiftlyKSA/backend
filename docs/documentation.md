@@ -370,7 +370,7 @@ required; failure to provide it prevents startup.
 | Group | Main controls |
 | --- | --- |
 | Process/data | ENVIRONMENT, DEBUG, LOG_LEVEL, DATABASE_URL, REDIS_URL. |
-| Pools/timeouts | DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_TIMEOUT_SECONDS, INTEGRATION_HTTP_TIMEOUT_SECONDS. |
+| Pools/timeouts | DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_TIMEOUT_SECONDS, DB_COMMAND_TIMEOUT_SECONDS, DB_LOCK_TIMEOUT_MS, INTEGRATION_HTTP_TIMEOUT_SECONDS. |
 | Authentication | JWT_*, OTP_*, ADMIN_* and REFRESH_TOKEN_RETENTION_DAYS. |
 | Encryption | FIELD_ENCRYPTION_KEYS version map and FIELD_ENCRYPTION_KEY_VERSION. |
 | Private storage | S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY. |
@@ -378,6 +378,15 @@ required; failure to provide it prevents startup.
 | Boundaries | CORS_ALLOWED_ORIGINS, RATE_LIMIT_*, MAX_REQUEST_BODY_BYTES, WS_*, CHAT_*. |
 | Business rules | Service fee, commission, invoice/item, topup, withdrawal and expiry controls. |
 | Server deployment | WEB_CONCURRENCY, GUNICORN_TIMEOUT, FORWARDED_ALLOW_IPS. |
+
+`DB_COMMAND_TIMEOUT_SECONDS` defaults to 30 seconds per asyncpg command. It is
+independent of pool checkout time and whole-transaction duration.
+`DB_LOCK_TIMEOUT_MS` optionally limits each PostgreSQL lock acquisition in an
+application transaction. It uses `SET LOCAL`, so the setting resets at transaction
+end. The default `0` uses the database's policy and skips the extra SQL command.
+When enabling it, choose a limit below the command timeout and test normal
+contention in the target workload. Removing the setting restores the default.
+Migrations use a separate engine. [PostgreSQL lock timeout](https://www.postgresql.org/docs/16/runtime-config-client.html#GUC-LOCK-TIMEOUT)
 
 Pool defaults are 5 persistent + 10 overflow per process, with a 30-second acquisition
 timeout. Three API workers can therefore consume 45 connections before workers, replicas

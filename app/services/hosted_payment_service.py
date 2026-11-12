@@ -111,13 +111,16 @@ class HostedPaymentService:
                 await self._payments.checkpoint()
             raise
 
-    async def verify_status(self, intent: PaymentIntent) -> PaymentStatus | None:
+    async def verify_status(
+        self, intent: PaymentIntent, *, record_attempt: bool = True
+    ) -> PaymentStatus | None:
         """Query the provider before acquiring any settlement locks."""
         if intent.status is PaymentIntentStatus.PAID:
             return None
         context = self.context(intent)
-        intent.checkout_checked_at = datetime.now(UTC)
-        await self._payments.checkpoint()
+        if record_attempt:
+            intent.checkout_checked_at = datetime.now(UTC)
+            await self._payments.checkpoint()
         return await self._gateway.get_payment_status(context)
 
     async def apply_status(

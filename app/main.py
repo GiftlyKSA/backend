@@ -8,6 +8,7 @@ unrestricted only in development; dev-only routes are registered only in develop
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -19,7 +20,8 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import Settings, WorkerSettings, get_settings
 from app.core.db import build_engine, build_session_factory
-from app.core.jwt import JwtError, decode_access_token
+from app.core.deps import verified_access_claims
+from app.core.jwt import JwtError
 from app.core.logging import configure_logging
 from app.core.middleware import (
     BodySizeMiddleware,
@@ -55,21 +57,23 @@ async def _close_shared_resources(app: FastAPI) -> None:
     """Close application-level clients and shared connection pools."""
     clients = app.state.clients
 
-    for client in (
-        clients.gateway,
-        clients.email,
-        clients.sms,
-        clients.push,
-        clients.storage,
+    for name, close in (
+        ("gateway", getattr(clients.gateway, "aclose", None)),
+        ("email", getattr(clients.email, "aclose", None)),
+        ("sms", getattr(clients.sms, "aclose", None)),
+        ("push", getattr(clients.push, "aclose", None)),
+        ("storage", getattr(clients.storage, "aclose", None)),
+        ("subscription_redis", app.state.subscription_redis.aclose),
+        ("redis", app.state.redis.aclose),
+        ("database", app.state.engine.dispose),
     ):
-        aclose = getattr(client, "aclose", None)
-
-        if aclose is not None:
-            await aclose()
-
-    await app.state.subscription_redis.aclose()
-    await app.state.redis.aclose()
-    await app.state.engine.dispose()
+        if close is None:
+            continue
+        try:
+            async with asyncio.timeout(2):
+                await close()
+        except Exception as exc:  # noqa: BLE001 - independent resources still need cleanup.
+            logger.warning("Could not close %s (%s).", name, type(exc).__name__)
 
 
 @asynccontextmanager
@@ -149,7 +153,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Import routers before FastAPI begins its lifespan.
     from app.routers import (
         account_changes,
-        admin_api,
         auth,
         chat,
         cities,
@@ -202,7 +205,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.include_router(webhooks.router)
 
     app.include_router(ratings.router)
-    app.include_router(admin_api.router)
     app.include_router(chat.router)
     app.include_router(devices.router)
 
@@ -227,7 +229,7 @@ def _client_identity(request: Request, settings: Settings) -> str:
         token = header[len("Bearer ") :].strip()
 
         try:
-            claims = decode_access_token(settings, token)
+            claims = verified_access_claims(request, settings, token)
 
         except JwtError:
             pass
@@ -332,8 +334,7 @@ def _install_request_guards(
         path = request.url.path
         if (
             not settings.RATE_LIMIT_ENABLED
-            or request.method == "OPTIONS"
-            or path.startswith("/api/health")
+            or (request.method == "GET" and path in {"/api/health", "/api/health/ready"})
             or path == "/v1/admin/admin"
             or path.startswith("/v1/admin/admin/")
             or path == "/api/admin"
@@ -452,6 +453,7 @@ def _register_admin(app: FastAPI) -> None:
 
     from app.admin.deps import AdminRedirect
     from app.admin.router import router as admin_router
+    from app.routers.admin_api import router as admin_actions_router
 
     @app.exception_handler(AdminRedirect)
     async def _handle_admin_redirect(
@@ -464,6 +466,7 @@ def _register_admin(app: FastAPI) -> None:
         )
 
     app.include_router(admin_router)
+    app.include_router(admin_actions_router)
 
     static_dir = Path(__file__).parent / "admin" / "static"
 

@@ -7,11 +7,13 @@ the domain error envelope and never leaks internals to the client.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import traceback
 import uuid
 from contextvars import ContextVar
+from itertools import count
 from pathlib import Path
 from time import perf_counter
 
@@ -26,6 +28,8 @@ from app.core.query_metrics import begin_query_metrics, end_query_metrics
 _request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 _logger = logging.getLogger("app.request")
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
+_request_samples = count()
+_REQUEST_SAMPLE_EVERY = 256
 
 
 def current_request_id() -> str:
@@ -51,12 +55,12 @@ class RequestIdMiddleware:
         token = _request_id_ctx.set(request_id)
         metrics, metrics_token = begin_query_metrics()
         started = perf_counter()
-        response_started = False
+        status: int | None = None
 
         async def stamp(message: Message) -> None:
-            nonlocal response_started
+            nonlocal status
             if message["type"] == "http.response.start":
-                response_started = True
+                status = message["status"]
                 MutableHeaders(scope=message)["X-Request-ID"] = request_id
             await send(message)
 
@@ -64,21 +68,20 @@ class RequestIdMiddleware:
             try:
                 await self.app(scope, receive, stamp)
             except Exception as exc:
-                if response_started:
+                if status is not None:
                     raise
                 response = unexpected_error_response(request_id, exc)
                 await response(scope, receive, stamp)
         finally:
             elapsed_ms = (perf_counter() - started) * 1000
-            if elapsed_ms >= 500:
+            if next(_request_samples) % _REQUEST_SAMPLE_EVERY == 0:
                 route = scope.get("route")
-                _logger.warning(
-                    "Slow request completed; inspect database time and dependency waits.",
+                _logger.info(
+                    "request_timing",
                     extra={
-                        "request_id": request_id,
                         "extra_fields": {
                             "route": str(getattr(route, "path", "unmatched")),
-                            "method": scope["method"],
+                            "status": status,
                             "elapsed_ms": round(elapsed_ms, 2),
                             "sql_count": metrics.count,
                             "sql_ms": round(metrics.elapsed_seconds * 1000, 2),
@@ -92,19 +95,42 @@ class RequestIdMiddleware:
 class BodySizeMiddleware:
     """Bound actual HTTP bytes before parsers, dependencies, or writes run."""
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int,
+        idle_seconds: float = 10,
+        total_seconds: float = 30,
+    ) -> None:
         """Wrap an application with a bounded request body buffer."""
         self.app = app
         self.max_bytes = max_bytes
+        self.idle_seconds = idle_seconds
+        self.total_seconds = total_seconds
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Read a bounded body and replay it, preserving non-HTTP traffic."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        clock = asyncio.get_running_loop().time
+        deadline = clock() + self.total_seconds
         body = bytearray()
         while True:
-            message = await receive()
+            try:
+                now = clock()
+                if now >= deadline:
+                    raise TimeoutError
+                async with asyncio.timeout_at(min(deadline, now + self.idle_seconds)):
+                    message = await receive()
+            except TimeoutError:
+                body.clear()
+                response = error_response(
+                    408, "REQUEST_BODY_TIMEOUT", "The request body was not received in time."
+                )
+                await response(scope, receive, send)
+                return
             if message["type"] == "http.disconnect":
                 return
             chunk = message.get("body", b"")

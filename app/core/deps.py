@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
+from time import time
 from typing import Any
 
 from fastapi import Depends, Request
@@ -21,7 +22,7 @@ from app.core.audit_context import mark_request_transaction, set_audit_actor
 from app.core.config import Settings
 from app.core.db import emit_committed_audit_events
 from app.core.exceptions import ForbiddenError, UnauthorizedError
-from app.core.jwt import JwtError, decode_access_token
+from app.core.jwt import AccessClaims, JwtError, decode_access_token
 from app.core.worker_dispatch import dispatch_worker_wakeups
 from app.models.enums import UserRole
 from app.repositories.user_repository import UserRepository
@@ -47,6 +48,16 @@ def get_redis(request: Request) -> Redis:
     """Return the shared Redis client from application state."""
     redis: Redis = request.app.state.redis
     return redis
+
+
+def verified_access_claims(request: Request, settings: Settings, token: str) -> AccessClaims:
+    """Share signature verification for identical credentials within one HTTP request."""
+    cached: tuple[str, AccessClaims] | None = getattr(request.state, "_access_claims", None)
+    if cached is not None and cached[0] == token and cached[1].exp > time():
+        return cached[1]
+    claims = decode_access_token(settings, token)
+    request.state._access_claims = (token, claims)
+    return claims
 
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
@@ -87,7 +98,7 @@ async def require_auth(request: Request, db: AsyncSession = Depends(get_db)) -> 
     token = header[len("Bearer ") :].strip()
     settings = get_settings(request)
     try:
-        claims = decode_access_token(settings, token)
+        claims = verified_access_claims(request, settings, token)
     except JwtError as exc:
         raise UnauthorizedError("Invalid or expired token.") from exc
 

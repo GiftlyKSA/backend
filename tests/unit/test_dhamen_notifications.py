@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from decimal import Decimal
@@ -34,6 +35,7 @@ def service() -> PaymentService:
         return {id: await svc._payments.get_intent(id) for id in ids}
 
     svc._payments.lock_session_batch.side_effect = lock_batch
+    svc._payments.get_dhamen_intents.side_effect = lock_batch
     return svc
 
 
@@ -72,7 +74,7 @@ async def test_notification_only_reconciles_existing_provider_reference_not_payl
     svc._hosted.verify_status.return_value = status
     result = await svc.handle_dhamen_notifications(raw_body=body(str(reference)))
     assert result.status == "SUCCESS"
-    svc._hosted.verify_status.assert_awaited_once_with(intent)
+    svc._hosted.verify_status.assert_awaited_once_with(intent, record_attempt=False)
     svc._hosted.apply_locked_status.assert_awaited_once_with(intent, status)
     svc._money.fund_escrow_for_invoice.assert_not_called()
 
@@ -84,7 +86,33 @@ async def test_refund_notification_never_marks_invoice_paid() -> None:
         raw_body=body(str(uuid.uuid4()), "Refund_Payment_Notification")
     )
     assert result.status == "SUCCESS"
-    svc._hosted.reconcile.assert_not_called()
+    svc._hosted.verify_status.assert_not_awaited()
+    svc._payments.get_dhamen_intents.assert_not_awaited()
+    svc._payments.insert_notification_receipt_if_new.assert_not_awaited()
+    svc._payments.resume_actor.assert_not_awaited()
+
+
+async def test_slow_notification_verification_never_starts_settlement(monkeypatch):
+    svc = service()
+    reference = uuid.uuid4()
+    svc._payments.get_intent.return_value = SimpleNamespace(
+        id=reference,
+        status=PaymentIntentStatus.NEW,
+        checkout_provider="DHAMEN",
+        gateway_reference=str(reference),
+    )
+
+    async def wait(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    svc._hosted.verify_status = AsyncMock(side_effect=wait)
+    monkeypatch.setattr("app.services.payment_service._DHAMEN_VERIFY_TIMEOUT_SECONDS", 0.01)
+    with pytest.raises(DomainError) as caught:
+        async with asyncio.timeout(1):
+            await svc.handle_dhamen_notifications(raw_body=body(str(reference)))
+    assert caught.value.code == "PAYMENT_PROVIDER_UNAVAILABLE"
+    svc._payments.lock_session_batch.assert_not_awaited()
+    svc._payments.insert_notification_receipt_if_new.assert_not_awaited()
 
 
 async def test_batch_verifies_all_payments_before_any_settlement() -> None:
@@ -104,7 +132,8 @@ async def test_batch_verifies_all_payments_before_any_settlement() -> None:
     svc._hosted = AsyncMock()
     events: list[str] = []
 
-    async def verify(intent: SimpleNamespace) -> PaymentStatus:
+    async def verify(intent: SimpleNamespace, *, record_attempt: bool) -> PaymentStatus:
+        assert not record_attempt
         events.append("verify")
         return PaymentStatus(PaymentState.PAID, Decimal("100.00"))
 
@@ -119,6 +148,8 @@ async def test_batch_verifies_all_payments_before_any_settlement() -> None:
     ]
     await svc.handle_dhamen_notifications(raw_body=json.dumps(payload).encode())
     assert events == ["verify", "verify", "apply", "apply"]
+    svc._payments.get_dhamen_intents.assert_awaited_once()
+    svc._payments.checkpoint.assert_awaited_once()
 
 
 async def test_failed_batch_verification_never_starts_settlement() -> None:

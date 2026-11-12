@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = Field(default=5, ge=1, le=100)
     DB_MAX_OVERFLOW: int = Field(default=10, ge=0, le=100)
     DB_POOL_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=60, allow_inf_nan=False)
+    DB_COMMAND_TIMEOUT_SECONDS: float = Field(default=30, gt=0, le=120, allow_inf_nan=False)
+    DB_LOCK_TIMEOUT_MS: int = Field(default=0, ge=0, le=60_000)
 
     INTEGRATION_HTTP_TIMEOUT_SECONDS: float = Field(default=10, gt=0, le=15, allow_inf_nan=False)
 

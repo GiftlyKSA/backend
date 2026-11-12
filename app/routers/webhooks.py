@@ -34,8 +34,9 @@ async def dhamen_webhook(request: Request) -> DhamenWebhookAck:
                 settings=get_settings(request),
             )
             result = await service.handle_dhamen_notifications(raw_body=raw_body)
+            if session.in_transaction():
+                request_worker_wakeup(session, WorkerTask.INVOICE_RECEIPTS)
             await session.commit()
-            request_worker_wakeup(session, WorkerTask.INVOICE_RECEIPTS)
             await dispatch_worker_wakeups(session)
             return result
         except Exception:

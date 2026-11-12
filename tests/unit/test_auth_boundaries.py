@@ -200,7 +200,7 @@ async def test_subscription_pool_full_closes_socket_and_releases_lease(monkeypat
 async def test_refresh_replay_revocation_is_committed_before_unauthorized():
     repo, session = AsyncMock(), AsyncMock()
     user_id, family_id = uuid4(), uuid4()
-    repo.lock_refresh_owner.return_value = SimpleNamespace(id=user_id)
+    repo.lock_refresh_owner.return_value = SimpleNamespace(id=user_id, role=UserRole.CUSTOMER)
     repo.get_refresh_token.return_value = SimpleNamespace(
         user_id=user_id,
         revoked_at=None,
@@ -227,7 +227,9 @@ async def test_refresh_replay_revocation_is_committed_before_unauthorized():
 @pytest.mark.parametrize("change", ["expired", "banned", "deleted", "owner"])
 async def test_invalid_refresh_cannot_issue_successor(change):
     repo, session = AsyncMock(), AsyncMock()
-    user = SimpleNamespace(id=uuid4(), status=UserStatus.ACTIVE, deleted_at=None)
+    user = SimpleNamespace(
+        id=uuid4(), role=UserRole.CUSTOMER, status=UserStatus.ACTIVE, deleted_at=None
+    )
     repo.lock_refresh_owner.return_value = user
     row = SimpleNamespace(
         user_id=user.id,
