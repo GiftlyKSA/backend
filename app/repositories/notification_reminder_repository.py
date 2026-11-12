@@ -4,14 +4,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import exists, select, text, update
+from sqlalchemy import exists, select, text, true, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Occasion, User
+from app.models import DeviceToken, Occasion, User
 from app.models.enums import UserRole, UserStatus
 from app.models.notification_models import InboxNotification, OccasionReminder
-from app.repositories.device_token_repository import DeviceTokenRepository
 
 
 @dataclass(frozen=True)
@@ -205,27 +204,39 @@ FROM next_dates n WHERE r.occasion_id=n.occasion_id
 
     async def token_page(self, claim: ReminderClaim) -> list[tuple[UUID, str]] | None:
         """Recheck the current schedule fence and active customer before external delivery."""
-        valid = await self._session.scalar(
-            select(OccasionReminder.occasion_id)
+        now = datetime.now(UTC)
+        tokens = select(DeviceToken.id, DeviceToken.token).where(
+            DeviceToken.user_id == claim.user_id
+        )
+        if claim.cursor_token_id is not None:
+            tokens = tokens.where(DeviceToken.id > claim.cursor_token_id)
+        page = tokens.order_by(DeviceToken.id).limit(500).lateral("reminder_devices")
+        rows = await self._session.execute(
+            select(page.c.id, page.c.token)
+            .select_from(OccasionReminder)
             .join(Occasion, Occasion.id == OccasionReminder.occasion_id)
             .join(User, User.id == Occasion.user_id)
+            .outerjoin(page, true())
             .where(
                 OccasionReminder.occasion_id == claim.occasion_id,
                 OccasionReminder.version == claim.version,
                 OccasionReminder.lease_token == claim.lease_token,
-                OccasionReminder.lease_expires_at > datetime.now(UTC),
+                OccasionReminder.lease_expires_at > now,
+                OccasionReminder.scheduled_at > now - timedelta(days=1),
                 OccasionReminder.enabled.is_(True),
+                Occasion.user_id == claim.user_id,
                 Occasion.reminder_enabled.is_(True),
                 Occasion.reminder_version == claim.version,
+                User.role == UserRole.CUSTOMER,
                 User.status == UserStatus.ACTIVE,
                 User.deleted_at.is_(None),
             )
+            .order_by(page.c.id)
         )
-        if valid is None:
+        devices = rows.all()
+        if not devices:
             return None
-        return await DeviceTokenRepository(self._session).token_page(
-            user_id=claim.user_id, after=claim.cursor_token_id, limit=500
-        )
+        return [(device.id, device.token) for device in devices if device.id is not None]
 
     async def finish(
         self,

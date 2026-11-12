@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from app.integrations.email.base import EmailClient
+from app.integrations.email.base import EmailClient, EmailRecipientSuppressedError
 
 
 class SndrEmailClient(EmailClient):
@@ -68,4 +68,12 @@ class SndrEmailClient(EmailClient):
         response = await self._client.post(
             f"{self._base_url}/v1/send", json=payload, headers=headers
         )
+        if response.status_code == 400:
+            try:
+                result = response.json()
+            except ValueError:
+                result = None
+            error = result.get("error") if isinstance(result, dict) else None
+            if isinstance(error, dict) and error.get("code") == "suppressed":
+                raise EmailRecipientSuppressedError
         response.raise_for_status()

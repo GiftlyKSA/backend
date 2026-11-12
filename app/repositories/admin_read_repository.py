@@ -15,7 +15,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, func, null, select
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -306,46 +306,41 @@ class AdminReadRepository:
         """Keep browser cells compact without changing the underlying read query."""
         return value if len(value) <= limit else f"{value[: limit - 1]}…"
 
-    async def order_counts_by_status(self) -> dict[str, int]:
-        """Return a map of order status -> count."""
-        rows = await self._session.execute(
-            select(Order.status, func.count()).group_by(Order.status)
-        )
-        return {str(status): count for status, count in rows.all()}
-
-    async def daily_order_counts(self, start_date: date, end_date: date) -> dict[date, int]:
-        """Count created orders by UTC day within an inclusive date range."""
+    async def overview_order_counts(
+        self, start_date: date, end_date: date
+    ) -> tuple[dict[str, int], dict[date, int]]:
+        """Read lifetime status totals and inclusive UTC day counts in one statement."""
         utc_day = func.date(func.timezone("UTC", Order.created_at))
-        rows = await self._session.execute(
-            select(utc_day, func.count())
+        statuses = select(Order.status, cast(null(), Date), func.count()).group_by(Order.status)
+        days = (
+            select(null(), utc_day, func.count())
             .where(
                 Order.created_at >= datetime.combine(start_date, time.min, UTC),
                 Order.created_at < datetime.combine(end_date + timedelta(days=1), time.min, UTC),
             )
             .group_by(utc_day)
-            .order_by(utc_day)
         )
-        return {day: count for day, count in rows.all()}
-
-    async def open_dispute_count(self) -> int:
-        """Return the number of open disputes."""
+        rows = (await self._session.execute(statuses.union_all(days))).all()
         return (
-            await self._session.scalar(
-                select(func.count())
-                .select_from(Dispute)
-                .where(Dispute.status == DisputeStatus.OPEN)
-            )
-        ) or 0
+            {str(status): count for status, _day, count in rows if status is not None},
+            {day: count for _status, day, count in rows if day is not None},
+        )
 
-    async def pending_withdrawal_count(self) -> int:
-        """Return the number of withdrawals awaiting processing."""
-        return (
-            await self._session.scalar(
-                select(func.count())
-                .select_from(Withdrawal)
-                .where(Withdrawal.status == WithdrawalStatus.REQUESTED)
-            )
-        ) or 0
+    async def overview_attention_counts(self) -> tuple[int, int]:
+        """Return open disputes and requested withdrawals from one snapshot."""
+        disputes = (
+            select(func.count()).select_from(Dispute).where(Dispute.status == DisputeStatus.OPEN)
+        )
+        withdrawals = (
+            select(func.count())
+            .select_from(Withdrawal)
+            .where(Withdrawal.status == WithdrawalStatus.REQUESTED)
+        )
+        result = await self._session.execute(
+            select(disputes.scalar_subquery(), withdrawals.scalar_subquery())
+        )
+        open_disputes, pending_withdrawals = result.one()
+        return open_disputes, pending_withdrawals
 
     async def system_wallet_balances(self) -> dict[str, Decimal]:
         """Return a map of system wallet type -> balance."""

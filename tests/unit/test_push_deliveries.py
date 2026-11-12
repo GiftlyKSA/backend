@@ -1,9 +1,10 @@
 """Pushes retain independent outcomes, safe hints and bounded shared coordination."""
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 from uuid import uuid4
 
 import httpx
@@ -170,6 +171,8 @@ async def test_worker_commits_claim_before_transport_and_handles_shared_budget(
     target = claim()
     repository = SimpleNamespace(
         retired_count=0,
+        begin_send=AsyncMock(return_value=[replace(target, attempts=target.attempts + 1)]),
+        defer=AsyncMock(),
         finish=AsyncMock(),
     )
     pages = iter(([([], 100)] if retired_first else []) + [([target], 0), ([], 0)])
@@ -183,7 +186,8 @@ async def test_worker_commits_claim_before_transport_and_handles_shared_budget(
 
     async def send(messages):
         assert open_sessions == 0
-        assert commits == 1 + int(retired_first)
+        assert commits == 2 + int(retired_first)
+        repository.begin_send.assert_awaited_once()
         assert messages[0]["data"] == target.event.wire_data()
         assert "message" not in messages[0]["data"]
         return [ExpoOutcome(status="ok", id="ticket")]
@@ -192,10 +196,13 @@ async def test_worker_commits_claim_before_transport_and_handles_shared_budget(
     redis = SimpleNamespace(eval=AsyncMock(return_value=int(allowed)))
     assert await push_delivery_service.deliver_pushes(Session, client, redis) == 1
     assert client.send_messages.await_count == int(allowed)
-    outcomes = repository.finish.await_args.args[1]
-    assert outcomes[0].status == ("ok" if allowed else "error")
-    if not allowed:
-        assert outcomes[0].details["error"] == "RateDeferred"
+    if allowed:
+        repository.defer.assert_not_awaited()
+        assert repository.finish.await_args.args[1][0].status == "ok"
+    else:
+        repository.begin_send.assert_not_awaited()
+        repository.finish.assert_not_awaited()
+        assert repository.defer.await_args.args == ([target], "RateDeferred")
     assert open_sessions == 0
 
 
@@ -215,6 +222,32 @@ async def test_claim_is_batched_and_fences_current_ownership_and_domain_permissi
     assert "occasions.user_id = users.id" in sql
     assert "users.deleted_at IS NULL" in sql
     assert 100 in compiled.params.values()
+
+
+async def test_claim_without_transport_preserves_attempt_count():
+    now = datetime.now(UTC)
+    target = claim()
+    row = SimpleNamespace(
+        id=target.id,
+        payload=target.event.wire_data(),
+        device_id=target.device.device_id,
+        expires_at=target.expires_at,
+        attempts=7,
+        created_at=now,
+    )
+    session = SimpleNamespace(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(
+                all=lambda: [(row, target.device.token, target.device.last_seen_at, True)]
+            )
+        ),
+        flush=AsyncMock(),
+    )
+
+    [leased] = await PushDeliveryRepository(session).claim(now=now)
+
+    assert row.state == "LEASED"
+    assert row.attempts == leased.attempts == 7
 
 
 def test_final_transient_receipt_is_not_polled_again():
@@ -291,7 +324,7 @@ async def test_scheduled_push_job_only_allocates_resources_for_expo(monkeypatch,
 
     with pytest.raises(RuntimeError, match="test drain failure"):
         await push_deliveries.deliver_push_notifications()
-    drain.assert_awaited_once_with(session_factory, client, redis)
+    drain.assert_awaited_once_with(session_factory, client, redis, deadline=ANY)
     pool_settings = engine_builder.call_args.args[0]
     assert (pool_settings.DB_POOL_SIZE, pool_settings.DB_MAX_OVERFLOW) == (1, 0)
     client.aclose.assert_awaited_once()
@@ -324,7 +357,7 @@ async def test_growing_claim_pages_do_not_add_per_device_reads():
     claims = await PushDeliveryRepository(session).claim(now=now)
     assert len(claims) == 50
     assert session.execute.await_count == 1
-    assert all(claim.attempts == 1 for claim in claims)
+    assert all(claim.attempts == 0 for claim in claims)
 
 
 async def test_reminder_expiry_uses_original_occurrence_even_when_enqueued_late():

@@ -1,6 +1,7 @@
 """Read-through cache budgets, isolation and failure behavior."""
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -19,10 +20,10 @@ class MemoryRedis:
     async def getrange(self, key, start, end):
         return self.values.get(key, b"")[start : end + 1]
 
-    async def eval(self, script, count, index, key, value, ttl, maximum):
+    async def eval(self, script, count, index, fifo, key, value, ttl, maximum):
         self.values[key] = value
         self.ttls.append(ttl)
-        return 1
+        return 0
 
 
 def arguments(repository, load, **overrides):
@@ -96,6 +97,27 @@ async def test_cache_outage_loads_sql_and_does_not_log_payload(caplog):
     assert await ResultCache(redis).read(**arguments(repo, load)) == ["private description"]
     assert "private description" not in caplog.text
     load.assert_awaited_once()
+
+
+async def test_cache_samples_bounded_domain_outcomes_without_logging_private_values(
+    monkeypatch, caplog
+):
+    from app.services import result_cache
+
+    monkeypatch.setattr(result_cache, "_SAMPLE_EVERY", 2)
+    caplog.set_level(logging.INFO, logger=result_cache.__name__)
+    cache = ResultCache(MemoryRedis())
+    repo = SimpleNamespace(versions=AsyncMock(return_value=("v",)))
+    values = arguments(repo, AsyncMock(return_value=["private cache payload"]))
+    for _ in range(4):
+        await cache.read(**values)
+
+    samples = [record.extra_fields for record in caplog.records if record.msg == "read_cache"]
+    assert [(sample["domain"], sample["outcome"]) for sample in samples] == [
+        ("catalog", "miss"),
+        ("catalog", "hit"),
+    ]
+    assert "private cache payload" not in caplog.text
 
 
 async def test_changed_version_during_load_is_not_published_and_oversized_result_is_not_stored():

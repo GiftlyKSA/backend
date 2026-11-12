@@ -10,7 +10,6 @@ to the ledger service and are intentionally not performed here.
 from __future__ import annotations
 
 import uuid
-from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -37,7 +36,11 @@ from app.repositories.promo_repository import PromoRepository
 from app.repositories.user_repository import UserRepository
 from app.services.audit_choice_cache import audit_filter_choices
 from app.services.city_service import CityService
-from app.services.invoice_pdf import render_invoice_pdf
+from app.services.invoice_pdf import (
+    InvoicePdfItemSnapshot,
+    InvoicePdfSnapshot,
+    snapshot_invoice_pdf,
+)
 
 
 @dataclass(frozen=True)
@@ -128,11 +131,12 @@ class AdminService:
         """Aggregate the landing-page counters and system balances."""
         today = self._now().date()
         start_date = today - timedelta(days=13)
-        daily_counts = await self._reads.daily_order_counts(start_date, today)
+        order_counts, daily_counts = await self._reads.overview_order_counts(start_date, today)
+        open_disputes, pending_withdrawals = await self._reads.overview_attention_counts()
         return Overview(
-            order_counts=await self._reads.order_counts_by_status(),
-            open_disputes=await self._reads.open_dispute_count(),
-            pending_withdrawals=await self._reads.pending_withdrawal_count(),
+            order_counts=order_counts,
+            open_disputes=open_disputes,
+            pending_withdrawals=pending_withdrawals,
             system_balances=await self._reads.system_wallet_balances(),
             daily_orders=[
                 DailyOrderCount(
@@ -173,13 +177,15 @@ class AdminService:
         """Return an invoice by id."""
         return await self._reads.get_invoice(invoice_id)
 
-    async def get_invoice_pdf(self, invoice_id: uuid.UUID) -> bytes:
-        """Render the stored invoice after dashboard administrator authorization."""
+    async def invoice_pdf_snapshot(
+        self, invoice_id: uuid.UUID
+    ) -> tuple[InvoicePdfSnapshot, tuple[InvoicePdfItemSnapshot, ...]]:
+        """Capture the stored invoice for rendering outside the read transaction."""
         invoice = await self._reads.get_invoice(invoice_id)
         if invoice is None:
             raise NotFoundError("Invoice not found.")
         items = await self._reads.get_invoice_items(invoice_id)
-        return await to_thread(render_invoice_pdf, invoice, items)
+        return snapshot_invoice_pdf(invoice, items)
 
     async def list_promos(self) -> list[object]:
         """Return promos."""

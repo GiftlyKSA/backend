@@ -89,6 +89,7 @@ async def send_pending_order_notifications(
     push: PushClient | None = None,
     factory: async_sessionmaker[AsyncSession] | None = None,
     settings: Settings | None = None,
+    deadline: float | None = None,
 ) -> int:
     """Send at most one bounded recipient page per claimed order."""
     settings = settings or get_worker_settings()
@@ -104,6 +105,10 @@ async def send_pending_order_notifications(
     completed_pages = 0
     try:
         for _ in range(limit):
+            if deadline is not None and (
+                asyncio.get_running_loop().time() + _PUSH_TIMEOUT_SECONDS >= deadline
+            ):
+                break
             async with factory() as session:
                 claims = await OrderNotificationRepository(session).claim_pending(
                     now=datetime.now(UTC), limit=1, lease_seconds=_LEASE_SECONDS

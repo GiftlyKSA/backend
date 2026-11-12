@@ -1,8 +1,14 @@
 """Reminder materialization keeps bounded SQL and existing delivery decisions."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from importlib import import_module
+from uuid import uuid4
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from app.models import DeviceToken
+from app.models.enums import DeviceOs, UserRole, UserStatus
 from app.models.notification_models import InboxNotification, OccasionReminder
 from app.repositories.notification_reminder_repository import NotificationReminderRepository
 from app.repositories.planning_repository import PlanningRepository
@@ -11,6 +17,87 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.test_mobile_notifications import participants
+
+
+@pytest.mark.parametrize("change", ["owner", "role", "status", "disabled", "deleted"])
+async def test_reminder_claim_rechecks_current_recipient(
+    db_session: AsyncSession, change: str
+) -> None:
+    customer, replacement = await participants(db_session)
+    replacement.role = UserRole.CUSTOMER
+    old_token = DeviceToken(user_id=customer.id, token=str(uuid4()), device_os=DeviceOs.IOS)
+    new_token = DeviceToken(user_id=replacement.id, token=str(uuid4()), device_os=DeviceOs.IOS)
+    db_session.add_all([old_token, new_token])
+    now = datetime.now(UTC)
+    scheduled_at = datetime.combine(now.date(), time(6), tzinfo=UTC)
+    if scheduled_at > now:
+        scheduled_at -= timedelta(days=1)
+    occasion = await OccasionService(PlanningRepository(db_session)).create(
+        customer.id,
+        title="Reminder recipient",
+        occasion_date=scheduled_at.date(),
+        reminder_days_before=0,
+        reminder_enabled=True,
+    )
+    repo = NotificationReminderRepository(db_session)
+    assert await repo.materialize_due(now=now) == 1
+    stale = await repo.claim(now=now)
+    assert stale is not None
+    assert await repo.token_page(stale) == [(old_token.id, old_token.token)]
+
+    if change == "owner":
+        occasion.user_id = replacement.id
+    elif change == "role":
+        customer.role = UserRole.COURIER
+    elif change == "status":
+        customer.status = UserStatus.BANNED
+    elif change == "disabled":
+        occasion.reminder_enabled = False
+    else:
+        await db_session.delete(occasion)
+    await db_session.flush()
+    assert await repo.token_page(stale) is None
+
+    if change == "owner":
+        await db_session.refresh(occasion)
+        assert occasion.reminder_version == stale.version + 1
+        await repo.finish(stale, now=now, cursor=None, complete=True)
+        assert await repo.materialize_due(now=now) == 1
+        fresh = await repo.claim(now=now)
+        assert fresh is not None and fresh.user_id == replacement.id
+        assert await repo.token_page(fresh) == [(new_token.id, new_token.token)]
+
+
+async def test_owner_fence_migration_preserves_schedule_on_downgrade(db_session) -> None:
+    migration = import_module("app.migrations.versions.0044_reminder_owner_fence")
+
+    def run(session, action) -> None:
+        with Operations.context(MigrationContext.configure(session.connection())):
+            action()
+
+    customer, replacement = await participants(db_session)
+    replacement.role = UserRole.CUSTOMER
+    occasion = await OccasionService(PlanningRepository(db_session)).create(
+        customer.id,
+        title="Existing schedule",
+        occasion_date=date(2027, 3, 1),
+        reminder_days_before=0,
+        reminder_enabled=True,
+    )
+    version = occasion.reminder_version
+    await db_session.run_sync(run, migration.upgrade)
+    occasion.user_id = replacement.id
+    await db_session.flush()
+    await db_session.refresh(occasion)
+    assert occasion.reminder_version == version + 1
+
+    await db_session.run_sync(run, migration.downgrade)
+    occasion.user_id = customer.id
+    await db_session.flush()
+    await db_session.refresh(occasion)
+    assert occasion.reminder_version == version + 1
+    reminder = await db_session.get(OccasionReminder, occasion.id)
+    assert reminder is not None and reminder.version == version + 1
 
 
 @pytest.mark.parametrize("batch_size", [1, 10, 100])

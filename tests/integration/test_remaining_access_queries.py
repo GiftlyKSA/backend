@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.core.exceptions import NotFoundError
@@ -59,6 +59,107 @@ async def test_cursor_page_has_constant_queries_and_keeps_city_serializer(db_ses
     assert len(statements) == 3
     assert statements[0].startswith("SELECT orders.created_at, orders.id")
     assert sum("FROM cities" in statement for statement in statements) == 1
+
+
+async def test_inbox_keyset_includes_both_participant_roles_and_deduplicates(db_session):
+    delivery_day = await db_session.scalar(select(func.current_date()))
+    actor, other, outsider = [
+        User(phone=f"+96650{uuid4().int % 10_000_000:07d}", role=role)
+        for role in (UserRole.COURIER, UserRole.CUSTOMER, UserRole.CUSTOMER)
+    ]
+    db_session.add_all([actor, other, outsider])
+    await db_session.flush()
+    city = await city_by_name(db_session, "Riyadh")
+    timestamp = datetime(2026, 10, 1, tzinfo=UTC)
+    id_prefix = uuid4().int & ~0xFF
+    participants = [
+        (actor.id, other.id),
+        (other.id, actor.id),
+        (actor.id, actor.id),
+        (actor.id, actor.id),
+        (other.id, outsider.id),
+    ]
+    orders = [
+        Order(customer_id=customer, courier_id=courier, city=city, delivery_date=delivery_day)
+        for customer, courier in participants
+    ]
+    db_session.add_all(orders)
+    await db_session.flush()
+    rows = [
+        Conversation(
+            id=UUID(int=id_prefix + index),
+            order_id=order.id,
+            customer_id=customer,
+            courier_id=courier,
+            last_message_timestamp=timestamp,
+        )
+        for index, (order, (customer, courier)) in enumerate(zip(orders, participants, strict=True))
+    ]
+    db_session.add_all(rows)
+    await db_session.flush()
+
+    repository = ChatRepository(db_session)
+    first = await repository.list_for_user(actor.id, limit=2, before=None)
+    second = await repository.list_for_user(
+        actor.id, limit=2, before=(first[-1].last_message_timestamp, first[-1].id)
+    )
+    assert [row.id for row in first] == [rows[3].id, rows[2].id]
+    assert [row.id for row in second] == [rows[1].id, rows[0].id]
+    assert (
+        await repository.list_for_user(
+            actor.id, limit=2, before=(second[-1].last_message_timestamp, second[-1].id)
+        )
+        == []
+    )
+
+
+async def test_active_order_quota_bounds_count_and_excludes_closed_and_foreign_orders(db_session):
+    delivery_day = await db_session.scalar(select(func.current_date()))
+    city = await city_by_name(db_session, "Riyadh")
+    courier = User(phone=f"+96650{uuid4().int % 10_000_000:07d}", role=UserRole.COURIER)
+    expected_counts = {
+        OrderStatus.NEW: 1,
+        OrderStatus.ASSIGNED: 1,
+        OrderStatus.WAITING_PAYMENT: 1,
+        OrderStatus.IN_PROGRESS: 1,
+        OrderStatus.DELIVERED: 1,
+        OrderStatus.DISPUTED: 1,
+        OrderStatus.COMPLETED: 0,
+        OrderStatus.CANCELLED: 0,
+        OrderStatus.REFUNDED: 0,
+    }
+    owners = {
+        status: User(phone=f"+96650{uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
+        for status in expected_counts
+    }
+    db_session.add_all([courier, *owners.values()])
+    await db_session.flush()
+    orders = [
+        Order(
+            customer_id=owner.id,
+            courier_id=courier.id,
+            city=city,
+            delivery_date=delivery_day,
+            status=status,
+        )
+        for status, owner in owners.items()
+    ]
+    saturated_owner = owners[OrderStatus.CANCELLED]
+    orders.extend(
+        Order(customer_id=saturated_owner.id, city=city, delivery_date=delivery_day)
+        for _ in range(6)
+    )
+    db_session.add_all(orders)
+    await db_session.flush()
+
+    repository = OrderRepository(db_session)
+    for status, owner in owners.items():
+        expected = 5 if status is OrderStatus.CANCELLED else expected_counts[status]
+        assert await repository.count_customer_active(owner.id, limit=5) == expected
+    for order in orders[-2:]:
+        order.status = OrderStatus.CANCELLED
+    await db_session.flush()
+    assert await repository.count_customer_active(saturated_owner.id, limit=5) == 4
 
 
 async def test_chat_and_eligibility_reads_are_fresh_without_hidden_city_queries(db_session):

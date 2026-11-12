@@ -35,4 +35,4 @@ async def list_order_media(
         OrderRepository(db),
         CourierEligibilityService(users=UserRepository(db), couriers=CourierRepository(db)),
         request.app.state.clients.storage,
-    ).list(actor.id, order_id, purpose=purpose, limit=limit, cursor=cursor)
+    ).list(actor.id, order_id, purpose=purpose, limit=limit, cursor=cursor, release_read=db.commit)

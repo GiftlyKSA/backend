@@ -4,6 +4,7 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -15,6 +16,7 @@ from app.repositories.push_delivery_repository import PushDeliveryRepository
 _logger = logging.getLogger(__name__)
 _MAX_BATCHES = 5
 _MAX_SENDS_PER_SECOND = 500
+_ADMISSION_TIMEOUT_SECONDS = 5
 _SEND_TIMEOUT_SECONDS = 20
 _RATE_LUA = """
 local now = redis.call('TIME')
@@ -37,14 +39,39 @@ _COPY = {
 }
 
 
+async def _admission_error(
+    redis: Redis, count: int
+) -> Literal["RateDeferred", "CoordinationUnavailable"] | None:
+    try:
+        async with asyncio.timeout(_ADMISSION_TIMEOUT_SECONDS):
+            allowed = await redis.eval(
+                _RATE_LUA,
+                1,
+                "giftly:expo:send-budget",
+                count,
+                _MAX_SENDS_PER_SECOND,
+                str(uuid.uuid4()),
+            )
+    except RedisError, TimeoutError, ConnectionError:
+        return "CoordinationUnavailable"
+    return None if allowed else "RateDeferred"
+
+
 async def deliver_pushes(
     factory: async_sessionmaker[AsyncSession],
     client: ExpoPushClient,
     redis: Redis,
+    *,
+    deadline: float | None = None,
 ) -> int:
     """Bound each invocation to five batches, without holding a transaction over I/O."""
     processed = 0
     for _ in range(_MAX_BATCHES):
+        if deadline is not None and (
+            asyncio.get_running_loop().time() + _ADMISSION_TIMEOUT_SECONDS + _SEND_TIMEOUT_SECONDS
+            >= deadline
+        ):
+            break
         async with factory() as session:
             repository = PushDeliveryRepository(session)
             claims = await repository.claim(now=datetime.now(UTC))
@@ -54,21 +81,29 @@ async def deliver_pushes(
             if retired:
                 continue
             break
+        deferred = await _admission_error(redis, len(claims))
+        if deferred is not None:
+            async with factory() as session:
+                await PushDeliveryRepository(session).defer(claims, deferred, now=datetime.now(UTC))
+                await session.commit()
+            processed += len(claims)
+            _logger.info("Push batch deferred: targets=%d, reason=%s.", len(claims), deferred)
+            break
+
+        async with factory() as session:
+            send_claims = await PushDeliveryRepository(session).begin_send(
+                claims, now=datetime.now(UTC)
+            )
+            await session.commit()
+        processed += len(claims)
+        if not send_claims:
+            continue
+
         retry_after = 0.0
         try:
             async with asyncio.timeout(_SEND_TIMEOUT_SECONDS):
-                allowed = await redis.eval(
-                    _RATE_LUA,
-                    1,
-                    "giftly:expo:send-budget",
-                    len(claims),
-                    _MAX_SENDS_PER_SECOND,
-                    str(uuid.uuid4()),
-                )
-                if not allowed:
-                    raise ExpoSendError("RateDeferred", retry_after=1)
                 messages: list[dict[str, str | dict[str, str]]] = []
-                for claim in claims:
+                for claim in send_claims:
                     title, body = _COPY[claim.event.event_type]
                     messages.append(
                         {
@@ -82,28 +117,24 @@ async def deliver_pushes(
                 outcomes = await client.send_messages(messages)
         except ExpoSendError as exc:
             retry_after = exc.retry_after
-            outcomes = [ExpoOutcome(status="error", details={"error": exc.code}) for _ in claims]
-        except RedisError:
             outcomes = [
-                ExpoOutcome(status="error", details={"error": "CoordinationUnavailable"})
-                for _ in claims
+                ExpoOutcome(status="error", details={"error": exc.code}) for _ in send_claims
             ]
         except TimeoutError, ConnectionError:
             outcomes = [
                 ExpoOutcome(status="error", details={"error": "ProviderUnavailable"})
-                for _ in claims
+                for _ in send_claims
             ]
         async with factory() as session:
             await PushDeliveryRepository(session).finish(
-                claims, outcomes, now=datetime.now(UTC), retry_after=retry_after
+                send_claims, outcomes, now=datetime.now(UTC), retry_after=retry_after
             )
             await session.commit()
-        processed += len(claims)
         failed = sum(outcome.status == "error" for outcome in outcomes)
         age = max(
             (
                 (datetime.now(UTC) - claim.queued_at).total_seconds()
-                for claim in claims
+                for claim in send_claims
                 if claim.queued_at is not None
             ),
             default=0,
@@ -112,10 +143,10 @@ async def deliver_pushes(
         _logger.info(
             "Push batch processed: targets=%d, provider_errors=%d, invalid_devices=%d, "
             "oldest_age_seconds=%.0f, max_attempt=%d.",
-            len(claims),
+            len(send_claims),
             failed,
             invalid,
             age,
-            max(claim.attempts for claim in claims),
+            max(claim.attempts for claim in send_claims),
         )
     return processed

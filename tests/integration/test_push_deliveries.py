@@ -62,6 +62,7 @@ async def test_partial_acceptance_retries_only_failed_device_and_replay_does_not
     claims = await repo.claim(now=now)
     assert len(claims) == 2
     assert await repo.claim(now=now) == []
+    claims = await repo.begin_send(claims, now=now)
     await repo.finish(
         claims,
         [
@@ -115,6 +116,7 @@ async def test_expired_claim_recovery_and_stale_completion_are_fenced(db_session
     await repo.enqueue([devices[0].token], event, now=now)
     stale = (await repo.claim(now=now))[0]
     fresh = (await repo.claim(now=now + timedelta(seconds=61)))[0]
+    assert await repo.begin_send([stale], now=now + timedelta(seconds=62)) == []
     await repo.finish(
         [stale], [ExpoOutcome(status="ok", id="stale")], now=now + timedelta(seconds=62)
     )
@@ -124,8 +126,10 @@ async def test_expired_claim_recovery_and_stale_completion_are_fenced(db_session
         )
         is None
     )
+    started = await repo.begin_send([fresh], now=now + timedelta(seconds=63))
+    assert len(started) == 1
     await repo.finish(
-        [fresh], [ExpoOutcome(status="ok", id=str(uuid4()))], now=now + timedelta(seconds=63)
+        started, [ExpoOutcome(status="ok", id=str(uuid4()))], now=now + timedelta(seconds=64)
     )
     assert await repo.claim(now=now + timedelta(minutes=3)) == []
 
@@ -135,7 +139,7 @@ async def test_transient_final_receipt_requeues_send_and_old_token_failure_is_fe
     now = datetime.now(UTC)
     repo = PushDeliveryRepository(db_session)
     await repo.enqueue([devices[0].token], event, now=now)
-    original = (await repo.claim(now=now))[0]
+    original = (await repo.begin_send(await repo.claim(now=now), now=now))[0]
     ticket = str(uuid4())
     await repo.finish([original], [ExpoOutcome(status="ok", id=ticket)], now=now)
     receipts = ExpoReceiptRepository(db_session)
@@ -148,7 +152,8 @@ async def test_transient_final_receipt_requeues_send_and_old_token_failure_is_fe
         claim, now=now + timedelta(minutes=15, seconds=1), error_code="MessageRateExceeded"
     )
     assert await receipts.claim_pending(now=now + timedelta(minutes=25)) == []
-    resent = await repo.claim(now=now + timedelta(minutes=25))
+    retry_at = now + timedelta(minutes=25)
+    resent = await repo.begin_send(await repo.claim(now=retry_at), now=retry_at)
     assert len(resent) == 1 and resent[0].id == original.id
     devices[0].last_seen_at += timedelta(seconds=1)
     await db_session.flush()
@@ -158,6 +163,72 @@ async def test_transient_final_receipt_requeues_send_and_old_token_failure_is_fe
         now=now + timedelta(minutes=25, seconds=1),
     )
     assert await db_session.scalar(select(DeviceToken.id).where(DeviceToken.id == devices[0].id))
+
+
+@pytest.mark.parametrize("change", ["owner", "logout", "registration", "eligibility"])
+async def test_send_boundary_retires_only_stale_targets(db_session, change):
+    customer, _, order, devices, event = await setup_order(db_session)
+    now = datetime.now(UTC)
+    repo = PushDeliveryRepository(db_session)
+    await repo.enqueue([device.token for device in devices], event, now=now)
+    claims = await repo.claim(now=now)
+    assert len(claims) == 2
+    if change == "owner":
+        devices[0].user_id = customer.id
+    elif change == "logout":
+        await db_session.delete(devices[0])
+    elif change == "registration":
+        devices[0].last_seen_at += timedelta(seconds=1)
+    else:
+        order.status = OrderStatus.CANCELLED
+    await db_session.flush()
+
+    started = await repo.begin_send(claims, now=now)
+
+    expected = set() if change == "eligibility" else {devices[1].id}
+    if change == "registration":
+        expected.add(devices[0].id)
+    assert {c.device.device_id for c in started} == expected
+    assert all(c.attempts == 1 for c in started)
+    if change == "registration":
+        refreshed = next(c.device for c in started if c.device.device_id == devices[0].id)
+        assert refreshed.last_seen_at == devices[0].last_seen_at
+        return
+    stale = await db_session.scalar(
+        select(PushDelivery).where(PushDelivery.device_id == devices[0].id)
+    )
+    assert stale.state == "EXPIRED" and stale.error_code == "Ineligible" and stale.attempts == 0
+    if change == "owner":
+        assert await db_session.scalar(
+            select(DeviceToken.id).where(DeviceToken.id == devices[0].id)
+        )
+
+
+async def test_deferrals_preserve_attempts_and_ambiguous_sends_exhaust_cap(db_session):
+    _, _, _, devices, event = await setup_order(db_session)
+    now = datetime.now(UTC)
+    repo = PushDeliveryRepository(db_session)
+    await repo.enqueue([devices[0].token], event, now=now)
+    for _ in range(9):
+        [leased] = await repo.claim(now=now)
+        assert leased.attempts == 0
+        await repo.defer([leased], "CoordinationUnavailable", now=now)
+        now += timedelta(seconds=10)
+    for attempt in range(1, 9):
+        [leased] = await repo.claim(now=now)
+        [started] = await repo.begin_send([leased], now=now)
+        assert started.attempts == attempt
+        assert await repo.begin_send([leased], now=now) == []
+        await repo.defer([leased], "RateDeferred", now=now)
+        await repo.finish(
+            [started],
+            [ExpoOutcome(status="error", details={"error": "ProviderUnavailable"})],
+            now=now,
+        )
+        now += timedelta(minutes=10)
+    assert await repo.claim(now=now) == []
+    delivery = await db_session.scalar(select(PushDelivery).where(PushDelivery.id == started.id))
+    assert delivery.state == "FAILED" and delivery.attempts == 8
 
 
 async def test_overlapping_transactions_cannot_claim_the_same_device():

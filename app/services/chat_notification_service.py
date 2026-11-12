@@ -84,6 +84,7 @@ async def send_pending_chat_notifications(
     push: PushClient | None = None,
     factory: async_sessionmaker[AsyncSession] | None = None,
     settings: Settings | None = None,
+    deadline: float | None = None,
 ) -> int:
     """Drain at most twenty recipient pages per scheduled run by default."""
     settings = settings or get_worker_settings()
@@ -98,6 +99,10 @@ async def send_pending_chat_notifications(
     sent = 0
     try:
         for _ in range(limit):
+            if deadline is not None and (
+                asyncio.get_running_loop().time() + _DELIVERY_TIMEOUT_SECONDS >= deadline
+            ):
+                break
             async with factory() as session:
                 batch = await ChatNotificationRepository(session).claim_pending(
                     now=datetime.now(UTC),

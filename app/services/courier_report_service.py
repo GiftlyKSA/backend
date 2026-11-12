@@ -1,11 +1,13 @@
 """Courier reporting calendar, eligibility and target business rules."""
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.core.exceptions import ValidationDomainError
 from app.core.money import ZERO, money_str
+from app.models.courier_report_settings import CourierReportSettings
 from app.repositories.courier_report_repository import CourierReportRepository
 from app.schemas.courier_report_schemas import (
     Comparison,
@@ -14,6 +16,7 @@ from app.schemas.courier_report_schemas import (
     EarningsReport,
     Granularity,
     PreviousPeriod,
+    TargetPeriod,
     TargetProgress,
     TargetSettings,
     TargetUpdate,
@@ -42,6 +45,41 @@ def next_bucket(day: date, granularity: Granularity) -> date:
             else day.replace(month=day.month + 1)
         )
     return day + timedelta(days=7 if granularity == "week" else 1)
+
+
+@dataclass(frozen=True, slots=True)
+class _TargetWindow:
+    period: TargetPeriod
+    amount: Decimal
+    first: date
+    last: date
+
+    def bounds(self) -> tuple[datetime, datetime]:
+        start, end = reporting_bounds(self.first, self.last)
+        assert start is not None and end is not None
+        return start, end
+
+    def progress(self, settled: Decimal) -> TargetProgress:
+        return TargetProgress(
+            period=self.period,
+            amount=money_str(self.amount),
+            period_start=self.first,
+            period_end=self.last,
+            settled_total=money_str(settled),
+            progress_percent=money_str(settled / self.amount * Decimal(100)),
+        )
+
+
+def _target_window(row: CourierReportSettings | None) -> _TargetWindow | None:
+    if row is None or not row.enabled:
+        return None
+    assert row.amount is not None and row.period in {"WEEK", "MONTH"}
+    period: TargetPeriod = "WEEK" if row.period == "WEEK" else "MONTH"
+    granularity: Granularity = "week" if period == "WEEK" else "month"
+    today = datetime.now(UTC).astimezone(RIYADH).date()
+    first = bucket_start(today, granularity)
+    last = next_bucket(first, granularity) - timedelta(days=1)
+    return _TargetWindow(period, row.amount, first, last)
 
 
 class CourierReportService:
@@ -103,37 +141,19 @@ class CourierReportService:
 
     async def _target(self, courier_id: uuid.UUID) -> TargetSettings:
         row = await self._reports.settings(courier_id)
-        if row is None or not row.enabled:
-            return TargetSettings(
-                version=row.version if row else 0,
-                updated_at=row.updated_at if row else None,
-                target_enabled=False,
-                target_amount=None,
-                target_period=None,
-                progress=None,
-            )
-        assert row.amount is not None and row.period in {"WEEK", "MONTH"}
-        granularity: Granularity = "week" if row.period == "WEEK" else "month"
-        today = datetime.now(UTC).astimezone(RIYADH).date()
-        first = bucket_start(today, granularity)
-        last = next_bucket(first, granularity) - timedelta(days=1)
-        start, end = reporting_bounds(first, last)
-        assert start is not None and end is not None
-        amount = await self._reports.total(courier_id, start, end)
+        window = _target_window(row)
+        progress = (
+            window.progress(await self._reports.total(courier_id, *window.bounds()))
+            if window is not None
+            else None
+        )
         return TargetSettings(
-            version=row.version,
-            updated_at=row.updated_at,
-            target_enabled=True,
-            target_amount=money_str(row.amount),
-            target_period="WEEK" if row.period == "WEEK" else "MONTH",
-            progress=TargetProgress(
-                period="WEEK" if row.period == "WEEK" else "MONTH",
-                amount=money_str(row.amount),
-                period_start=first,
-                period_end=last,
-                settled_total=money_str(amount),
-                progress_percent=money_str(amount / row.amount * Decimal(100)),
-            ),
+            version=row.version if row else 0,
+            updated_at=row.updated_at if row else None,
+            target_enabled=window is not None,
+            target_amount=progress.amount if progress is not None else None,
+            target_period=progress.period if progress is not None else None,
+            progress=progress,
         )
 
     async def earnings(
@@ -151,8 +171,16 @@ class CourierReportService:
         start, end = reporting_bounds(from_date, to_date)
         previous_start, _ = reporting_bounds(previous_from, previous_to)
         assert start is not None and end is not None and previous_start is not None
-        total, previous = await self._reports.totals(courier_id, start, end, previous_start)
-        amounts = await self._reports.buckets(courier_id, start, end, granularity)
+        window = _target_window(await self._reports.settings(courier_id))
+        aggregate = await self._reports.earnings(
+            courier_id,
+            start,
+            end,
+            previous_start,
+            granularity,
+            target_bounds=window.bounds() if window is not None else None,
+        )
+        total, previous = aggregate.current, aggregate.previous
         buckets = []
         first = bucket_start(from_date, granularity)
         while first <= to_date:
@@ -161,7 +189,7 @@ class CourierReportService:
                 EarningsBucket(
                     from_date=max(first, from_date),
                     to_date=min(following - timedelta(days=1), to_date),
-                    amount=money_str(amounts.get(first, ZERO)),
+                    amount=money_str(aggregate.buckets.get(first, ZERO)),
                 )
             )
             first = following
@@ -189,5 +217,7 @@ class CourierReportService:
                 comparison=comparison,
             ),
             buckets=buckets,
-            target=(await self._target(courier_id)).progress,
+            target=window.progress(aggregate.target)
+            if window is not None and aggregate.target is not None
+            else None,
         )

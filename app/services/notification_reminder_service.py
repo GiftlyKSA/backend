@@ -17,6 +17,7 @@ from app.repositories.notification_reminder_repository import (
 )
 
 _logger = logging.getLogger(__name__)
+_PUSH_TIMEOUT_SECONDS = 20
 
 
 async def _deliver_claim(
@@ -27,9 +28,11 @@ async def _deliver_claim(
 ) -> bool:
     """Send one bounded device page and fence success or retry progress."""
     try:
-        async with asyncio.timeout(20):
+        async with asyncio.timeout(_PUSH_TIMEOUT_SECONDS):
             async with factory() as session:
                 page = await NotificationReminderRepository(session).token_page(claim)
+            if page is None:
+                return False
             if page:
                 await push.send_push(
                     [token for _, token in page],
@@ -54,7 +57,7 @@ async def _deliver_claim(
                 claim,
                 now=datetime.now(UTC),
                 cursor=page[-1][0] if page else claim.cursor_token_id,
-                complete=page is None or len(page) < 500,
+                complete=len(page) < 500,
             )
             await session.commit()
         return True
@@ -78,6 +81,7 @@ async def send_occasion_reminders(
     factory: async_sessionmaker[AsyncSession] | None = None,
     push: PushClient | None = None,
     settings: Settings | None = None,
+    deadline: float | None = None,
 ) -> int:
     """Materialize at most 100 dates and process twenty bounded device pages per run."""
     limit = min(max(limit, 1), 20)
@@ -100,6 +104,10 @@ async def send_occasion_reminders(
             await repository.retire_pending(now=now)
             await session.commit()
         for _ in range(limit):
+            if deadline is not None and (
+                asyncio.get_running_loop().time() + _PUSH_TIMEOUT_SECONDS >= deadline
+            ):
+                break
             async with factory() as session:
                 claim = await NotificationReminderRepository(session).claim(now=datetime.now(UTC))
                 await session.commit()

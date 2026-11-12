@@ -15,8 +15,10 @@ from app.integrations.factory import build_email_client
 from app.models.account_change import AccountRequestEmail
 from app.repositories.account_change_repository import AccountChangeRepository
 from app.workers.broker import broker
+from app.workers.delivery_budget import run_delivery_drainer
 
 _logger = logging.getLogger("app.workers.account_requests")
+_EMAIL_TIMEOUT_SECONDS = 20
 
 
 async def _deliver_email(
@@ -32,7 +34,7 @@ async def _deliver_email(
                 "account-request",
                 {"request_id": str(row.request_id), "body": row.body},
             ),
-            timeout=20,
+            timeout=_EMAIL_TIMEOUT_SECONDS,
         )
         sent = True
     except Exception:  # noqa: BLE001 - durable retries retain failed notifications.
@@ -55,6 +57,7 @@ async def process_account_requests(
     email: EmailClient | None = None,
     factory: async_sessionmaker[AsyncSession] | None = None,
     settings: Settings | None = None,
+    deadline: float | None = None,
 ) -> int:
     """Advance up to 100 recovery deadlines and send a bounded page of leased emails."""
     settings = settings or get_worker_settings()
@@ -75,6 +78,11 @@ async def process_account_requests(
             await repo.purge_expired_challenges(now)
             await session.commit()
         for _ in range(min(max(limit, 0), 100)):
+            if (
+                deadline is not None
+                and asyncio.get_running_loop().time() + _EMAIL_TIMEOUT_SECONDS >= deadline
+            ):
+                break
             async with factory() as session:
                 row = await AccountChangeRepository(session).claim_email(datetime.now(UTC))
                 await session.commit()
@@ -98,4 +106,6 @@ async def process_account_requests(
 @broker.task(schedule=[{"cron": "* * * * *"}])
 async def deliver_account_request_emails() -> None:
     """Retry notices and advance expired windows to review, never erase or settle funds."""
-    await process_account_requests()
+    await run_delivery_drainer(
+        "account request emails", lambda deadline: process_account_requests(deadline=deadline)
+    )

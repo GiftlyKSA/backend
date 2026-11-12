@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -19,7 +20,7 @@ from app.core.exceptions import (
 )
 from app.core.redis import build_redis
 from app.integrations.storage.fake import FakeStorageClient
-from app.models import CourierProfile, OrderMedia, User
+from app.models import CourierProfile, Order, OrderMedia, User
 from app.models.enums import MediaType, OrderStatus, UserRole, UserStatus
 from app.repositories.courier_repository import CourierRepository
 from app.repositories.media_repository import MediaRepository
@@ -32,8 +33,8 @@ from app.services.media_service import MediaService
 from app.services.order_service import NewOrderInput, OrderService
 from app.services.rating_service import RatingService
 from redis.asyncio import Redis
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select, text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
 from tests.conftest import make_test_settings
 from tests.integration.availability import raise_or_skip_redis_unavailable
@@ -196,6 +197,83 @@ async def test_create_enforces_customer_active_limit(
         await svc.create_order(customer_id=customer.id, data=_input())
     with pytest.raises(ConflictError):
         await svc.create_order(customer_id=customer.id, data=_input())
+
+
+async def test_create_and_reorder_serialize_at_the_active_limit(
+    db_connection: AsyncConnection, redis_client: Redis
+) -> None:
+    sessions = async_sessionmaker(db_connection.engine, expire_on_commit=False)
+    async with sessions.begin() as setup:
+        customer = await _customer(setup)
+        courier = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.COURIER)
+        setup.add(courier)
+        await setup.flush()
+        svc = _service(setup, redis_client)
+        source = await svc.create_order(customer_id=customer.id, data=_input())
+        source.courier_id = courier.id
+        source.status = OrderStatus.ASSIGNED
+        for _ in range(3):
+            await svc.create_order(customer_id=customer.id, data=_input())
+
+    async def attempt(*, reorder: bool, ready: asyncio.Future[int]) -> uuid.UUID | None:
+        async with sessions.begin() as session:
+            pid = await session.scalar(text("SELECT pg_backend_pid()"))
+            assert pid is not None
+            ready.set_result(pid)
+            svc = _service(session, redis_client)
+            if reorder:
+                cancelled = await svc.cancel_order(
+                    order_id=source.id, actor_id=customer.id, reason="Change courier", reorder=True
+                )
+                return cancelled.replacement_order_id
+            try:
+                return (await svc.create_order(customer_id=customer.id, data=_input())).id
+            except ConflictError:
+                return None
+
+    tasks = []
+    try:
+        async with asyncio.timeout(10):
+            async with sessions.begin() as writer:
+                await _service(writer, redis_client).create_order(
+                    customer_id=customer.id, data=_input()
+                )
+                ready = [asyncio.get_running_loop().create_future() for _ in range(2)]
+                tasks = [
+                    asyncio.create_task(attempt(reorder=False, ready=ready[0])),
+                    asyncio.create_task(attempt(reorder=True, ready=ready[1])),
+                ]
+                pids = await asyncio.gather(*ready)
+                for _ in range(300):
+                    waiting = await db_connection.scalar(
+                        text(
+                            "SELECT cardinality(pg_blocking_pids(:creator)) > 0 "
+                            "AND cardinality(pg_blocking_pids(:replacement)) > 0"
+                        ),
+                        {"creator": pids[0], "replacement": pids[1]},
+                    )
+                    if waiting:
+                        break
+                    await asyncio.sleep(0.01)
+                else:
+                    raise AssertionError("Create and reorder did not both wait for the owner lock.")
+            created_id, replacement_id = await asyncio.gather(*tasks)
+        assert created_id is None
+        assert replacement_id is not None
+        async with sessions() as reader:
+            orders = list(
+                await reader.scalars(select(Order).where(Order.customer_id == customer.id))
+            )
+            assert [row.id for row in orders if row.status is OrderStatus.CANCELLED] == [source.id]
+            assert sum(row.status is OrderStatus.NEW for row in orders) == 5
+            assert any(row.id == replacement_id and row.status is OrderStatus.NEW for row in orders)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        async with sessions.begin() as cleanup:
+            await cleanup.execute(delete(Order).where(Order.customer_id == customer.id))
+            await cleanup.execute(delete(User).where(User.id.in_([customer.id, courier.id])))
 
 
 async def test_reorder_copies_photos_and_fifth_cancellation_blocks_creation(

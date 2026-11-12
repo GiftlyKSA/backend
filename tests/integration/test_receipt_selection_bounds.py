@@ -53,10 +53,10 @@ async def test_missing_email_backlog_does_not_starve_deliverable_receipts(
         db_session.add(invoice)
         invoices.append(invoice)
     await db_session.flush()
-    pending = await InvoiceRepository(db_session).list_receipt_pending(100)
-    assert invoices[-1].id in [invoice.id for invoice in pending]
+    pending = await InvoiceRepository(db_session).list_due_receipt_ids(100)
+    assert invoices[-1].id in pending
     assert not any(invoice.receipt_email_sent_at for invoice in invoices[:-1])
     customer.email = f"{uuid.uuid4()}@example.com"
     await db_session.flush()
-    pending = await InvoiceRepository(db_session).list_receipt_pending(100)
-    assert invoices[0].id in [invoice.id for invoice in pending]
+    pending = await InvoiceRepository(db_session).list_due_receipt_ids(100)
+    assert invoices[0].id in pending

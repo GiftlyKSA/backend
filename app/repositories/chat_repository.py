@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import insert, literal, select, tuple_, union_all, update
+from sqlalchemy import insert, literal, select, tuple_, union, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -126,16 +126,28 @@ class ChatRepository:
         self, user_id: uuid.UUID, *, limit: int, before: tuple[datetime, uuid.UUID] | None
     ) -> list[Conversation]:
         """Return a user's conversations, most-recent activity first (keyset paged)."""
-        query = select(Conversation).where(
-            (Conversation.customer_id == user_id) | (Conversation.courier_id == user_id)
-        )
-        query = query.order_by(
+        keys = select(Conversation.id, Conversation.last_message_timestamp)
+        if before is not None:
+            keys = keys.where(tuple_(Conversation.last_message_timestamp, Conversation.id) < before)
+        keys = keys.order_by(
             Conversation.last_message_timestamp.desc(), Conversation.id.desc()
         ).limit(limit)
-        if before is not None:
-            query = query.where(
-                tuple_(Conversation.last_message_timestamp, Conversation.id) < before
-            )
+        # Any top-page row must be in at least one branch's top page.
+        participants = union(
+            keys.where(Conversation.customer_id == user_id),
+            keys.where(Conversation.courier_id == user_id),
+        ).subquery()
+        page = (
+            select(participants)
+            .order_by(participants.c.last_message_timestamp.desc(), participants.c.id.desc())
+            .limit(limit)
+            .subquery()
+        )
+        query = (
+            select(Conversation)
+            .join(page, page.c.id == Conversation.id)
+            .order_by(page.c.last_message_timestamp.desc(), page.c.id.desc())
+        )
         return list(await self._session.scalars(query))
 
     async def message_for_client_id(

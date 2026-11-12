@@ -1,9 +1,9 @@
 """CLI to rotate field-encryption keys.
 
 Run after adding a new key version to ``FIELD_ENCRYPTION_KEYS`` and bumping
-``FIELD_ENCRYPTION_KEY_VERSION``: this re-encrypts the mutable Restricted columns to the
-new active version. ``messages.content`` is append-only and is never rotated, so the old
-key must stay in the map while any message still references it.
+``FIELD_ENCRYPTION_KEY_VERSION`` to re-encrypt courier identity, conversation previews,
+and withdrawal IBANs. Retain key versions used by courier payout IBANs, message bodies
+and stored operation results while their ciphertext exists.
 
     uv run python -m app.rotate_keys
 """
@@ -32,6 +32,10 @@ async def _run() -> None:
         f"passport_id={report.courier_passport_id}, "
         f"preview={report.conversation_preview}, "
         f"iban={report.withdrawal_iban} (total {report.total})."
+    )
+    print(
+        f"Fields retaining write-time keys: {', '.join(report.retained_ciphertext_fields)}. "
+        "Keep referenced key versions in FIELD_ENCRYPTION_KEYS."
     )
 
 

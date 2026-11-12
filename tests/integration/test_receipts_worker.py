@@ -6,6 +6,7 @@ a unique recipient address so the assertion is deterministic against shared test
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -83,8 +84,30 @@ async def test_sweeper_sends_and_stamps_receipt() -> None:
             await session.commit()
             invoice_id = invoice.id
 
-        email = FakeEmailClient(Environment.TEST)
-        sent = await send_pending_receipts(email=email, factory=factory, settings=settings)
+        provider_entered = asyncio.Event()
+        release_provider = asyncio.Event()
+
+        class BlockingEmail(FakeEmailClient):
+            async def send_transactional(
+                self, to_email: str, template_key: str, variables: dict[str, object]
+            ) -> None:
+                if to_email == address:
+                    provider_entered.set()
+                    await release_provider.wait()
+                await super().send_transactional(to_email, template_key, variables)
+
+        email = BlockingEmail(Environment.TEST)
+        first_sweep = asyncio.create_task(
+            send_pending_receipts(email=email, factory=factory, settings=settings)
+        )
+        try:
+            await asyncio.wait_for(provider_entered.wait(), timeout=5)
+            await asyncio.wait_for(
+                send_pending_receipts(email=email, factory=factory, settings=settings), timeout=5
+            )
+        finally:
+            release_provider.set()
+            sent = await first_sweep
         assert sent >= 1
         # Exactly one receipt reached our unique address.
         assert sum(1 for e in email.sent if e.to_email == address) == 1

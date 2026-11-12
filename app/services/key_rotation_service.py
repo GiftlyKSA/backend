@@ -1,17 +1,13 @@
 """Field-encryption key rotation.
 
-Rotation re-encrypts every MUTABLE Restricted column that is still under an older key
-version to the active version, using each column's original AAD so the binding is
-preserved. ``messages.content`` is append-only (a DB trigger forbids updating it), so
-messages are NEVER rotated in place — their write-time key versions must be retained in
-``FIELD_ENCRYPTION_KEYS`` for as long as any message references them. New writes already
-use the active version, so rotation only ever shrinks the set of old versions still in use
-by the mutable columns.
+Rotation re-encrypts courier identity fields, conversation previews and withdrawal IBANs
+using the original AAD. Courier payout IBANs, message bodies and retained operation
+results keep their write-time key versions while their ciphertext exists.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,16 +20,24 @@ from app.models import Conversation, CourierProfile, Withdrawal
 
 @dataclass(frozen=True)
 class RotationReport:
-    """How many values each mutable column had re-encrypted."""
+    """Counts for rotated columns and the fields retaining write-time ciphertext."""
 
     courier_national_id: int
     courier_passport_id: int
     conversation_preview: int
     withdrawal_iban: int
+    retained_ciphertext_fields: tuple[str, ...] = field(
+        default=(
+            "courier_profiles.payout_iban_encrypted",
+            "messages.content_encrypted",
+            "write_operations.result_encrypted",
+        ),
+        init=False,
+    )
 
     @property
     def total(self) -> int:
-        """Total values re-encrypted across all columns."""
+        """Total values re-encrypted across the supported columns."""
         return (
             self.courier_national_id
             + self.courier_passport_id
@@ -43,7 +47,7 @@ class RotationReport:
 
 
 class KeyRotationService:
-    """Re-encrypts mutable Restricted columns to the active key version."""
+    """Re-encrypts supported fields to the active key version."""
 
     def __init__(self, *, session: AsyncSession, settings: Settings, batch_size: int = 100) -> None:
         """Wire the session and settings (which carry the key map + active version)."""
@@ -65,7 +69,7 @@ class KeyRotationService:
         return self._cipher.encrypt(plaintext, aad)
 
     async def rotate(self) -> RotationReport:
-        """Re-encrypt every stale mutable Restricted value; return per-column counts."""
+        """Rotate supported fields in batches and report retained ciphertext fields."""
         national, passport = await self._rotate_courier_profiles()
         previews = await self._rotate_conversation_previews()
         ibans = await self._rotate_withdrawals()

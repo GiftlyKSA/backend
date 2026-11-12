@@ -43,14 +43,16 @@ async def test_order_media_signing_yields_and_uses_one_worker_per_page(count):
         for index in range(count + 1)
     ]
     signer = ResponsiveSigner()
-    asyncio.get_running_loop().call_soon(signer.loop_progress.set)
+    release_read = AsyncMock(side_effect=signer.loop_progress.set)
     page = await OrderMediaReadService(orders, AsyncMock(), signer).list(
         uuid4(),
         uuid4(),
         purpose=None,
         limit=count,
         cursor=None,
+        release_read=release_read,
     )
+    release_read.assert_awaited_once()
     assert len(page.items) == count
     assert page.next_cursor == str(page.items[-1].id)
     assert len(signer.calls) == count

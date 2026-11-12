@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from app.repositories.expo_receipt_repository import ExpoReceiptRepository, Rece
 
 _logger = logging.getLogger(__name__)
 _RETRYABLE = {"MessageRateExceeded", "ExpoServerError", "ProviderUnavailable"}
+_RECEIPT_TIMEOUT_SECONDS = 20
 
 
 class ExpoReceiptService:
@@ -78,10 +80,16 @@ class ExpoReceiptService:
             code == "DeviceNotRegistered",
         )
 
-    async def drain(self, client: ExpoPushClient, *, batches: int = 5) -> int:
+    async def drain(
+        self, client: ExpoPushClient, *, batches: int = 5, deadline: float | None = None
+    ) -> int:
         """Poll bounded ready batches with finite durable retry and lease fencing."""
         completed = 0
         for _ in range(min(batches, 5)):
+            if deadline is not None and (
+                asyncio.get_running_loop().time() + _RECEIPT_TIMEOUT_SECONDS >= deadline
+            ):
+                break
             async with self._factory() as session:
                 claims = await ExpoReceiptRepository(session).claim_pending(now=datetime.now(UTC))
                 await session.commit()
@@ -89,12 +97,13 @@ class ExpoReceiptService:
                 break
             retry_after = 0.0
             try:
-                outcomes = await client.get_receipts([claim.ticket_id for claim in claims])
+                async with asyncio.timeout(_RECEIPT_TIMEOUT_SECONDS):
+                    outcomes = await client.get_receipts([claim.ticket_id for claim in claims])
             except ExpoSendError as exc:
                 retry_after = exc.retry_after
                 _logger.warning("Expo receipt lookup unavailable.")
                 outcomes = {}
-            except RuntimeError:
+            except RuntimeError, TimeoutError:
                 _logger.warning("Expo receipt lookup unavailable.")
                 outcomes = {}
             for claim in claims:

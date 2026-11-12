@@ -128,9 +128,13 @@ the new index concurrently only after confirming no released path needs it.
 
 ### Implementation results — 2026-11-13
 
-This release contains the Phase 1 changes. The Phase 2 and Phase 3 results below
-describe local candidate changes awaiting their separate release. The audit
-records each finding as originally observed.
+Phase 1 shipped to `master` in `390aa03`. CranL reported successful API, worker
+and scheduler rollouts. Read-only checks returned HTTP 200 on all three health
+routes, HTTP 200 on API readiness and the admin login page, HTTP 404 on the retired
+admin action and HTTP 405 on a GET to its replacement POST route. Optional ingress
+and database settings were not changed. This combined release includes the Phase 2
+and Phase 3 code below. The prior audit describes each finding as originally
+observed.
 
 #### Phase 1 impact — Security and resource limits
 
@@ -139,7 +143,7 @@ records each finding as originally observed.
 | AUD-14 | Public phone OTP could mint or refresh an ADMIN credential. Financial JSON actions accepted ADMIN bearer tokens. | ADMIN OTP, refresh and existing bearer credentials are rejected. Financial actions live under `/v1/admin/admin/actions` and require the dashboard cookie and CSRF header. Existing production dashboard TOTP applies. |
 | AUD-15, AUD-19, AUD-27 | Incomplete bodies could retain buffers, SQL commands lacked a driver deadline, and one failed provider close could interrupt shutdown cleanup. | Body reads stop after 10 seconds idle or 30 seconds total and return 408. Asyncpg commands have a configurable 30-second default deadline. An opt-in transaction-local lock deadline returns the same safe 503. Resource closes have independent deadlines. Setting a live lock limit still needs topology and workload evidence. |
 | AUD-33 | Ignored Dhamen hints could create receipts and enqueue work. Relevant references were loaded separately and provider verification had no batch-wide deadline. | Ignored-only batches acknowledge without receipt writes or a worker wake-up. Relevant batches load intents together, record a checkpoint before provider I/O, and share a Redis admission lock and 15-second verification budget. The production payment interlock remains in force. |
-| AUD-28, RL-02, RL-03 | Slow requests and Redis failures could each emit a log line. Protected HTTP requests verified the same JWT twice. | Timing records sample route templates, status and SQL work once per 256 requests. Limiter failures log the first result and periodic counts. A verified token is reused only within the same request and access checks still run. Synthetic signature-only median fell from 71.16 to 37.64 microseconds per request. |
+| AUD-28, RL-02, RL-03 | Slow requests and Redis failures could each emit a log line. Protected HTTP requests verified the same JWT twice. | Timing records sample route templates, status and SQL work once per 256 requests. Cache reads sample domain, hit/miss, elapsed time and capacity eviction. Push batches report oldest queue age and attempt counts. Limiter failures log the first result and periodic counts. Verified JWT claims are reused only within the same request. Synthetic signature-only median fell from 71.16 to 37.64 microseconds per request. |
 | AUD-16, AUD-22, AUD-30, RL-01, RL-04 | Account WebSocket budgets were already present. Upstream attribution/redaction and actual pooler mode were still unconfirmed. | Existing handshake controls are retained. Local Uvicorn tests verify that an anonymous bucket uses the forwarded address only from the configured proxy. Documented the driver and dialect cache distinction. Local Redis `EVAL` and `EVALSHA` measured 0.1846 and 0.1789 ms per check. Kept the current atomic path pending a representative benefit. Live upstream and pooler changes remain operational follow-ups. |
 | AUD-32, AUD-36, AUD-44 | The Authentica and participant-phone findings apply to separate local changes. | Kept those changes outside the release. Provider challenge binding, releasing the lock around OTP verification and verified-phone provenance remain release gates for that work. |
 
@@ -147,12 +151,12 @@ records each finding as originally observed.
 
 | Tasks | Before | After |
 | --- | --- | --- |
-| AUD-17, AUD-42 | Slow drainers could monopolize worker slots. Best-effort wake-ups had one deadline per task. | Delivery entry points have a 45-second budget with durable recovery. Post-commit publication shares one 0.5-second budget. Shared cross-request coalescing remains dependent on queue-lag and duplicate-job measurements. |
-| AUD-18, AUD-34, AUD-35 | Ownership or registration changes could leave stale destinations. Local deferrals counted toward the provider attempt limit. | Owner transfer advances the reminder schedule. Final batched selection rechecks current recipient and device eligibility. Nine local deferrals preserved the push attempt count in testing and eight ambiguous transport outcomes exhausted it. Registration changes after the final DB check can still race a provider call. |
-| AUD-20, IDX-03 | Repeatedly failing older receipts could crowd out newer invoices. The old index ordered by ID. | Durable due times and bounded backoff let ready invoices progress. Exhausted receipts require operator reconciliation. The concurrent ready index visited 111 invoices for 100 eligible candidates on a 100,000-row synthetic fixture with 99,800 future retries. |
+| AUD-17, AUD-42 | Slow drainers could monopolize worker slots. Best-effort wake-ups had one deadline per task. | Delivery entry points, including account-request emails, have a 45-second budget with durable recovery. Post-commit publication shares one 0.5-second budget. Shared cross-request coalescing depends on queue-lag and duplicate-job measurements. |
+| AUD-18, AUD-34, AUD-35 | Ownership or registration changes could leave stale destinations. Local deferrals counted toward the provider attempt limit. | Owner transfer advances the reminder schedule. Final batched selection rechecks current eligibility and captures a same-owner registration refresh without dropping its notification. Local deferrals preserve attempts and ambiguous transport outcomes consume them. A change after the final database check can still race a provider call. |
+| AUD-20, IDX-03 | Repeatedly failing older receipts could crowd out newer invoices. The old index ordered by ID. | Durable due times and bounded backoff let ready invoices progress. Holds fence deferred and exhausted receipts against legacy workers, and old ambiguous claims preserve a conservative replay deadline. The exact ready-ID query used the partial index under a forced generic plan, reading 100 index rows for 100 candidates from 100,000 synthetic rows in 0.062 ms. |
 | AUD-23, AUD-31 | A rounded zero payout could prevent settlement. Expected registration races could surface as 500. | Zero payout omits the zero leg and preserves ledger balance. Expected phone/email uniqueness failures return 409 and unrelated database failures keep their error behavior. |
 | AUD-39 | A 100-grant batch could issue 100 DELETEs and due retries could starve. | A 100-grant batch finalizes with one DELETE guarded by its exact reservation. Due retries receive capacity, and storage work has bounded time and safe failure logs. |
-| AUD-29, AUD-38 | Key rotation overstated retained ciphertext coverage. Terminal deliveries had no approved purge policy. | The rotation inventory explicitly identifies retained message and operation ciphertext. Purge remains gated on a replay-safe retention policy and deduplication horizon. |
+| AUD-29, AUD-38 | Key rotation overstated retained ciphertext coverage. Terminal deliveries had no approved purge policy. | The rotation inventory explicitly identifies retained courier payout IBAN, message and operation ciphertext. Purge remains gated on a replay-safe retention policy and deduplication horizon. |
 
 #### Phase 3 impact — SQL, cache and I/O
 
@@ -163,7 +167,7 @@ records each finding as originally observed.
 | AUD-41, IDX-05 | Separate earnings queries could scan the same history and disagree after a concurrent settlement. | One ledger statement reads totals, buckets and optional target proceeds with consistent snapshot semantics. On a 150,000-row synthetic fixture, the 180-day query measured 6.672 → 5.061 ms and 29,965 → 19,973 local blocks. The extra ledger index remains a candidate. |
 | AUD-21, AUD-40 | PDF rendering and order-media signing could hold a checked-out connection. | Authorization and bounded snapshots happen before the transaction releases its connection. PDF rendering and private URL signing follow. |
 | AUD-24, AUD-43 | Short-TTL writes could evict themselves. Admin overview issued five statements. | Cache expiry and insertion order have distinct indexes and share the same payload budget. Admin overview uses three statements. Its all-time status scan still needs workload evidence before adding a rollup. |
-| AUD-37, IDX-02, IDX-04, IDX-06–09 | The measured promo benefit was synthetic. The other candidates needed deployed workload or provider evidence. | Video validation remains active at attachment until immutable object identity can be verified. Promo, push/Expo, cleanup, invoice history, prefix search and BRIN alternatives retain their individual decision gates. |
+| AUD-37, IDX-02, IDX-04, IDX-06–09 | The measured promo benefit was synthetic. The other candidates needed deployed workload or provider evidence. | A bounded CranL database read on 2026-11-13 found one promo, so the extra promo index is unjustified at present. Video validation remains active at attachment until immutable object identity can be verified. The other optional indexes retain their individual decision gates. |
 
 The benchmark figures above measure disposable SQL or process-local timings. They
 do not establish deployed p95, pool capacity or provider delivery behavior. Verify
@@ -175,14 +179,36 @@ Verification on disposable PostgreSQL 16 and Redis 7 passed **1,806 tests** with
 decoder was unavailable. Revisions `0042_active_order_quota`,
 `0043_receipt_retry`, `0044_reminder_owner_fence` and `0045_receipt_due_index`
 passed upgrade, downgrade to 0041 and re-upgrade. The two index builds are
-concurrent. Pause receipt workers across a version change because an old worker
-does not honor the new exhausted state.
+concurrent. The combined release also verified legacy-worker hold compatibility and
+guarded receipt recovery. Drain and reconcile receipt sends before a rollback.
 
 The isolated Phase 1 release passed **1,761 tests** with **90.96% line coverage**
 on disposable PostgreSQL and Redis at revision `0041_order_reorder`. Two native
 media tests were skipped because the Windows runner lacked `ffmpeg` and `ffprobe`.
 The lock test verified rollback and connection reuse after a timeout. The proxy
 tests cover local Uvicorn handling. Phase 1 adds no migration.
+
+The isolated Phase 2 candidate based on `390aa03` passed **1,801 tests** with
+**90.92% line coverage**. Revisions 0043–0045 upgraded from 0041, downgraded to
+0041 and re-upgraded on disposable PostgreSQL. Phase 3 adds the active-order index
+to the combined migration chain. Retention policy and representative queue-lag
+measurements remain operational follow-ups.
+
+The final combined release passed **1,813 tests** with **91.11% line coverage**
+and both Git hook stages. The 44 focused cases included legacy receipt fencing,
+deferred receipt selection, push registration refresh and worker deadlines.
+Revisions 0042–0045 upgraded, downgraded to 0041 and re-upgraded on disposable
+PostgreSQL. The same two native media tests were skipped on Windows.
+
+### Release decisions for remaining dependencies
+
+| Items | Decision and evidence needed |
+| --- | --- |
+| AUD-16, AUD-19, AUD-22, AUD-30, RL-01, RL-04 | Retain existing ingress and database settings. Verify CranL's forwarding chain, trusted addresses and actual pooler mode before opting into narrower limits or changing prepared statement handling. Preserve legacy chat clients until credential logging and their migration can be verified. |
+| AUD-32, AUD-36, AUD-44 | Keep separate local Authentica and phone-disclosure edits outside this release. Require a purpose-bound provider challenge and proof that the disclosed number is the currently verified number. |
+| AUD-28, AUD-42, AUD-43 | Use sampled cache/request outcomes and existing bounded push queue logs. Evaluate production latency, redundant wake-ups and admin-history scans before adding shared wake-up leases or a rollup. |
+| AUD-37, AUD-38 | Preserve revalidation and retained terminal records. Eliminating the second media validation requires immutable object evidence. Purging records requires a retention policy that preserves replay deduplication. |
+| IDX-02, IDX-04–09 | Keep existing indexes for current volumes. The promo catalog has one row, and deployed table metadata shows no large history requiring the other proposed indexes today. Revisit with compiled plans and representative row counts once growth warrants the write and storage cost. |
 
 ### Closed, postponed and external work
 

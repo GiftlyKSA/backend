@@ -15,7 +15,7 @@ import pytest
 from app.core.config import Environment, Settings
 from app.core.exceptions import ConflictError, InvalidStateTransitionError, ValidationDomainError
 from app.integrations.storage.fake import FakeStorageClient
-from app.models import Invoice, Order, User, Wallet
+from app.models import Invoice, Order, Transaction, User, Wallet
 from app.models.enums import (
     DisputeStatus,
     InvoiceStatus,
@@ -32,6 +32,7 @@ from app.repositories.wallet_repository import WalletRepository
 from app.services.fulfillment_service import DeliveryInput, FulfillmentService
 from app.services.media_service import MediaService
 from app.services.money_service import Leg, MoneyService
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -46,8 +47,10 @@ def _settings() -> Settings:
     return make_test_settings(**overrides)
 
 
-def _service(db: AsyncSession) -> FulfillmentService:
+def _service(db: AsyncSession, *, commission_rate: Decimal | None = None) -> FulfillmentService:
     settings = _settings()
+    if commission_rate is not None:
+        settings = settings.model_copy(update={"PLATFORM_COMMISSION_RATE": commission_rate})
     return FulfillmentService(
         orders=OrderRepository(db),
         invoices=InvoiceRepository(db),
@@ -70,9 +73,15 @@ async def _user_wallet(db: AsyncSession, role: UserRole, wtype: WalletType) -> t
 
 
 async def _paid_order(
-    db: AsyncSession, *, status: OrderStatus = OrderStatus.IN_PROGRESS
+    db: AsyncSession,
+    *,
+    status: OrderStatus = OrderStatus.IN_PROGRESS,
+    item_amount: Decimal = Decimal("500.00"),
+    courier_fee: Decimal = Decimal("100.00"),
+    service_fee: Decimal = Decimal("30.00"),
 ) -> tuple[User, User, Order, Invoice]:
-    """A funded, paid order: escrow holds the 630.00 total, ready to release."""
+    """A paid order with escrow funded for its total."""
+    total = item_amount + courier_fee + service_fee
     customer, _cw = await _user_wallet(db, UserRole.CUSTOMER, WalletType.CUSTOMER)
     courier, _kw = await _user_wallet(db, UserRole.COURIER, WalletType.COURIER)
     order = Order(
@@ -88,15 +97,15 @@ async def _paid_order(
         order_id=order.id,
         issued_by_courier_id=courier.id,
         status=InvoiceStatus.PAID,
-        items_net_amount=Decimal("500.00"),
-        courier_fee_amount=Decimal("100.00"),
-        service_fee_amount=Decimal("30.00"),
+        items_net_amount=item_amount,
+        courier_fee_amount=courier_fee,
+        service_fee_amount=service_fee,
         discount_amount=Decimal("0.00"),
-        net_after_discount_amount=Decimal("630.00"),
-        total_amount=Decimal("630.00"),
+        net_after_discount_amount=total,
+        total_amount=total,
         issued_at=datetime.now(UTC),
         paid_at=datetime.now(UTC),
-        amount_from_wallet=Decimal("630.00"),
+        amount_from_wallet=total,
     )
     db.add(invoice)
     await db.flush()
@@ -109,8 +118,8 @@ async def _paid_order(
     await money.post_group(
         correlation_id=uuid.uuid4(),
         legs=[
-            Leg(wallet_id=gateway.id, amount=Decimal("-630.00"), txn_type=TransactionType.PAYMENT),
-            Leg(wallet_id=escrow.id, amount=Decimal("630.00"), txn_type=TransactionType.PAYMENT),
+            Leg(wallet_id=gateway.id, amount=-total, txn_type=TransactionType.PAYMENT),
+            Leg(wallet_id=escrow.id, amount=total, txn_type=TransactionType.PAYMENT),
         ],
     )
     return customer, courier, order, invoice
@@ -219,6 +228,77 @@ async def test_resolve_courier_pays_out(db_session: AsyncSession) -> None:
     courier_wallet = await repo.get_by_user(courier.id)
     assert courier_wallet is not None and courier_wallet.balance == Decimal("540.00")
     assert (await MoneyService(repo).reconcile()).ok
+
+
+@pytest.mark.parametrize(
+    ("workflow", "item_amount", "commission_rate", "total"),
+    [
+        ("approval", Decimal("0.01"), Decimal("0.50"), Decimal("5.01")),
+        ("auto_approval", Decimal("20.00"), Decimal("1.00"), Decimal("25.00")),
+        ("courier_dispute", Decimal("20.00"), Decimal("1.00"), Decimal("25.00")),
+    ],
+)
+async def test_zero_courier_payout_releases_escrow_once(
+    db_session: AsyncSession,
+    workflow: str,
+    item_amount: Decimal,
+    commission_rate: Decimal,
+    total: Decimal,
+) -> None:
+    customer, courier, order, invoice = await _paid_order(
+        db_session,
+        status=(
+            OrderStatus.IN_PROGRESS if workflow == "courier_dispute" else OrderStatus.DELIVERED
+        ),
+        item_amount=item_amount,
+        courier_fee=Decimal("0.00"),
+        service_fee=Decimal("5.00"),
+    )
+    service = _service(db_session, commission_rate=commission_rate)
+    if workflow == "approval":
+        await service.approve_order(order_id=order.id, customer_id=customer.id)
+    elif workflow == "auto_approval":
+        order.delivered_at = datetime.now(UTC) - timedelta(hours=100)
+        await db_session.flush()
+        assert await service.auto_approve(order_id=order.id)
+    else:
+        dispute = await service.raise_dispute(
+            order_id=order.id, actor_id=courier.id, reason="Delivery completed"
+        )
+        admin, _wallet = await _user_wallet(db_session, UserRole.ADMIN, WalletType.CUSTOMER)
+        await service.resolve_dispute(
+            dispute_id=dispute.id,
+            admin_id=admin.id,
+            outcome=DisputeStatus.RESOLVED_COURIER,
+            note=None,
+        )
+
+    assert order.status is OrderStatus.COMPLETED
+    assert order.courier_payout_amount == Decimal("0.00")
+    repo = WalletRepository(db_session)
+    courier_wallet = await repo.get_by_user(courier.id)
+    assert courier_wallet is not None and courier_wallet.balance == Decimal("0.00")
+    escrow = await repo.get_system(WalletType.SYSTEM_ESCROW)
+    revenue = await repo.get_system(WalletType.SYSTEM_REVENUE)
+    money = MoneyService(repo)
+    assert not await money.release_escrow_on_completion(
+        order_id=order.id,
+        invoice_id=invoice.id,
+        courier_wallet_id=courier_wallet.id,
+        courier_payout_amount=Decimal("0.00"),
+        platform_revenue_amount=total,
+    )
+    entries = list(
+        await db_session.scalars(
+            select(Transaction).where(Transaction.reference_order_id == order.id)
+        )
+    )
+    assert len(entries) == 2
+    assert {(entry.wallet_id, entry.amount) for entry in entries} == {
+        (escrow.id, -total),
+        (revenue.id, total),
+    }
+    assert (await money.reconcile()).ok
 
 
 async def test_resolve_split_divides_escrow(db_session: AsyncSession) -> None:

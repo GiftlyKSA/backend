@@ -20,8 +20,8 @@ from app.core.exceptions import RateLimitedError, UnauthorizedError
 from app.core.redis import build_redis
 from app.core.security import sha256_hex
 from app.integrations.sms.fake import FakeSmsClient
-from app.models import Base, CourierProfile, User, Wallet, Withdrawal
-from app.models.enums import UserRole, UserStatus, WalletType, WithdrawalStatus
+from app.models import Base, CourierProfile, Order, User, Wallet, Withdrawal
+from app.models.enums import OrderStatus, UserRole, UserStatus, WalletType, WithdrawalStatus
 from app.repositories.admin_read_repository import AdminReadRepository
 from app.repositories.admin_session_repository import AdminSessionRepository
 from app.repositories.audit_repository import AuditRepository
@@ -36,6 +36,7 @@ from app.services.admin_service import AdminService
 from app.services.city_service import CityService
 from app.services.otp_service import OtpService
 from redis.asyncio import Redis
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.conftest import make_test_settings
@@ -114,6 +115,61 @@ async def test_overview_and_reads(db_session: AsyncSession, redis_client: Redis)
     assert page is not None and page.table.editable is True
     assert "phone" in page.columns
     assert await service.list_audit_logs() is not None
+
+
+async def test_overview_counts_utc_boundaries_with_three_queries(
+    db_session: AsyncSession, redis_client: Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = _admin_service(db_session, _settings(), redis_client)
+    today = datetime(2026, 10, 2, tzinfo=UTC)
+    start = today - timedelta(days=13)
+    tomorrow = today + timedelta(days=1)
+    monkeypatch.setattr(service, "_now", lambda: today)
+    before = await service.overview()
+    customer = User(phone=f"+96650{uuid.uuid4().int % 10_000_000:07d}", role=UserRole.CUSTOMER)
+    db_session.add(customer)
+    await db_session.flush()
+    city = await city_by_name(db_session, "Riyadh")
+    db_session.add_all(
+        [
+            Order(
+                customer_id=customer.id,
+                city=city,
+                status=status,
+                delivery_date=created_at.date() + timedelta(days=7),
+                created_at=created_at,
+            )
+            for created_at, status in (
+                (start - timedelta(microseconds=1), OrderStatus.CANCELLED),
+                (start, OrderStatus.NEW),
+                (tomorrow - timedelta(microseconds=1), OrderStatus.CANCELLED),
+                (tomorrow, OrderStatus.NEW),
+            )
+        ]
+    )
+    await db_session.flush()
+    connection = await db_session.connection()
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(connection.sync_connection, "before_cursor_execute", capture)
+    try:
+        after = await service.overview()
+    finally:
+        event.remove(connection.sync_connection, "before_cursor_execute", capture)
+    assert after.order_counts["NEW"] == before.order_counts.get("NEW", 0) + 2
+    assert after.order_counts["CANCELLED"] == before.order_counts.get("CANCELLED", 0) + 2
+    assert [
+        after_day.count - before_day.count
+        for after_day, before_day in zip(after.daily_orders, before.daily_orders, strict=True)
+    ] == [1, *([0] * 12), 1]
+    assert after.open_disputes == before.open_disputes
+    assert after.pending_withdrawals == before.pending_withdrawals
+    assert after.system_balances == before.system_balances
+    assert len(statements) == 3
 
 
 async def test_verify_courier_and_reveal_identity(

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -15,6 +16,16 @@ from app.schemas.order_media import MediaPurpose, OrderMediaPage, OrderMediaResp
 from app.services.courier_eligibility_service import CourierEligibilityService
 
 _READ_TTL_SECONDS = 300
+
+
+@dataclass(frozen=True, slots=True)
+class _MediaSnapshot:
+    id: UUID
+    media_type: MediaType
+    content_type: str
+    byte_size: int
+    created_at: datetime
+    storage_key: str
 
 
 class OrderMediaReadService:
@@ -39,6 +50,7 @@ class OrderMediaReadService:
         purpose: MediaPurpose | None,
         limit: int,
         cursor: UUID | None,
+        release_read: Callable[[], Awaitable[None]],
     ) -> OrderMediaPage:
         """Reject inaccessible orders even when they have no attached media."""
         await self._eligibility.require_marketplace_actor(actor_id)
@@ -58,8 +70,19 @@ class OrderMediaReadService:
             limit=limit + 1,
             cursor=cursor,
         )
+        page_rows = [
+            _MediaSnapshot(
+                row.id,
+                row.media_type,
+                row.content_type,
+                row.byte_size,
+                row.created_at,
+                row.storage_key,
+            )
+            for row in rows[:limit]
+        ]
+        await release_read()
         expires_at = datetime.now(UTC) + timedelta(seconds=_READ_TTL_SECONDS)
-        page_rows = rows[:limit]
         access_urls = (
             await asyncio.to_thread(self._sign_page, [row.storage_key for row in page_rows])
             if page_rows

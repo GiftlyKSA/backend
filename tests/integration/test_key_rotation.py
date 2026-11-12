@@ -5,13 +5,15 @@ from __future__ import annotations
 import base64
 import os
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 from app.core.config import Settings
 from app.core.crypto import blob_version, build_aad, build_cipher
-from app.models import Conversation, CourierProfile, Order, User, Wallet, Withdrawal
+from app.models import Conversation, CourierProfile, Order, User, Wallet, Withdrawal, WriteOperation
 from app.models.enums import OrderStatus, UserRole, WalletType, WithdrawalStatus
+from app.repositories.operation_repository import OperationRepository
 from app.services.key_rotation_service import KeyRotationService
+from app.services.operation_service import OperationService
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,6 +96,24 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
     withdrawal.iban_encrypted = v1_cipher.encrypt(
         "SA0380000000608010167519", build_aad("withdrawals", "iban", str(withdrawal.id))
     )
+    snapshots = []
+    for version in (1, 2):
+        snapshot_id = uuid.uuid4()
+        ciphertext = build_cipher(keys, version).encrypt(
+            '{"status":"PAID"}', build_aad("write_operations", "result", str(snapshot_id))
+        )
+        snapshot = WriteOperation(
+            id=snapshot_id,
+            user_id=customer.id,
+            operation="invoice-payment",
+            operation_key=uuid.uuid4(),
+            request_hash="0" * 64,
+            result_encrypted=ciphertext,
+            resource_id=order.id,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        db_session.add(snapshot)
+        snapshots.append((snapshot, ciphertext))
     await db_session.flush()
 
     # Everything is under version 1 before rotation.
@@ -105,6 +125,16 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
     assert report.courier_national_id == 1
     assert report.conversation_preview == 1
     assert report.withdrawal_iban == 1
+    assert report.retained_ciphertext_fields == (
+        "courier_profiles.payout_iban_encrypted",
+        "messages.content_encrypted",
+        "write_operations.result_encrypted",
+    )
+    recovery = OperationService(OperationRepository(db_session), settings)
+    for snapshot, ciphertext in snapshots:
+        await db_session.refresh(snapshot)
+        assert snapshot.result_encrypted == ciphertext
+        assert recovery.result(snapshot) == '{"status":"PAID"}'
 
     # Now under version 2, and still decrypt to the same plaintext under the active cipher.
     active = build_cipher(keys, 2)
@@ -132,6 +162,6 @@ async def test_rotation_reencrypts_mutable_columns(db_session: AsyncSession) -> 
         == "SA0380000000608010167519"
     )
 
-    # Re-running is a no-op (nothing left under an old version).
+    # Re-running a completed rotation makes no additional updates.
     again = await KeyRotationService(session=db_session, settings=settings).rotate()
     assert again.total == 0

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
 from redis.asyncio import Redis
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit_context import set_audit_actor
@@ -151,7 +152,7 @@ class AuthService:
         Raises:
             UnauthorizedError: The registration token is invalid or expired.
             ValidationDomainError: Required fields for the chosen role are missing.
-            ConflictError: The phone is already registered.
+            ConflictError: The phone or email is already registered.
         """
         try:
             phone = decode_registration_token(self._settings, registration_token)
@@ -160,26 +161,42 @@ class AuthService:
         if await self._users.get_by_phone(phone) is not None:
             raise ConflictError("This phone is already registered.")
 
-        if role is UserRole.CUSTOMER:
-            await set_audit_actor(self._session, category=role.value, actor_user_id=None)
-            user = await self._repo.create_customer(
-                phone=phone, full_name=full_name, email=email, dob=dob, gender=gender
-            )
-            await set_audit_actor(self._session, category=role.value, actor_user_id=user.id)
-            return await self._issue_tokens(user.id, user.role.value)
+        try:
+            async with self._session.begin_nested():
+                if role is UserRole.CUSTOMER:
+                    await set_audit_actor(self._session, category=role.value, actor_user_id=None)
+                    user = await self._repo.create_customer(
+                        phone=phone, full_name=full_name, email=email, dob=dob, gender=gender
+                    )
+                    await set_audit_actor(self._session, category=role.value, actor_user_id=user.id)
+                    return await self._issue_tokens(user.id, user.role.value)
 
-        if role is UserRole.COURIER:
-            return await self._register_courier(
-                phone=phone,
-                full_name=full_name,
-                email=email,
-                dob=dob,
-                city=city,
-                city_id=city_id,
-                gender=gender,
-                national_id=national_id,
-                passport_id=passport_id,
-            )
+                if role is UserRole.COURIER:
+                    return await self._register_courier(
+                        phone=phone,
+                        full_name=full_name,
+                        email=email,
+                        dob=dob,
+                        city=city,
+                        city_id=city_id,
+                        gender=gender,
+                        national_id=national_id,
+                        passport_id=passport_id,
+                    )
+        except IntegrityError as exc:
+            # The asyncpg cause carries server constraint details without parsing SQL or values.
+            driver_error = getattr(exc.orig, "__cause__", None)
+            if getattr(exc.orig, "sqlstate", None) == "23505" and (
+                getattr(driver_error, "table_name", None) == "users"
+            ):
+                constraint = getattr(driver_error, "constraint_name", None)
+                if constraint == "uq_users_phone":
+                    raise ConflictError("This phone is already registered.") from exc
+                if constraint == "uq_users_email":
+                    raise ConflictError(
+                        "Registration could not be completed with this email."
+                    ) from exc
+            raise
         raise ValidationDomainError("A public user cannot register as an admin.")
 
     async def _register_courier(

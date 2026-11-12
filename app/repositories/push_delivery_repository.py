@@ -3,7 +3,7 @@
 import logging
 import random
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    Integer,
     String,
     and_,
     case,
@@ -50,22 +51,14 @@ def _payload_uuid(
 
 
 RETRYABLE_ERRORS = {"MessageRateExceeded", "ExpoServerError", "ProviderUnavailable"}
-DEFERRED_ERRORS = {"RateDeferred", "CoordinationUnavailable"}
-SAFE_ERRORS = (
-    RETRYABLE_ERRORS
-    | DEFERRED_ERRORS
-    | {
-        "DeviceNotRegistered",
-        "MessageTooBig",
-        "MismatchSenderId",
-        "InvalidCredentials",
-        "ProviderError",
-        "InvalidTicket",
-        "RetryExhausted",
-        "Ineligible",
-        "Expired",
-    }
-)
+SAFE_ERRORS = RETRYABLE_ERRORS | {
+    "DeviceNotRegistered",
+    "MessageTooBig",
+    "MismatchSenderId",
+    "InvalidCredentials",
+    "ProviderError",
+    "InvalidTicket",
+}
 
 
 def retry_delay(attempts: int, retry_after: float = 0) -> timedelta:
@@ -247,7 +240,6 @@ class PushDeliveryRepository:
                 retired += 1
                 continue
             row.state = "LEASED"
-            row.attempts += 1
             row.lease_id = uuid.uuid4()
             row.leased_until = now + timedelta(seconds=60)
             claims.append(
@@ -266,6 +258,105 @@ class PushDeliveryRepository:
             _logger.info("Push targets retired: count=%d.", retired)
         self.retired_count = retired
         return claims
+
+    async def begin_send(
+        self, claims: list[DeliveryClaim], *, now: datetime
+    ) -> list[DeliveryClaim]:
+        """Recheck current registration and permission, then charge a possible transport attempt."""
+        if not claims or len(claims) > _DEVICE_PAGE_SIZE:
+            raise ValueError("Push transport requires 1 to 100 claims.")
+        batch = values(
+            column("id", UUID(as_uuid=True)),
+            column("lease_id", UUID(as_uuid=True)),
+            column("attempts", Integer),
+            column("device_id", UUID(as_uuid=True)),
+            column("token", String(512)),
+            name="push_claims",
+        ).data(
+            [
+                (
+                    c.id,
+                    c.lease_id,
+                    c.attempts,
+                    c.device.device_id,
+                    c.device.token,
+                )
+                for c in claims
+            ]
+        )
+        eligibility = and_(
+            DeviceToken.id == batch.c.device_id,
+            DeviceToken.token == batch.c.token,
+            self.eligibility(now),
+        )
+        checked = (
+            select(
+                batch.c.id,
+                batch.c.lease_id,
+                batch.c.attempts,
+                DeviceToken.last_seen_at.label("registered_at"),
+                case(
+                    (PushDelivery.expires_at <= now, "Expired"),
+                    (eligibility, None),
+                    else_="Ineligible",
+                ).label("error_code"),
+            )
+            .select_from(batch)
+            .join(PushDelivery, PushDelivery.id == batch.c.id)
+            .outerjoin(DeviceToken, DeviceToken.id == PushDelivery.device_id)
+            .outerjoin(User, User.id == DeviceToken.user_id)
+            .subquery()
+        )
+        ready = checked.c.error_code.is_(None)
+        changed = await self._session.execute(
+            update(PushDelivery)
+            .where(
+                PushDelivery.id == checked.c.id,
+                PushDelivery.lease_id == checked.c.lease_id,
+                PushDelivery.state == "LEASED",
+                PushDelivery.leased_until > now,
+                PushDelivery.attempts == checked.c.attempts,
+                PushDelivery.attempts < _MAX_ATTEMPTS,
+            )
+            .values(
+                state=case((ready, "LEASED"), else_="EXPIRED"),
+                attempts=PushDelivery.attempts + case((ready, 1), else_=0),
+                error_code=checked.c.error_code,
+                lease_id=case((ready, PushDelivery.lease_id)),
+                leased_until=case((ready, PushDelivery.leased_until)),
+                updated_at=now,
+            )
+            .returning(PushDelivery.id, PushDelivery.state, checked.c.registered_at)
+            .execution_options(synchronize_session=False)
+        )
+        started = {row.id: row.registered_at for row in changed if row.state == "LEASED"}
+        return [
+            replace(
+                claim,
+                attempts=claim.attempts + 1,
+                device=replace(claim.device, last_seen_at=started[claim.id]),
+            )
+            for claim in claims
+            if claim.id in started
+        ]
+
+    async def defer(
+        self,
+        claims: list[DeliveryClaim],
+        code: Literal["RateDeferred", "CoordinationUnavailable"],
+        *,
+        now: datetime,
+    ) -> None:
+        """Release leases when shared admission failed before any attempt began."""
+        if len(claims) > _DEVICE_PAGE_SIZE:
+            raise ValueError("Push deferral batch exceeds 100.")
+        await self._finish_updates(
+            [
+                (claim, "PENDING", code, min(now + retry_delay(claim.attempts), claim.expires_at))
+                for claim in claims
+            ],
+            now=now,
+        )
 
     async def finish(
         self,
@@ -287,10 +378,7 @@ class PushDeliveryRepository:
             code = outcome.details.get("error", "ProviderError")
             code = code if code in SAFE_ERRORS else "ProviderError"
             accepted = outcome.status == "ok" and bool(outcome.id)
-            retry = not accepted and (
-                code in DEFERRED_ERRORS
-                or (code in RETRYABLE_ERRORS and claim.attempts < _MAX_ATTEMPTS)
-            )
+            retry = not accepted and code in RETRYABLE_ERRORS and claim.attempts < _MAX_ATTEMPTS
             state = "ACCEPTED" if accepted else "PENDING" if retry else "FAILED"
             updates.append(
                 (
@@ -334,26 +422,26 @@ class PushDeliveryRepository:
         batch = values(
             column("id", UUID(as_uuid=True)),
             column("lease_id", UUID(as_uuid=True)),
+            column("attempts", Integer),
             column("state", String(24)),
             column("error_code", String(64)),
             column("available_at", DateTime(timezone=True)),
             name="delivery_outcomes",
-        ).data([(c.id, c.lease_id, state, code, due) for c, state, code, due in outcomes])
+        ).data(
+            [(c.id, c.lease_id, c.attempts, state, code, due) for c, state, code, due in outcomes]
+        )
         return set(
             await self._session.scalars(
                 update(PushDelivery)
                 .where(
                     PushDelivery.id == batch.c.id,
                     PushDelivery.lease_id == batch.c.lease_id,
+                    PushDelivery.attempts == batch.c.attempts,
                     PushDelivery.state == "LEASED",
                     PushDelivery.leased_until > now,
                 )
                 .values(
                     state=batch.c.state,
-                    attempts=case(
-                        (batch.c.error_code.in_(DEFERRED_ERRORS), PushDelivery.attempts - 1),
-                        else_=PushDelivery.attempts,
-                    ),
                     error_code=batch.c.error_code,
                     available_at=batch.c.available_at,
                     lease_id=None,

@@ -9,6 +9,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
+class EmailRecipientSuppressedError(Exception):
+    """The provider explicitly refused delivery to the suppressed recipient."""
+
+
 class EmailClient(ABC):
     """Sends transactional email via templates keyed by the provider."""
 

@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
+import pytest
+from app.integrations.email.base import EmailRecipientSuppressedError
 from app.integrations.email.sndr_client import SndrEmailClient
 from app.models.enums import InvoiceStatus, OrderStatus
 from app.repositories.order_repository import OrderRepository
@@ -92,6 +94,30 @@ async def test_sndr_documented_contract_and_stable_retry_key():
     assert isinstance(body["from"], str) and body["to"] == ["customer@example.test"]
     assert body["attachments"][0]["content_type"] == "application/pdf"
     assert "html" not in body
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "error"),
+    [
+        (400, b'{"error":{"code":"suppressed"}}', EmailRecipientSuppressedError),
+        (400, b'{"error":{"code":"invalid_request"}}', httpx.HTTPStatusError),
+        (400, b"invalid response", httpx.HTTPStatusError),
+        (503, b'{"error":{"code":"suppressed"}}', httpx.HTTPStatusError),
+    ],
+)
+async def test_sndr_classifies_only_explicit_recipient_suppression(
+    status: int, body: bytes, error: type[Exception]
+) -> None:
+    client = SndrEmailClient("https://api.sndr.sh", "test-key", "receipts@example.test", "Giftly")
+    await client._client.aclose()
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(status, content=body))
+    )
+    try:
+        with pytest.raises(error):
+            await client.send_transactional("customer@example.test", "unused", {"invoice_id": "id"})
+    finally:
+        await client.aclose()
 
 
 async def test_midnight_expiry_uses_saudi_date():

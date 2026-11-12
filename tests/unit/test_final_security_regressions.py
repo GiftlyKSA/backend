@@ -172,8 +172,9 @@ async def test_invoice_creation_checks_locked_state_after_cancellation():
 async def test_create_quota_is_checked_under_actor_lock():
     service = order_service()
 
-    async def count(actor):
+    async def count(actor, *, limit):
         service._orders.lock_actor.assert_awaited_once_with(actor)
+        assert limit == 5
         return 5
 
     service._orders.count_customer_active.side_effect = count

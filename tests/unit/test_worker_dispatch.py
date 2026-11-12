@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -32,6 +33,22 @@ async def test_worker_wakeups_are_deduplicated_and_queue_failure_is_best_effort(
         WorkerTask.INVOICE_RECEIPTS,
         WorkerTask.CHAT_NOTIFICATIONS,
     }
+    assert "worker_wakeups" not in session.info
+
+
+async def test_post_commit_wakeups_share_one_deadline(monkeypatch):
+    session = SimpleNamespace(info={})
+    request_worker_wakeup(session, WorkerTask.CHAT_NOTIFICATIONS)
+    request_worker_wakeup(session, WorkerTask.INVOICE_RECEIPTS)
+
+    async def stall(task):
+        await asyncio.Event().wait()
+
+    enqueue = AsyncMock(side_effect=stall)
+    monkeypatch.setattr("app.core.worker_dispatch._enqueue_worker_task", enqueue)
+    monkeypatch.setattr("app.core.worker_dispatch._ENQUEUE_TIMEOUT_SECONDS", 0.01)
+    assert await dispatch_worker_wakeups(session) == set()
+    enqueue.assert_awaited_once_with(WorkerTask.CHAT_NOTIFICATIONS)
     assert "worker_wakeups" not in session.info
 
 

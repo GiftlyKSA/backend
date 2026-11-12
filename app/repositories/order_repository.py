@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Select, func, insert, literal, literal_column, select, tuple_
+from sqlalchemy import Select, func, insert, literal, literal_column, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -21,16 +21,7 @@ from app.models import (
     User,
 )
 from app.models.enums import MediaType, OrderStatus
-
-# Statuses that count against a customer's concurrent-order limit.
-_CUSTOMER_ACTIVE = (
-    OrderStatus.NEW,
-    OrderStatus.ASSIGNED,
-    OrderStatus.WAITING_PAYMENT,
-    OrderStatus.IN_PROGRESS,
-    OrderStatus.DELIVERED,
-    OrderStatus.DISPUTED,
-)
+from app.models.tables import CUSTOMER_ACTIVE_ORDER_PREDICATE
 
 
 @dataclass(frozen=True)
@@ -268,13 +259,17 @@ class OrderRepository:
         await self._session.delete(order)
         await self._session.flush()
 
-    async def count_customer_active(self, customer_id: uuid.UUID) -> int:
-        """Count a customer's non-terminal orders (concurrency limit)."""
-        total = await self._session.scalar(
-            select(func.count())
+    async def count_customer_active(self, customer_id: uuid.UUID, *, limit: int) -> int:
+        """Count up to the customer concurrency limit using the active-order index."""
+        # A generic PostgreSQL plan needs the fixed status predicate to match the index.
+        active_orders = (
+            select(literal_column("1"))
             .select_from(Order)
-            .where(Order.customer_id == customer_id, Order.status.in_(_CUSTOMER_ACTIVE))
+            .where(Order.customer_id == customer_id, text(CUSTOMER_ACTIVE_ORDER_PREDICATE))
+            .limit(limit)
+            .subquery()
         )
+        total = await self._session.scalar(select(func.count()).select_from(active_orders))
         return int(total or 0)
 
     async def list_for_customer(
@@ -391,7 +386,8 @@ class OrderRepository:
     ) -> list[Order]:
         """Return NEW orders in a city (the courier radar), newest first, keyset-paged."""
         query = select(Order).where(
-            Order.delivery_city_id == city_id, Order.status == OrderStatus.NEW
+            Order.delivery_city_id == city_id,
+            Order.status == literal(OrderStatus.NEW, type_=Order.status.type, literal_execute=True),
         )
         return await self._page(query, limit, before_id)
 

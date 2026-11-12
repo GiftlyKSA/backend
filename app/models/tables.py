@@ -40,6 +40,9 @@ _user_role = ENUM(enums.UserRole, name="user_role")
 _user_status = ENUM(enums.UserStatus, name="user_status")
 _user_gender = ENUM(enums.UserGender, name="user_gender")
 _order_status = ENUM(enums.OrderStatus, name="order_status")
+CUSTOMER_ACTIVE_ORDER_PREDICATE = (
+    "status IN ('NEW', 'ASSIGNED', 'WAITING_PAYMENT', 'IN_PROGRESS', 'DELIVERED', 'DISPUTED')"
+)
 _invoice_status = ENUM(enums.InvoiceStatus, name="invoice_status")
 _payment_purpose = ENUM(enums.PaymentPurpose, name="payment_purpose")
 _payment_intent_status = ENUM(enums.PaymentIntentStatus, name="payment_intent_status")
@@ -433,6 +436,11 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idx_orders_customer_created", "customer_id", text("created_at DESC"), text("id DESC")
         ),
         Index(
+            "idx_orders_customer_active_quota",
+            "customer_id",
+            postgresql_where=text(CUSTOMER_ACTIVE_ORDER_PREDICATE),
+        ),
+        Index(
             "idx_orders_radar_keyset",
             "delivery_city_id",
             text("created_at DESC"),
@@ -680,6 +688,10 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     receipt_claimed_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    receipt_first_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_failed_attempts: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    receipt_next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_exhausted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint(
@@ -711,9 +723,12 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("status IN ('DRAFT','ISSUED','PAID')"),
         ),
         Index(
-            "idx_invoices_receipt_pending",
+            "idx_invoices_receipt_due",
+            text("coalesce(receipt_next_attempt_at, paid_at, created_at)"),
             "id",
-            postgresql_where=text("status='PAID' AND receipt_email_sent_at IS NULL"),
+            postgresql_where=text(
+                "status='PAID' AND receipt_email_sent_at IS NULL AND receipt_exhausted_at IS NULL"
+            ),
         ),
         Index(
             "idx_invoices_status_expires",

@@ -441,8 +441,12 @@ queue lag, retry state and reconciliation differences need operational monitorin
 
 ### Current migration rollout and rollback
 
-Back up data and stop incompatible writers before applying upgrades. Deploy the current
-image, migrate to `0018_remove_identity_fingerprint`, then restart API/worker/scheduler.
+Back up data before applying upgrades. Each app runs migrations at startup. Check
+that the database reaches `0045_receipt_due_index` and all consumers use the new
+revision after rollout. Deferred and exhausted receipts retain a hold timestamp
+that legacy workers respect. Before rolling back, drain receipt consumers and
+reconcile legacy claims and exhausted sends. Keep the dashboard authentication
+policy in effect across application rollbacks.
 
 | Revision | Change | Rollback considerations |
 | --- | --- | --- |
@@ -450,19 +454,36 @@ image, migrate to `0018_remove_identity_fingerprint`, then restart API/worker/sc
 | 0016 | Durable notification recipients and audit trigger | Incomplete legacy sweeps restart; rollout/rollback can repeat one previously sent page. |
 | 0017 | Gender, DELETED and reason metadata | Downgrade refuses populated gender/reasons; export and review before clearing. Deleted timestamps remain. DELETED enum label is retained unused. |
 | 0018 | Remove derived fingerprints/index | Encrypted numbers remain. Downgrade creates nullable fingerprints; historical duplicate detection is not restored automatically. |
+| 0042 | Concurrent partial index for the active-order quota | Roll back the query before dropping the index. No order data changes. |
+| 0043 | Durable receipt retry state | Keep receipt workers paused during rollback and reconcile exhausted/unstamped invoices before legacy workers can send. Sent timestamps and existing claims remain. |
+| 0044 | Reminder owner-transfer fence | The forward trigger advances the schedule version on transfer. Reverting the trigger restores the former behavior for future edits. |
+| 0045 | Concurrent ordered receipt-ready index | Builds the new index before dropping its predecessor. Downgrade restores the predecessor first. Check `pg_index.indisvalid` after interruption. |
 
 Historical migrations retain names needed to upgrade existing databases. Prefer forward
-correction or backup restoration to destructive downgrade. Offline SQL generation is
-verified; migration application, locking and rollback on PostgreSQL remain UNCONFIRMED
-locally. SQL/constraint changes must be exercised on a disposable deployment database.
+correction or backup restoration to destructive downgrade. Revisions 0042–0045 have
+been exercised through upgrade, downgrade and re-upgrade on disposable PostgreSQL.
+Validate production lock and disk capacity before building indexes.
 
 ### Invoice PDFs and paid receipts
 
 Order participants can download `GET /api/invoices/{invoice_id}/pdf`; authenticated
 admins have an invoice-detail download. PDFs use stored values, English labels and no
 remote assets. Receipt sends attach the PDF using sndr.sh with stable invoice idempotency
-keys and durable claims. A verified sender/domain and real vendor acceptance are required.
-Neither provider idempotency retention nor inbox delivery is proven by a fake.
+keys and durable claims. Failed attempts get a 15-minute initial retry delay with
+exponential backoff capped at four hours. Exhausted receipts stop being selected.
+Automatic attempts end before the provider's documented 24-hour idempotency window.
+For a legacy unsent invoice with claim evidence, the paid timestamp (or creation
+timestamp if unavailable) sets the earliest possible send. If this is outside the
+replay window, reconcile the outcome before retrying. Requeue an exhausted receipt
+only after confirming provider non-acceptance and fixing the cause. In one guarded
+update of the paid, unsent row with no active claim token, reset the first-attempt
+timestamp and failure count, clear exhaustion and the compatibility hold, and set
+the next attempt time. A verified sender/domain and real vendor acceptance are
+required for production operation. [SNDR send API](https://www.sndr.sh/docs/api/emails/send-email)
+
+`uv run --locked python -m app.rotate_keys` reports the fields it re-encrypts.
+Retain versions referenced by courier payout IBANs, stored message bodies and
+operation results while their ciphertext remains.
 
 Courier-entered unit prices are final, including any supplier VAT. No separate tax
 rate or amount is accepted, calculated, returned or printed. Service/courier fees,

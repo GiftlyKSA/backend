@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from app.core.exceptions import ValidationDomainError
+from app.repositories.courier_report_repository import CourierEarningsAggregate
 from app.schemas.courier_report_schemas import TargetUpdate
 from app.services.courier_report_service import CourierReportService, bucket_start
 from pydantic import ValidationError
@@ -24,8 +25,9 @@ def test_invalid_target_money(value):
 
 async def test_report_exact_totals_zero_fill_and_previous_bounds():
     repo, eligibility = AsyncMock(), AsyncMock()
-    repo.totals.return_value = (Decimal("123.45"), Decimal("100.00"))
-    repo.buckets.return_value = {date(2026, 10, 1): Decimal("123.45")}
+    repo.earnings.return_value = CourierEarningsAggregate(
+        Decimal("123.45"), Decimal("100.00"), {date(2026, 10, 1): Decimal("123.45")}
+    )
     repo.settings.return_value = None
     result = await CourierReportService(repo, eligibility).earnings(
         uuid4(), date(2026, 10, 1), date(2026, 10, 3), "day"
@@ -35,10 +37,11 @@ async def test_report_exact_totals_zero_fill_and_previous_bounds():
     assert result.previous.percentage == "23.45"
     assert [b.amount for b in result.buckets] == ["123.45", "0.00", "0.00"]
     assert result.previous.from_date == date(2026, 9, 28)
-    assert repo.totals.call_args.args[1:] == (
+    assert repo.earnings.call_args.args[1:] == (
         datetime(2026, 9, 30, 21, tzinfo=UTC),
         datetime(2026, 10, 3, 21, tzinfo=UTC),
         datetime(2026, 9, 27, 21, tzinfo=UTC),
+        "day",
     )
     eligibility.require_courier.assert_awaited_once()
 
@@ -53,20 +56,19 @@ async def test_report_rejects_unbounded_or_extreme_range():
     ]:
         with pytest.raises(ValidationDomainError):
             await service.earnings(uuid4(), start, end, "day")
-    repo.totals.assert_not_awaited()
+    repo.earnings.assert_not_awaited()
 
 
 async def test_zero_baseline_and_disabled_target():
     repo = AsyncMock()
-    repo.totals.return_value = (Decimal("0.00"), Decimal("0.00"))
-    repo.buckets.return_value = {}
+    repo.earnings.return_value = CourierEarningsAggregate(Decimal("0.00"), Decimal("0.00"), {})
     repo.settings.return_value = None
     service = CourierReportService(repo, AsyncMock())
     result = await service.earnings(uuid4(), date(2026, 10, 1), date(2026, 10, 1), "day")
     assert result.previous.percentage is None
     assert result.previous.comparison == "UNCHANGED"
     assert result.target is None
-    repo.totals.return_value = (Decimal("1.00"), Decimal("0.00"))
+    repo.earnings.return_value = CourierEarningsAggregate(Decimal("1.00"), Decimal("0.00"), {})
     result = await service.earnings(uuid4(), date(2026, 10, 1), date(2026, 10, 1), "day")
     assert result.previous.comparison == "NO_BASELINE"
 
@@ -127,26 +129,24 @@ async def test_eligibility_failure_never_reads_private_reports():
         await service.earnings(uuid4(), date(2026, 10, 1), date(2026, 10, 1), "day")
     with pytest.raises(ForbiddenError):
         await service.settings(uuid4())
-    repo.totals.assert_not_awaited()
+    repo.earnings.assert_not_awaited()
     repo.settings.assert_not_awaited()
 
 
 async def test_sql_scope_settlement_and_signed_sum():
-    from unittest.mock import MagicMock
-
     from app.repositories.courier_report_repository import CourierReportRepository
     from sqlalchemy.dialects import postgresql
 
     session = AsyncMock()
-    session.execute.return_value = MagicMock()
-    session.execute.return_value.one.return_value = (Decimal("90.00"), Decimal("0.00"))
+    session.execute.return_value = [(None, 1, Decimal("90.00"), Decimal("90.00"), None)]
     actor = uuid4()
     now = datetime(2026, 10, 1, tzinfo=UTC)
-    await CourierReportRepository(session).totals(actor, now, now, now)
+    await CourierReportRepository(session).earnings(actor, now, now, now, "day")
     query = session.execute.call_args.args[0]
     compiled = query.compile(dialect=postgresql.dialect())
     sql = str(compiled)
-    assert "sum(CASE" in sql
+    assert "GROUP BY GROUPING SETS" in sql
+    assert sql.count("FROM transactions") == 1
     assert "wallets.user_id =" in sql
     assert "transactions.amount >" not in sql
     assert "ESCROW_RELEASE" in compiled.params.values()
@@ -190,8 +190,7 @@ async def test_courier_report_http_contract_role_and_validation(monkeypatch):
     app.dependency_overrides[get_db] = lambda: AsyncMock()
     app.dependency_overrides[require_auth] = lambda: actor
     repo = AsyncMock()
-    repo.totals.return_value = (Decimal("0.00"), Decimal("0.00"))
-    repo.buckets.return_value = {}
+    repo.earnings.return_value = CourierEarningsAggregate(Decimal("0.00"), Decimal("0.00"), {})
     repo.settings.return_value = None
     monkeypatch.setattr(
         courier_report_routes, "_service", lambda db: CourierReportService(repo, AsyncMock())

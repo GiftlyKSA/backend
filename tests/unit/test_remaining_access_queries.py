@@ -11,10 +11,67 @@ from app.repositories.courier_repository import CourierRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.user_repository import UserRepository
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql.asyncpg import PGDialect_asyncpg
 
 
 def sql(statement):
     return str(statement.compile(dialect=postgresql.dialect()))
+
+
+async def test_inbox_limits_each_participant_scan_before_merging():
+    session = AsyncMock()
+    session.scalars.return_value = []
+    owner, before_id = uuid4(), uuid4()
+    before_time = datetime(2026, 10, 1, tzinfo=UTC)
+
+    await ChatRepository(session).list_for_user(owner, limit=20, before=(before_time, before_id))
+
+    statement = session.scalars.await_args.args[0].compile(dialect=PGDialect_asyncpg())
+    query = str(statement)
+    assert query.count("LIMIT") == 3
+    assert query.count("(conversations.last_message_timestamp, conversations.id) <") == 2
+    assert "conversations.customer_id =" in query and "conversations.courier_id =" in query
+    assert {owner, before_time, before_id, 20} == set(statement.params.values())
+
+
+async def test_quota_counts_only_up_to_the_supplied_threshold_with_owner_bound():
+    session = AsyncMock()
+    session.scalar.return_value = 5
+    customer_id = uuid4()
+
+    assert await OrderRepository(session).count_customer_active(customer_id, limit=5) == 5
+
+    statement = session.scalar.await_args.args[0].compile(
+        dialect=PGDialect_asyncpg(), compile_kwargs={"render_postcompile": True}
+    )
+    query = str(statement)
+    assert query.startswith("SELECT count(*)")
+    assert "LIMIT" in query
+    assert "orders.customer_id =" in query
+    assert "status IN (" in query and "'WAITING_PAYMENT'" in query
+    assert set(statement.params.values()) == {customer_id, 5}
+
+
+async def test_radar_keeps_new_visible_to_generic_plans_in_anchor_and_page():
+    session = AsyncMock()
+    city_id, cursor = uuid4(), uuid4()
+    before_time = datetime(2026, 10, 1, tzinfo=UTC)
+    session.execute.return_value = Mock(
+        one_or_none=Mock(return_value=SimpleNamespace(created_at=before_time, id=cursor))
+    )
+    session.scalars.return_value = []
+
+    await OrderRepository(session).list_available(city_id, limit=20, before_id=cursor)
+
+    for statement, params in (
+        (session.execute.await_args.args[0], {city_id, cursor}),
+        (session.scalars.await_args.args[0], {city_id, before_time, cursor, 20}),
+    ):
+        compiled = statement.compile(
+            dialect=PGDialect_asyncpg(), compile_kwargs={"render_postcompile": True}
+        )
+        assert "orders.status = 'NEW'" in str(compiled)
+        assert set(compiled.params.values()) == params
 
 
 async def test_chat_live_projection_is_one_owned_query_without_private_columns():

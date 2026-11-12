@@ -17,7 +17,9 @@ async def test_foreign_order_cannot_generate_signed_media_urls():
     storage = Mock()
     service = OrderMediaReadService(orders, AsyncMock(), storage)
     with pytest.raises(NotFoundError):
-        await service.list(uuid4(), uuid4(), purpose=None, limit=25, cursor=None)
+        await service.list(
+            uuid4(), uuid4(), purpose=None, limit=25, cursor=None, release_read=AsyncMock()
+        )
     storage.signed_read_url.assert_not_called()
     orders.page_media_for_actor.assert_not_awaited()
 
@@ -44,6 +46,7 @@ async def test_media_page_exposes_only_owned_short_lived_urls_and_trusted_metada
         purpose="ORDER_REQUEST",
         limit=2,
         cursor=None,
+        release_read=AsyncMock(),
     )
     assert len(result.items) == 2
     assert result.next_cursor == str(rows[1].id)

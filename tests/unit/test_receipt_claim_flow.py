@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -20,7 +21,6 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
 ) -> None:
     invoice_id = uuid.uuid4()
     order_id = uuid.uuid4()
-    customer_id = uuid.uuid4()
     invoice = SimpleNamespace(
         id=invoice_id,
         order_id=order_id,
@@ -34,6 +34,8 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
         paid_at=None,
         issued_at=None,
         status="PAID",
+        receipt_first_attempt_at=datetime.now(UTC),
+        receipt_failed_attempts=0,
     )
     active_sessions = 0
     events: list[str] = []
@@ -52,9 +54,9 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
             events.append("commit")
 
     class Invoices:
-        async def claim_receipt(self, *_args: object, **_kwargs: object) -> object:
+        async def claim_receipt(self, *_args: object, **_kwargs: object) -> tuple[object, str]:
             events.append("claim")
-            return invoice
+            return invoice, "a@example.com"
 
         async def list_items(self, *_args):
             return []
@@ -69,20 +71,6 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
             events.append("send")
 
     monkeypatch.setattr(receipt_service, "InvoiceRepository", lambda session: Invoices())
-    monkeypatch.setattr(
-        receipt_service,
-        "OrderRepository",
-        lambda session: SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(customer_id=customer_id))
-        ),
-    )
-    monkeypatch.setattr(
-        receipt_service,
-        "UserRepository",
-        lambda session: SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(email="a@example.com"))
-        ),
-    )
 
     service = receipt_service.ReceiptService(
         factory=lambda: Session(), email=Email(), settings=make_test_settings()
@@ -92,10 +80,10 @@ async def test_email_send_occurs_between_claim_and_completion_transactions(
 
 
 @pytest.mark.asyncio
-async def test_provider_timeout_leaves_claim_for_later_retry(
+async def test_provider_timeout_records_failure_without_stamping_receipt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(receipt_service, "_SEND_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(receipt_service, "RECEIPT_SEND_TIMEOUT_SECONDS", 0.001)
     invoice = SimpleNamespace(
         id=uuid.uuid4(),
         order_id=uuid.uuid4(),
@@ -109,8 +97,11 @@ async def test_provider_timeout_leaves_claim_for_later_retry(
         paid_at=None,
         issued_at=None,
         status="PAID",
+        receipt_first_attempt_at=datetime.now(UTC),
+        receipt_failed_attempts=0,
     )
     complete = AsyncMock()
+    finish_failure = AsyncMock(return_value=True)
 
     class Session:
         async def __aenter__(self) -> Session:
@@ -126,23 +117,10 @@ async def test_provider_timeout_leaves_claim_for_later_retry(
         receipt_service,
         "InvoiceRepository",
         lambda session: SimpleNamespace(
-            claim_receipt=AsyncMock(return_value=invoice),
+            claim_receipt=AsyncMock(return_value=(invoice, "a@example.com")),
             complete_receipt=complete,
+            finish_receipt_failure=finish_failure,
             list_items=AsyncMock(return_value=[]),
-        ),
-    )
-    monkeypatch.setattr(
-        receipt_service,
-        "OrderRepository",
-        lambda session: SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(customer_id=uuid.uuid4()))
-        ),
-    )
-    monkeypatch.setattr(
-        receipt_service,
-        "UserRepository",
-        lambda session: SimpleNamespace(
-            get=AsyncMock(return_value=SimpleNamespace(email="a@example.com"))
         ),
     )
 
@@ -157,3 +135,4 @@ async def test_provider_timeout_leaves_claim_for_later_retry(
     with pytest.raises(TimeoutError):
         await service.send_receipt(invoice.id)
     complete.assert_not_awaited()
+    assert finish_failure.call_args.kwargs["retry_at"] > datetime.now(UTC)

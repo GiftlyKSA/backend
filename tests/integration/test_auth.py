@@ -7,6 +7,7 @@ single event loop via httpx's ASGI transport; skips if DB/Redis are unavailable.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -18,8 +19,12 @@ import jwt
 import pytest
 from app.core.config import Settings
 from app.core.db import build_engine, build_session_factory
+from app.core.jwt import create_registration_token
 from app.main import create_app
 from app.models import AuditLog, CourierProfile, RefreshToken, User, Wallet
+from app.models.enums import UserRole
+from app.repositories.auth_repository import AuthRepository
+from app.repositories.user_repository import UserRepository
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 
@@ -201,6 +206,102 @@ async def test_auth_full_flow_and_negatives() -> None:
 
 def _b64url(data: dict) -> str:
     return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+
+
+def _synchronize_registration_prechecks(monkeypatch: pytest.MonkeyPatch, phone: str) -> None:
+    prechecks = asyncio.Barrier(2)
+    original = UserRepository.get_by_phone
+
+    async def read_before_insert(repo: UserRepository, candidate: str) -> User | None:
+        user = await original(repo, candidate)
+        if candidate == phone:
+            await asyncio.wait_for(prechecks.wait(), timeout=5)
+        return user
+
+    monkeypatch.setattr(UserRepository, "get_by_phone", read_before_insert)
+
+
+def _force_unrelated_user_integrity_failure(monkeypatch: pytest.MonkeyPatch, role: str) -> None:
+    async def insert_invalid_user(repo: AuthRepository, **values: object) -> None:
+        repo._session.add(User(**values, public_identifier=0))
+        await repo._session.flush()
+
+    method = "create_customer" if role == "CUSTOMER" else "create_courier_user"
+    monkeypatch.setattr(AuthRepository, method, insert_invalid_user)
+
+
+@pytest.mark.parametrize("role", ["CUSTOMER", "COURIER"])
+@pytest.mark.parametrize("conflict", ["email", "phone", "unrelated_integrity"])
+async def test_registration_handles_only_expected_unique_conflicts(
+    monkeypatch: pytest.MonkeyPatch, role: str, conflict: str
+) -> None:
+    settings = _settings()
+    app = create_app(settings)
+    factory = app.state.session_factory
+    existing_phone, new_phone = _new_phone(), _new_phone()
+    email = f"buyer-{uuid.uuid4().hex}@example.com"
+    database_available = False
+    try:
+        async with factory() as session:
+            try:
+                await session.execute(select(User.id).limit(1))
+            except Exception as exc:  # noqa: BLE001
+                pytest.skip(f"database unavailable: {exc}")
+            database_available = True
+            if conflict == "email":
+                session.add(User(phone=existing_phone, email=email, role=UserRole.CUSTOMER))
+                await session.commit()
+
+        if conflict == "phone":
+            _synchronize_registration_prechecks(monkeypatch, new_phone)
+        elif conflict == "unrelated_integrity":
+            _force_unrelated_user_integrity_failure(monkeypatch, role)
+
+        payload = {
+            "registration_token": create_registration_token(settings, phone=new_phone),
+            "role": role,
+            "full_name": "Test registration",
+        }
+        if role == "COURIER":
+            payload.update(city="Jeddah", national_id="1122334455")
+        if conflict == "email":
+            payload["email"] = email
+
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            if conflict == "phone":
+                responses = await asyncio.gather(
+                    client.post("/api/auth/register", json=payload),
+                    client.post("/api/auth/register", json=payload),
+                )
+                assert sorted(response.status_code for response in responses) == [201, 409]
+                response = next(response for response in responses if response.status_code == 409)
+            else:
+                response = await client.post("/api/auth/register", json=payload)
+                assert response.status_code == (409 if conflict == "email" else 500)
+
+        assert response.json()["error"]["code"] == (
+            "INTERNAL_ERROR" if conflict == "unrelated_integrity" else "CONFLICT"
+        )
+        assert email not in response.text
+        async with factory() as session:
+            users = list(await session.scalars(select(User).where(User.phone == new_phone)))
+            assert len(users) == (1 if conflict == "phone" else 0)
+            if users:
+                user_id = users[0].id
+                wallets = list(
+                    await session.scalars(select(Wallet).where(Wallet.user_id == user_id))
+                )
+                assert len(wallets) == 1
+                profile = await session.get(CourierProfile, user_id)
+                assert (profile is not None) == (role == "COURIER")
+    finally:
+        try:
+            if database_available:
+                await _cleanup(factory, [existing_phone, new_phone])
+        finally:
+            await app.state.redis.aclose()
+            await app.state.engine.dispose()
 
 
 def _alg_none_token(sub: str) -> str:

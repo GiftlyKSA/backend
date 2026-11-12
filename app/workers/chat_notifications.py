@@ -2,12 +2,15 @@
 
 from app.services.chat_notification_service import send_pending_chat_notifications
 from app.workers.broker import broker
+from app.workers.delivery_budget import run_delivery_drainer
 
 
 @broker.task(schedule=[{"cron": "* * * * *"}])
 async def deliver_chat_notifications() -> None:
     """Recover committed chat pushes every minute, including after process restarts."""
-    await send_pending_chat_notifications()
+    await run_delivery_drainer(
+        "chat notifications", lambda deadline: send_pending_chat_notifications(deadline=deadline)
+    )
 
 
 @broker.task(schedule=[{"cron": "* * * * *"}])

@@ -2,10 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 import yaml
+
+
+async def test_drainer_deadline_releases_stalled_worker(monkeypatch) -> None:
+    from app.workers import delivery_budget
+
+    started = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def stalled(deadline: float) -> None:
+        assert deadline > asyncio.get_running_loop().time()
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    monkeypatch.setattr(delivery_budget, "_RUN_BUDGET_SECONDS", 0.01)
+    await asyncio.wait_for(delivery_budget.run_delivery_drainer("test drainer", stalled), 1)
+
+    assert started.is_set()
+    assert closed.is_set()
 
 
 def test_compose_scheduler_uses_worker_source_mount() -> None:

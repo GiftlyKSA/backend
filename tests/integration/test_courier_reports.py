@@ -8,7 +8,10 @@ import pytest
 from app.core.exceptions import ConflictError
 from app.models import City, CourierProfile, Invoice, Order, Transaction, User, Wallet
 from app.models.enums import TransactionStatus, TransactionType, UserRole, WalletType
-from app.repositories.courier_report_repository import CourierReportRepository
+from app.repositories.courier_report_repository import (
+    CourierEarningsAggregate,
+    CourierReportRepository,
+)
 from app.schemas.courier_report_schemas import TargetUpdate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,19 +79,25 @@ async def test_signed_settled_proceeds_riyadh_boundaries_exclusions_and_owner(
     repo = CourierReportRepository(db_session)
     start, end = datetime(2026, 10, 10, 21, tzinfo=UTC), datetime(2026, 10, 11, 21, tzinfo=UTC)
     assert await repo.total(courier.id, start, end) == Decimal("130.09")
-    assert await repo.buckets(courier.id, start, end, "day") == {
-        date(2026, 10, 11): Decimal("130.09")
-    }
-    assert await repo.buckets(courier.id, start, end, "week") == {
-        date(2026, 10, 11): Decimal("130.09")
-    }
-    assert await repo.buckets(courier.id, start, end, "month") == {
-        date(2026, 10, 1): Decimal("130.09")
-    }
-    assert await repo.totals(courier.id, start, end, datetime(2026, 10, 9, 21, tzinfo=UTC)) == (
-        Decimal("130.09"),
-        Decimal("500.00"),
-    )
+    previous_start = datetime(2026, 10, 9, 21, tzinfo=UTC)
+    for granularity, bucket in (
+        ("day", date(2026, 10, 11)),
+        ("week", date(2026, 10, 11)),
+        ("month", date(2026, 10, 1)),
+    ):
+        assert await repo.earnings(
+            courier.id, start, end, previous_start, granularity
+        ) == CourierEarningsAggregate(
+            Decimal("130.09"), Decimal("500.00"), {bucket: Decimal("130.09")}
+        )
+    assert await repo.earnings(
+        courier.id,
+        datetime(2026, 10, 2, tzinfo=UTC),
+        datetime(2026, 10, 3, tzinfo=UTC),
+        datetime(2026, 10, 1, tzinfo=UTC),
+        "day",
+        target_bounds=(start, end),
+    ) == CourierEarningsAggregate(Decimal("0.00"), Decimal("0.00"), {}, Decimal("130.09"))
 
 
 async def test_settings_owner_initialization_stale_insert_and_update(db_session: AsyncSession):
@@ -186,9 +195,13 @@ async def test_populated_settings_migration_downgrade_refuses_loss(db_session: A
     assert await CourierReportRepository(db_session).settings(courier.id) is not None
 
 
-async def test_large_settlement_history_still_uses_two_aggregate_queries(db_session: AsyncSession):
-    from sqlalchemy import event, func, text
-    from sqlalchemy.dialects import postgresql
+async def test_report_and_target_share_a_single_ledger_snapshot(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+):
+    from app.repositories.courier_repository import CourierRepository
+    from app.repositories.user_repository import UserRepository
+    from app.services.courier_eligibility_service import CourierEligibilityService
+    from app.services.courier_report_service import RIYADH, CourierReportService
 
     courier, wallet = await _courier(db_session)
     city = await db_session.scalar(select(City).limit(1))
@@ -203,43 +216,53 @@ async def test_large_settlement_history_still_uses_two_aggregate_queries(db_sess
     invoice = Invoice(order_id=order.id, issued_by_courier_id=courier.id)
     db_session.add(invoice)
     await db_session.flush()
-    stamp = datetime(2026, 10, 11, 0, tzinfo=UTC)
-    db_session.add_all(
-        [
-            Transaction(
-                wallet_id=wallet.id,
-                amount=Decimal("1.01"),
-                type=TransactionType.ESCROW_RELEASE,
-                status=TransactionStatus.SETTLED,
-                reference_order_id=order.id,
-                reference_invoice_id=invoice.id,
-                correlation_id=uuid4(),
-                balance_after=Decimal("0.00"),
-                created_at=stamp,
-            )
-            for _ in range(2000)
-        ]
-    )
+    stamp = datetime.now(UTC)
+    day = stamp.astimezone(RIYADH).date()
+
+    def settlement() -> Transaction:
+        return Transaction(
+            wallet_id=wallet.id,
+            amount=Decimal("1.01"),
+            type=TransactionType.ESCROW_RELEASE,
+            status=TransactionStatus.SETTLED,
+            reference_order_id=order.id,
+            reference_invoice_id=invoice.id,
+            correlation_id=uuid4(),
+            balance_after=Decimal("0.00"),
+            created_at=stamp,
+        )
+
+    db_session.add_all([settlement() for _ in range(2000)])
     await db_session.flush()
-    connection = await db_session.connection()
-    statements = []
-
-    def count_statement(conn, cursor, statement, parameters, context, executemany):
-        statements.append(statement)
-
-    event.listen(connection.sync_connection, "before_cursor_execute", count_statement)
     repo = CourierReportRepository(db_session)
-    start, end = datetime(2026, 10, 10, 21, tzinfo=UTC), datetime(2026, 10, 11, 21, tzinfo=UTC)
-    try:
-        assert await repo.total(courier.id, start, end) == Decimal("2020.00")
-        assert await repo.buckets(courier.id, start, end, "day") == {
-            date(2026, 10, 11): Decimal("2020.00")
-        }
-        assert len(statements) == 2
-    finally:
-        event.remove(connection.sync_connection, "before_cursor_execute", count_statement)
-    query = repo._proceeds(courier.id, start, end).with_only_columns(func.sum(Transaction.amount))
-    sql = str(query.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    plan = (await db_session.execute(text("EXPLAIN (ANALYZE, BUFFERS) " + sql))).scalars().all()
-    assert any("Aggregate" in line for line in plan)
-    print("Courier report synthetic 2000-row plan:\n" + "\n".join(plan))
+    await repo.replace_settings(
+        courier.id,
+        TargetUpdate(version=0, target_enabled=True, target_amount="2000.00", target_period="WEEK"),
+    )
+    service = CourierReportService(
+        repo,
+        CourierEligibilityService(
+            users=UserRepository(db_session), couriers=CourierRepository(db_session)
+        ),
+    )
+    statements = []
+    execute = db_session.execute
+
+    async def settle_after_first_read(statement, *args, **kwargs):
+        result = await execute(statement, *args, **kwargs)
+        if "FROM transactions" in str(statement):
+            statements.append(statement)
+            if len(statements) == 1:
+                db_session.add(settlement())
+                await db_session.flush()
+        return result
+
+    monkeypatch.setattr(db_session, "execute", settle_after_first_read)
+    report = await service.earnings(courier.id, day, day, "day")
+    assert report.settled_total == "2020.00"
+    assert [bucket.amount for bucket in report.buckets] == ["2020.00"]
+    assert report.target is not None
+    assert report.target.settled_total == "2020.00"
+    assert len(statements) == 1
+    refreshed = await service.earnings(courier.id, day, day, "day")
+    assert refreshed.settled_total == "2021.01"

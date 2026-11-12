@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -11,15 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
 from app.core.money import money_str
-from app.integrations.email.base import EmailClient
+from app.integrations.email.base import EmailClient, EmailRecipientSuppressedError
 from app.repositories.invoice_repository import InvoiceRepository
-from app.repositories.order_repository import OrderRepository
-from app.repositories.user_repository import UserRepository
 from app.services.invoice_pdf import render_invoice_pdf
 
+_logger = logging.getLogger("app.receipts")
 _DEFAULT_TEMPLATE_KEY = "invoice_paid_receipt"
-_SEND_TIMEOUT_SECONDS = 15
+RECEIPT_SEND_TIMEOUT_SECONDS = 15
+_DELIVERY_TIMEOUT_SECONDS = 30
 _CLAIM_LEASE = timedelta(seconds=60)
+_FIRST_RETRY_DELAY = timedelta(minutes=15)
+_MAX_RETRY_DELAY = timedelta(hours=4)
+_MAX_FAILED_ATTEMPTS = 8
+# SNDR replays a stable idempotency key for 24 hours after acceptance.
+_REPLAY_WINDOW = timedelta(hours=23)
 
 
 class ReceiptService:
@@ -41,20 +47,33 @@ class ReceiptService:
         """Send an eligible receipt and stamp only the claim this call owns.
 
         Provider acceptance followed by a crash or stamp failure can cause a retry.
-        A stable provider idempotency key makes retries replay-safe within its window.
+        Expire ambiguous claims before the stable provider key can stop deduplicating.
         """
         token = uuid.uuid4()
+        claimed_at = datetime.now(UTC)
         async with self._factory() as session:
             invoices = InvoiceRepository(session)
-            invoice = await invoices.claim_receipt(
-                invoice_id, token=token, now=datetime.now(UTC), lease=_CLAIM_LEASE
+            claim = await invoices.claim_receipt(
+                invoice_id, token=token, now=claimed_at, lease=_CLAIM_LEASE
             )
-            if invoice is None:
+            if claim is None:
                 return False
-            order = await OrderRepository(session).get(invoice.order_id)
-            customer = await UserRepository(session).get(order.customer_id) if order else None
-            address = customer.email if customer else None
-            items = await invoices.list_items(invoice.id) if address else []
+            invoice, address = claim
+            first_attempt_at = invoice.receipt_first_attempt_at or claimed_at
+            retry_deadline = first_attempt_at + _REPLAY_WINDOW
+            failed_attempts = min(max(invoice.receipt_failed_attempts, 0), _MAX_FAILED_ATTEMPTS)
+            if datetime.now(UTC) >= retry_deadline or failed_attempts >= _MAX_FAILED_ATTEMPTS:
+                await invoices.finish_receipt_failure(
+                    invoice_id,
+                    token=token,
+                    when=datetime.now(UTC),
+                    failed_attempts=failed_attempts,
+                    retry_at=None,
+                )
+                await session.commit()
+                _logger.warning("Receipt retry budget exhausted for invoice %s.", invoice_id)
+                return False
+            items = await invoices.list_items(invoice.id)
             variables: dict[str, object] = {
                 "invoice_id": str(invoice.id),
                 "order_id": str(invoice.order_id),
@@ -69,17 +88,57 @@ class ReceiptService:
             }
             await session.commit()
 
-        if not address:
-            return False
-        pdf = await asyncio.to_thread(render_invoice_pdf, invoice, items)
-        variables["pdf_base64"] = base64.b64encode(pdf).decode("ascii")
-        template = self._settings.SNDR_INVOICE_PAID_TEMPLATE_KEY or _DEFAULT_TEMPLATE_KEY
-        async with asyncio.timeout(_SEND_TIMEOUT_SECONDS):
-            await self._email.send_transactional(address, template, variables)
+        try:
+            async with asyncio.timeout(_DELIVERY_TIMEOUT_SECONDS):
+                pdf = await asyncio.to_thread(render_invoice_pdf, invoice, items)
+                variables["pdf_base64"] = base64.b64encode(pdf).decode("ascii")
+                template = self._settings.SNDR_INVOICE_PAID_TEMPLATE_KEY or _DEFAULT_TEMPLATE_KEY
+                async with asyncio.timeout(RECEIPT_SEND_TIMEOUT_SECONDS):
+                    await self._email.send_transactional(address, template, variables)
+        except Exception as exc:
+            await self._record_failure(
+                invoice_id,
+                token=token,
+                failed_attempts=failed_attempts + 1,
+                retry_deadline=retry_deadline,
+                error=exc,
+            )
+            raise
 
         async with self._factory() as session:
             completed = await InvoiceRepository(session).complete_receipt(
                 invoice_id, token=token, when=datetime.now(UTC)
             )
             await session.commit()
-        return bool(address and completed)
+        return completed
+
+    async def _record_failure(
+        self,
+        invoice_id: uuid.UUID,
+        *,
+        token: uuid.UUID,
+        failed_attempts: int,
+        retry_deadline: datetime,
+        error: Exception,
+    ) -> None:
+        when = datetime.now(UTC)
+        delay = min(_FIRST_RETRY_DELAY * 2 ** (failed_attempts - 1), _MAX_RETRY_DELAY)
+        next_attempt_at = when + delay
+        exhausted = (
+            isinstance(error, EmailRecipientSuppressedError)
+            or failed_attempts >= _MAX_FAILED_ATTEMPTS
+            or next_attempt_at >= retry_deadline
+        )
+        async with self._factory() as session:
+            recorded = await InvoiceRepository(session).finish_receipt_failure(
+                invoice_id,
+                token=token,
+                when=when,
+                failed_attempts=failed_attempts,
+                retry_at=None if exhausted else next_attempt_at,
+            )
+            await session.commit()
+        if recorded and exhausted:
+            _logger.warning(
+                "receipt retries exhausted for invoice %s (%s)", invoice_id, type(error).__name__
+            )

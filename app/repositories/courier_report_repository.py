@@ -13,7 +13,9 @@ from sqlalchemy import (
     cast,
     func,
     literal,
+    null,
     select,
+    tuple_,
     type_coerce,
     update,
 )
@@ -22,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import ReturningInsert, ReturningUpdate
 
 from app.core.exceptions import ConflictError
-from app.core.money import parse_money
+from app.core.money import ZERO, parse_money
 from app.models import Order, Transaction, Wallet
 from app.models.courier_report_settings import CourierReportSettings
 from app.models.enums import (
@@ -52,6 +54,16 @@ class CourierSummaryAggregate:
     settled_earnings_total: Decimal
     currency: str
     as_of: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class CourierEarningsAggregate:
+    """Current and previous proceeds, current chart buckets, and optional target total."""
+
+    current: Decimal
+    previous: Decimal
+    buckets: dict[date, Decimal]
+    target: Decimal | None = None
 
 
 class CourierReportRepository:
@@ -121,47 +133,68 @@ class CourierReportRepository:
             as_of=row.as_of,
         )
 
-    async def totals(
-        self, courier_id: uuid.UUID, start: datetime, end: datetime, previous_start: datetime
-    ) -> tuple[Decimal, Decimal]:
-        """Aggregate current and previous periods in one bounded query."""
-        query = self._proceeds(courier_id, previous_start, end).with_only_columns(
-            func.coalesce(
-                func.sum(case((Transaction.created_at >= start, Transaction.amount), else_=0)), 0
-            ),
-            func.coalesce(
-                func.sum(case((Transaction.created_at < start, Transaction.amount), else_=0)), 0
-            ),
+    def _period_total(
+        self, courier_id: uuid.UUID, start: datetime, end: datetime
+    ) -> Select[Decimal]:
+        return self._proceeds(courier_id, start, end).with_only_columns(
+            func.coalesce(func.sum(Transaction.amount), ZERO)
         )
-        row = (await self._session.execute(query)).one()
-        return Decimal(row[0]), Decimal(row[1])
 
     async def total(self, courier_id: uuid.UUID, start: datetime, end: datetime) -> Decimal:
         """Sum signed settled proceeds for the requested period."""
-        value = await self._session.scalar(
-            self._proceeds(courier_id, start, end).with_only_columns(
-                func.coalesce(func.sum(Transaction.amount), 0)
-            )
-        )
+        value = await self._session.scalar(self._period_total(courier_id, start, end))
         assert value is not None
         return Decimal(value)
 
-    async def buckets(
-        self, courier_id: uuid.UUID, start: datetime, end: datetime, granularity: Granularity
-    ) -> dict[date, Decimal]:
-        """Group eligible ledger rows into at most 366 local calendar buckets."""
+    async def earnings(
+        self,
+        courier_id: uuid.UUID,
+        start: datetime,
+        end: datetime,
+        previous_start: datetime,
+        granularity: Granularity,
+        *,
+        target_bounds: tuple[datetime, datetime] | None = None,
+    ) -> CourierEarningsAggregate:
+        """Read the report and optional bounded target from the same ledger snapshot."""
         local = func.timezone("Asia/Riyadh", Transaction.created_at)
-        bucket = cast(func.date_trunc(granularity, local), Date)
-        if granularity == "week":
-            bucket = cast(
-                func.date_trunc("week", local + timedelta(days=1)) - timedelta(days=1), Date
-            )
-        query = (
-            self._proceeds(courier_id, start, end)
-            .with_only_columns(bucket, func.sum(Transaction.amount))
-            .group_by(bucket)
+        truncated = (
+            func.date_trunc("week", local + timedelta(days=1)) - timedelta(days=1)
+            if granularity == "week"
+            else func.date_trunc(granularity, local)
         )
-        return {row[0]: Decimal(row[1]) for row in (await self._session.execute(query)).all()}
+        in_current = Transaction.created_at >= start
+        # GROUPING distinguishes the previous period's NULL bucket from the subtotal.
+        bucket = case((in_current, cast(truncated, Date)))
+        target = (
+            self._period_total(courier_id, *target_bounds).scalar_subquery()
+            if target_bounds is not None
+            else null()
+        )
+        query = (
+            self._proceeds(courier_id, previous_start, end)
+            .with_only_columns(
+                bucket,
+                func.grouping(bucket),
+                func.sum(Transaction.amount),
+                func.sum(Transaction.amount).filter(in_current),
+                target,
+            )
+            .group_by(func.grouping_sets(tuple_(bucket), tuple_()))
+        )
+        current = previous = ZERO
+        target_total = None
+        buckets: dict[date, Decimal] = {}
+        rows = await self._session.execute(query)
+        for day, subtotal, amount, current_total, target_amount in rows:
+            if subtotal:
+                current = Decimal(current_total) if current_total is not None else ZERO
+                target_total = Decimal(target_amount) if target_amount is not None else None
+            elif day is None:
+                previous = Decimal(amount)
+            else:
+                buckets[day] = Decimal(amount)
+        return CourierEarningsAggregate(current, previous, buckets, target_total)
 
     async def settings(self, courier_id: uuid.UUID) -> CourierReportSettings | None:
         """Read only the authenticated courier owner settings."""

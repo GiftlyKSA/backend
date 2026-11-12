@@ -42,15 +42,20 @@ async def dispatch_worker_wakeups(session: AsyncSession) -> set[WorkerTask]:
     task_names = session.info.pop(_WAKEUPS_KEY, set())
     tasks = sorted((task for task in WorkerTask if task.value in task_names), key=lambda t: t.value)
     queued: set[WorkerTask] = set()
-    for task in tasks:
-        try:
-            async with asyncio.timeout(_ENQUEUE_TIMEOUT_SECONDS):
-                await _enqueue_worker_task(task)
-            queued.add(task)
-        except Exception as exc:  # noqa: BLE001 - durable outbox sweepers are the fallback
-            _logger.warning(
-                "Worker wake-up failed for %s; scheduled outbox recovery remains active (%s).",
-                task.value,
-                type(exc).__name__,
-            )
+    if not tasks:
+        return queued
+    try:
+        async with asyncio.timeout(_ENQUEUE_TIMEOUT_SECONDS):
+            for task in tasks:
+                try:
+                    await _enqueue_worker_task(task)
+                    queued.add(task)
+                except Exception as exc:  # noqa: BLE001 - scheduled sweepers recover durable work
+                    _logger.warning(
+                        "Worker wake-up failed for %s; scheduled recovery remains active (%s).",
+                        task.value,
+                        type(exc).__name__,
+                    )
+    except TimeoutError:
+        _logger.warning("Worker wake-up budget elapsed; scheduled recovery remains active.")
     return queued

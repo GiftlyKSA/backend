@@ -121,7 +121,10 @@ class OrderService:
             raise ValidationDomainError("Select an active city from the city list.")
         await self._orders.lock_actor(customer_id)
         await self._check_cancellation_limit(customer_id, datetime.now(UTC))
-        if await self._orders.count_customer_active(customer_id) >= _MAX_CUSTOMER_ACTIVE:
+        if (
+            await self._orders.count_customer_active(customer_id, limit=_MAX_CUSTOMER_ACTIVE)
+            >= _MAX_CUSTOMER_ACTIVE
+        ):
             raise ConflictError("You have reached the maximum number of active orders.")
 
         media_heads = await self._media.claim_many(
@@ -267,7 +270,10 @@ class OrderService:
             raise ConflictError("The order's invoice changed; retry cancellation.")
 
     async def _create_replacement(self, order: Order, city: City) -> None:
-        if await self._orders.count_customer_active(order.customer_id) >= _MAX_CUSTOMER_ACTIVE:
+        if (
+            await self._orders.count_customer_active(order.customer_id, limit=_MAX_CUSTOMER_ACTIVE)
+            >= _MAX_CUSTOMER_ACTIVE
+        ):
             raise ConflictError("You have reached the maximum number of active orders.")
         replacement = await self._orders.create(
             customer_id=order.customer_id,

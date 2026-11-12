@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from itertools import zip_longest
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
 from app.models import MediaUpload, User
+
+_MAX_CLEANUP_BATCH = 100
+
+
+@dataclass(frozen=True)
+class MediaCleanupReservation:
+    """One detached grant with the reservation timestamp needed to finalize it."""
+
+    grant_id: uuid.UUID
+    storage_key: str
+    reserved_at: datetime
 
 
 class MediaRepository:
@@ -146,39 +159,71 @@ class MediaRepository:
         )
         return updated_key is not None
 
-    async def reserve_expired(self, *, before: datetime, limit: int) -> list[str]:
-        """Fence a bounded batch against claims before removing its objects."""
-        rows = (
-            await self._session.scalars(
-                select(MediaUpload)
-                .where(
-                    MediaUpload.created_at < before,
-                    MediaUpload.attached_at.is_(None),
-                    or_(
-                        MediaUpload.deleting_at.is_(None),
-                        MediaUpload.deleting_at < datetime.now(UTC) - timedelta(hours=1),
-                    ),
-                )
-                .order_by(
-                    MediaUpload.deleting_at.nulls_first(),
-                    MediaUpload.created_at,
-                    MediaUpload.id,
-                )
-                .limit(limit)
-                .with_for_update(skip_locked=True)
-            )
-        ).all()
+    async def reserve_expired(
+        self, *, before: datetime, limit: int
+    ) -> list[MediaCleanupReservation]:
+        """Reserve a bounded mixture of fresh and retryable cleanup work."""
+        limit = min(max(limit, 1), _MAX_CLEANUP_BATCH)
         now = datetime.now(UTC)
-        for row in rows:
-            row.deleting_at = now
-        return [row.storage_key for row in rows]
-
-    async def remove_reserved(self, storage_key: str) -> None:
-        """Remove a fenced grant after its object was deleted or absent."""
-        await self._session.execute(
-            delete(MediaUpload).where(
-                MediaUpload.storage_key == storage_key,
-                MediaUpload.deleting_at.is_not(None),
-                MediaUpload.attached_at.is_(None),
+        candidates = (
+            select(MediaUpload.id)
+            .where(MediaUpload.created_at < before, MediaUpload.attached_at.is_(None))
+            .with_for_update(skip_locked=True)
+        )
+        retries = candidates.where(MediaUpload.deleting_at <= now - timedelta(hours=1)).order_by(
+            MediaUpload.deleting_at, MediaUpload.id
+        )
+        retry_limit = max(1, limit // 4)
+        retry_ids = list(await self._session.scalars(retries.limit(retry_limit)))
+        fresh_ids = list(
+            await self._session.scalars(
+                candidates.where(MediaUpload.deleting_at.is_(None))
+                .order_by(MediaUpload.created_at, MediaUpload.id)
+                .limit(limit - len(retry_ids))
             )
         )
+        remaining = limit - len(retry_ids) - len(fresh_ids)
+        if remaining and len(retry_ids) == retry_limit:
+            retry_ids.extend(
+                await self._session.scalars(
+                    retries.where(MediaUpload.id.not_in(retry_ids)).limit(remaining)
+                )
+            )
+        if not retry_ids and not fresh_ids:
+            return []
+        rows = await self._session.execute(
+            update(MediaUpload)
+            .where(MediaUpload.id.in_(retry_ids + fresh_ids))
+            .values(deleting_at=now)
+            .returning(MediaUpload.id, MediaUpload.storage_key)
+            .execution_options(synchronize_session=False)
+        )
+        reserved = {row.id: MediaCleanupReservation(row.id, row.storage_key, now) for row in rows}
+        return [
+            reserved[grant_id]
+            for pair in zip_longest(retry_ids, fresh_ids)
+            for grant_id in pair
+            if grant_id is not None
+        ]
+
+    async def remove_reserved(self, reservations: list[MediaCleanupReservation]) -> int:
+        """Finalize only successful deletions owned by these exact reservations."""
+        if not reservations:
+            return 0
+        if len(reservations) > _MAX_CLEANUP_BATCH:
+            raise ValueError("Media cleanup finalization batch exceeds 100 grants.")
+        removed = await self._session.scalars(
+            delete(MediaUpload)
+            .where(
+                tuple_(MediaUpload.id, MediaUpload.deleting_at).in_(
+                    [
+                        (reservation.grant_id, reservation.reserved_at)
+                        for reservation in reservations
+                    ]
+                ),
+                MediaUpload.attached_at.is_(None),
+            )
+            .returning(MediaUpload.id)
+            .execution_options(synchronize_session=False)
+        )
+        return len(removed.all())

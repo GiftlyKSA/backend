@@ -68,6 +68,31 @@ async def test_pdf_authorization_failure_never_looks_up_cache(monkeypatch):
     db.commit.assert_not_awaited()
 
 
+async def test_admin_pdf_releases_read_transaction_before_render(monkeypatch):
+    from app.admin.router import admin_invoice_pdf
+    from app.services.invoice_pdf import snapshot_invoice_pdf
+
+    db = AsyncMock()
+    stored, lines = invoice(), items()
+    snapshot = snapshot_invoice_pdf(stored, lines)
+    service = SimpleNamespace(invoice_pdf_snapshot=AsyncMock(return_value=snapshot))
+    monkeypatch.setattr(
+        "app.admin.router._ctx", AsyncMock(return_value=SimpleNamespace(service=service))
+    )
+
+    async def render(*values):
+        db.commit.assert_awaited_once()
+        assert values == snapshot
+        return b"%PDF-1.4 snapshot"
+
+    state = SimpleNamespace(invoice_pdf_cache=SimpleNamespace(render=render))
+    response = await admin_invoice_pdf(
+        SimpleNamespace(app=SimpleNamespace(state=state)), db, stored.id
+    )
+    assert response.body == b"%PDF-1.4 snapshot"
+    assert response.headers["cache-control"] == "private, no-store"
+
+
 async def test_pdf_failed_read_commit_never_renders(monkeypatch):
     cache, db = SimpleNamespace(render=AsyncMock()), AsyncMock()
     stored, lines = invoice(), items()

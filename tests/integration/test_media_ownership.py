@@ -17,8 +17,8 @@ from app.models.enums import UserRole
 from app.repositories.media_repository import MediaRepository
 from app.services.media_cleanup_service import clean_abandoned_uploads
 from app.services.media_service import MediaService
-from sqlalchemy import delete, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, event, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import make_test_settings
 from tests.image_fixtures import record_image
@@ -259,6 +259,122 @@ async def test_cleanup_retries_delete_failure() -> None:
             await session.commit()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.parametrize("batch_size", [1, 100])
+async def test_cleanup_finalizes_successes_in_one_delete(db_session, db_connection, batch_size):
+    owner = await _user(db_session)
+    now = datetime.now(UTC)
+    grants = [
+        MediaUpload(
+            storage_key=f"cleanup-private/{uuid.uuid4()}",
+            owner_user_id=owner.id,
+            purpose="ORDER_REQUEST",
+            content_type="image/jpeg",
+            byte_size=10,
+            created_at=now - timedelta(days=2),
+        )
+        for _ in range(batch_size)
+    ]
+    db_session.add_all(grants)
+    await db_session.flush()
+    delete_statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("DELETE FROM media_uploads"):
+            delete_statements.append(statement)
+
+    event.listen(db_connection.sync_connection, "before_cursor_execute", capture)
+    try:
+        assert (
+            await clean_abandoned_uploads(
+                factory=async_sessionmaker(db_connection),
+                storage=FakeStorageClient(Environment.TEST),
+                settings=_settings(),
+            )
+            == batch_size
+        )
+    finally:
+        event.remove(db_connection.sync_connection, "before_cursor_execute", capture)
+    assert len(delete_statements) == 1
+
+
+async def test_cleanup_reserves_due_retries_and_does_not_log_private_keys(
+    db_session, db_connection, caplog
+):
+    owner = await _user(db_session)
+    now = datetime.now(UTC)
+    grants = [
+        MediaUpload(
+            storage_key=f"cleanup-private/{uuid.uuid4()}",
+            owner_user_id=owner.id,
+            purpose="COURIER_AVATAR",
+            content_type="image/jpeg",
+            byte_size=10,
+            created_at=now - timedelta(days=2),
+            deleting_at=now - timedelta(hours=2) if index < 5 else None,
+        )
+        for index in range(105)
+    ]
+    db_session.add_all(grants)
+    await db_session.flush()
+    failed = {grant.storage_key for grant in grants[:5]}
+    attempted: list[str] = []
+
+    class PartialStorage(FakeStorageClient):
+        async def delete_object(self, storage_key: str) -> None:
+            attempted.append(storage_key)
+            if storage_key in failed:
+                raise RuntimeError(f"storage error for {storage_key}")
+            await super().delete_object(storage_key)
+
+    assert (
+        await clean_abandoned_uploads(
+            factory=async_sessionmaker(db_connection),
+            storage=PartialStorage(Environment.TEST),
+            settings=_settings(),
+        )
+        == 95
+    )
+    assert len(attempted) == 100 and failed.issubset(attempted)
+    assert not any(key in caplog.text for key in attempted)
+    remaining = set(await db_session.scalars(select(MediaUpload.storage_key)))
+    assert failed.issubset(remaining)
+
+
+async def test_cleanup_cannot_finalize_a_replaced_reservation(db_session, db_connection):
+    owner = await _user(db_session)
+    now = datetime.now(UTC)
+    grant = MediaUpload(
+        storage_key=f"cleanup-private/{uuid.uuid4()}",
+        owner_user_id=owner.id,
+        purpose="ORDER_REQUEST",
+        content_type="image/jpeg",
+        byte_size=10,
+        created_at=now - timedelta(days=2),
+    )
+    db_session.add(grant)
+    await db_session.flush()
+    factory = async_sessionmaker(db_connection)
+
+    class ReplacementStorage(FakeStorageClient):
+        async def delete_object(self, storage_key: str) -> None:
+            async with factory() as session:
+                await session.execute(
+                    update(MediaUpload)
+                    .where(MediaUpload.storage_key == storage_key)
+                    .values(deleting_at=now + timedelta(seconds=1))
+                )
+                await session.commit()
+            await super().delete_object(storage_key)
+
+    assert (
+        await clean_abandoned_uploads(
+            factory=factory, storage=ReplacementStorage(Environment.TEST), settings=_settings()
+        )
+        == 0
+    )
+    assert await db_session.scalar(select(MediaUpload.id).where(MediaUpload.id == grant.id))
 
 
 async def test_opposite_key_orders_finish_without_deadlock() -> None:

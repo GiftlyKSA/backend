@@ -429,7 +429,6 @@ class MoneyService:
         revenue = quantize_money(platform_revenue_amount)
         total = quantize_money(courier_payout + revenue)
         escrow = await self._wallets.get_system(WalletType.SYSTEM_ESCROW)
-        revenue_wallet = await self._wallets.get_system(WalletType.SYSTEM_REVENUE)
         correlation = uuid.uuid4()
 
         legs = [
@@ -441,15 +440,19 @@ class MoneyService:
                 reference_order_id=order_id,
                 reference_invoice_id=invoice_id,
             ),
-            Leg(
-                wallet_id=courier_wallet_id,
-                amount=courier_payout,
-                txn_type=TransactionType.ESCROW_RELEASE,
-                reference_order_id=order_id,
-                reference_invoice_id=invoice_id,
-            ),
         ]
+        if courier_payout != ZERO:
+            legs.append(
+                Leg(
+                    wallet_id=courier_wallet_id,
+                    amount=courier_payout,
+                    txn_type=TransactionType.ESCROW_RELEASE,
+                    reference_order_id=order_id,
+                    reference_invoice_id=invoice_id,
+                )
+            )
         if revenue != ZERO:
+            revenue_wallet = await self._wallets.get_system(WalletType.SYSTEM_REVENUE)
             legs.append(
                 Leg(
                     wallet_id=revenue_wallet.id,

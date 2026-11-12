@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -11,11 +12,38 @@ from app.core.config import Environment, Settings, get_worker_settings
 from app.core.db import build_engine, build_session_factory
 from app.integrations.factory import build_storage_client
 from app.integrations.storage.base import StorageClient
-from app.repositories.media_repository import MediaRepository
+from app.repositories.media_repository import MediaCleanupReservation, MediaRepository
 
 _logger = logging.getLogger("app.services.media_cleanup")
 _RETENTION = timedelta(days=1)
 _BATCH_SIZE = 100
+_STORAGE_BUDGET_SECONDS = 45
+_OBJECT_TIMEOUT_SECONDS = 15
+
+
+async def _delete_objects(
+    storage: StorageClient, reservations: list[MediaCleanupReservation]
+) -> list[MediaCleanupReservation]:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _STORAGE_BUDGET_SECONDS
+    deleted = []
+    for index, reservation in enumerate(reservations):
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            _logger.warning(
+                "Media cleanup deferred %d grants at deadline.", len(reservations) - index
+            )
+            break
+        try:
+            async with asyncio.timeout(min(_OBJECT_TIMEOUT_SECONDS, remaining)):
+                await storage.delete_object(reservation.storage_key)
+        except Exception as exc:  # noqa: BLE001 - leave the fenced grant for a later retry
+            _logger.warning(
+                "Media cleanup failed for grant %s (%s).", reservation.grant_id, type(exc).__name__
+            )
+        else:
+            deleted.append(reservation)
+    return deleted
 
 
 async def clean_abandoned_uploads(
@@ -40,19 +68,15 @@ async def clean_abandoned_uploads(
     removed = 0
     try:
         async with factory() as session:
-            keys = await MediaRepository(session).reserve_expired(
+            reservations = await MediaRepository(session).reserve_expired(
                 before=datetime.now(UTC) - _RETENTION, limit=_BATCH_SIZE
             )
             await session.commit()
-        for key in keys:
-            try:
-                await storage.delete_object(key)
-                async with factory() as session:
-                    await MediaRepository(session).remove_reserved(key)
-                    await session.commit()
-                removed += 1
-            except Exception:  # noqa: BLE001 - retry the fenced grant on the next run
-                _logger.exception("failed to clean abandoned upload %s", key)
+        deleted = await _delete_objects(storage, reservations)
+        if deleted:
+            async with factory() as session:
+                removed = await MediaRepository(session).remove_reserved(deleted)
+                await session.commit()
     finally:
         try:
             if owned_client is not None:

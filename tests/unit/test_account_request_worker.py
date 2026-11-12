@@ -1,5 +1,6 @@
 """Durable email delivery acknowledges both success and retryable provider failure."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -55,3 +56,28 @@ async def test_email_send_outside_database_transaction_and_fenced_ack(
     assert finish.await_args.kwargs["sent"] is not provider_failure
     assert finish.await_args.kwargs["attempts"] == 2
     session.commit.assert_awaited_once()
+
+
+async def test_account_request_job_preserves_due_email_when_deadline_is_near(monkeypatch) -> None:
+    from app.workers import account_requests
+
+    from tests.conftest import make_test_settings
+
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = AsyncMock()
+    repository = SimpleNamespace(
+        advance_review=AsyncMock(), purge_expired_challenges=AsyncMock(), claim_email=AsyncMock()
+    )
+    monkeypatch.setattr(account_requests, "AccountChangeRepository", lambda _session: repository)
+
+    assert (
+        await account_requests.process_account_requests(
+            email=AsyncMock(),
+            factory=factory,
+            settings=make_test_settings(),
+            deadline=asyncio.get_running_loop().time() + 1,
+        )
+        == 0
+    )
+    repository.advance_review.assert_awaited_once()
+    repository.claim_email.assert_not_awaited()

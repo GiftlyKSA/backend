@@ -5,6 +5,8 @@ import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from itertools import count
+from time import perf_counter
 from typing import Literal, TypeVar
 from uuid import UUID
 
@@ -20,21 +22,38 @@ ReadDomain = Literal["catalog", "occasions", "orders"]
 _MAX_BYTES = 262144
 _MAX_ENTRIES = 256
 _MAX_PENDING = 32
+_SAMPLE_EVERY = 256
 _TTLS = {"catalog": 300, "occasions": 3600, "orders": 30}
 _ZERO = UUID(int=0)
 _STORE = """
 local clock=redis.call('TIME')
 local now=tonumber(clock[1])+tonumber(clock[2])/1000000
+local expired=redis.call('ZRANGEBYSCORE',KEYS[1],'-inf',now)
+if #expired>0 then redis.call('ZREM',KEYS[2],unpack(expired)) end
 redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now)
-redis.call('SET',KEYS[2],ARGV[1],'EX',ARGV[2])
-redis.call('ZADD',KEYS[1],now+tonumber(ARGV[2]),KEYS[2])
-local excess=redis.call('ZCARD',KEYS[1])-tonumber(ARGV[3])
-if excess>0 then
- local oldest=redis.call('ZPOPMIN',KEYS[1],excess)
- for i=1,#oldest,2 do redis.call('DEL',oldest[i]) end
+redis.call('ZREM',KEYS[1],KEYS[3])
+redis.call('ZREM',KEYS[2],KEYS[3])
+local maximum=tonumber(ARGV[3])
+local excess=redis.call('ZCARD',KEYS[1])-maximum+1
+local evicted=math.max(excess,0)
+while excess>0 do
+ local oldest=redis.call('ZPOPMIN',KEYS[2])
+ if #oldest==0 then
+  oldest=redis.call('ZPOPMIN',KEYS[1])
+  redis.call('DEL',oldest[1])
+  excess=excess-1
+ elseif redis.call('ZREM',KEYS[1],oldest[1])==1 then
+  redis.call('DEL',oldest[1])
+  excess=excess-1
+ end
 end
+redis.call('SET',KEYS[3],ARGV[1],'EX',ARGV[2])
+redis.call('ZADD',KEYS[1],now+tonumber(ARGV[2]),KEYS[3])
+redis.call('ZADD',KEYS[2],now,KEYS[3])
+redis.call('ZREMRANGEBYRANK',KEYS[2],0,-maximum-1)
 redis.call('EXPIRE',KEYS[1],7200)
-return 1
+redis.call('EXPIRE',KEYS[2],7200)
+return evicted
 """
 
 
@@ -56,18 +75,60 @@ class ResultCache:
         """Share no request sessions, ORM objects or authorization decisions."""
         self._redis = redis
         self._pending: dict[str, asyncio.Future[bytes | None]] = {}
+        self._reads = count()
 
-    async def _read(self, key: str, adapter: TypeAdapter[T]) -> T | None:
+    async def _read(
+        self, key: str, adapter: TypeAdapter[T], *, domain: ReadDomain, sampled: bool
+    ) -> T | None:
+        started = perf_counter() if sampled else 0.0
+        result: T | None = None
+        outcome = "miss"
         try:
             async with asyncio.timeout(0.1):
                 value = await self._redis.getrange(key, 0, _MAX_BYTES)
             if isinstance(value, (str, bytes)) and 0 < len(value) <= _MAX_BYTES:
-                return adapter.validate_json(value)
+                result = adapter.validate_json(value)
+                outcome = "hit"
         except ValidationError, UnicodeError:
             pass
         except RedisError, TimeoutError:
-            logger.warning("Read cache lookup unavailable.")
-        return None
+            outcome = "unavailable"
+        if sampled:
+            logger.log(
+                logging.WARNING if outcome == "unavailable" else logging.INFO,
+                "read_cache",
+                extra={
+                    "extra_fields": {
+                        "domain": domain,
+                        "outcome": outcome,
+                        "elapsed_ms": round((perf_counter() - started) * 1000, 2),
+                    }
+                },
+            )
+        return result
+
+    async def _store(self, key: str, value: bytes, *, domain: ReadDomain, sampled: bool) -> None:
+        try:
+            async with asyncio.timeout(0.1):
+                evicted = await self._redis.eval(
+                    _STORE,
+                    3,
+                    "cache:read:v1:index",
+                    "cache:read:v1:fifo",
+                    key,
+                    value,
+                    _TTLS[domain],
+                    _MAX_ENTRIES,
+                )
+        except RedisError, TimeoutError:
+            if sampled:
+                logger.warning("Read cache storage unavailable (%s).", domain)
+            return
+        if sampled and evicted:
+            logger.info(
+                "read_cache_eviction",
+                extra={"extra_fields": {"domain": domain, "entries": evicted}},
+            )
 
     async def read(
         self,
@@ -91,7 +152,8 @@ class ResultCache:
             ensure_ascii=True,
         )
         key = f"cache:read:v1:{domain}:{hashlib.sha256(identity.encode()).hexdigest()}"
-        cached = await self._read(key, adapter)
+        sampled = next(self._reads) % _SAMPLE_EVERY == 0
+        cached = await self._read(key, adapter, domain=domain, sampled=sampled)
         if cached is not None:
             return cached
         pending = self._pending.get(key)
@@ -112,19 +174,7 @@ class ResultCache:
             value = adapter.dump_json(result)
             if len(value) <= _MAX_BYTES:
                 if versions == await repository.versions(scopes):
-                    try:
-                        async with asyncio.timeout(0.1):
-                            await self._redis.eval(
-                                _STORE,
-                                2,
-                                "cache:read:v1:index",
-                                key,
-                                value,
-                                _TTLS[domain],
-                                _MAX_ENTRIES,
-                            )
-                    except RedisError, TimeoutError:
-                        logger.warning("Read cache storage unavailable.")
+                    await self._store(key, value, domain=domain, sampled=sampled)
                     future.set_result(value)
             return result
         finally:

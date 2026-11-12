@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import exists, select, tuple_
+from sqlalchemy import exists, func, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -24,6 +24,7 @@ from app.models.enums import InvoiceStatus, UserRole
 # An invoice in one of these statuses blocks a second active invoice for the order
 # (mirrors the partial unique index ``uq_invoices_one_active_per_order``).
 _ACTIVE_STATUSES = (InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PAID)
+_EXHAUSTED_RECEIPT_HOLD = datetime(9999, 1, 1, tzinfo=UTC)
 
 
 class InvoiceRepository:
@@ -284,46 +285,71 @@ class InvoiceRepository:
             )
         )
 
-    async def list_receipt_pending(self, limit: int) -> list[Invoice]:
-        """Return PAID invoices whose receipt has not been sent, oldest first.
-
-        Backed by the partial index ``idx_invoices_receipt_pending``; the receipt
-        sweeper drains this set.
-        """
+    async def list_due_receipt_ids(self, limit: int) -> list[uuid.UUID]:
+        """Return due receipts in scheduled order, interleaving first sends and retries."""
+        now = datetime.now(UTC)
+        due_at = func.coalesce(Invoice.receipt_next_attempt_at, Invoice.paid_at, Invoice.created_at)
         return list(
             await self._session.scalars(
-                select(Invoice)
+                select(Invoice.id)
                 .join(Order, Order.id == Invoice.order_id)
                 .join(User, User.id == Order.customer_id)
                 .where(
-                    Invoice.status == InvoiceStatus.PAID,
+                    Invoice.status
+                    == literal(InvoiceStatus.PAID, type_=Invoice.status.type, literal_execute=True),
                     User.email.is_not(None),
                     User.email != "",
                     Invoice.receipt_email_sent_at.is_(None),
-                    (Invoice.receipt_claimed_until.is_(None))
-                    | (Invoice.receipt_claimed_until <= datetime.now(UTC)),
+                    Invoice.receipt_exhausted_at.is_(None),
+                    Invoice.receipt_claimed_until.is_(None)
+                    | (Invoice.receipt_claimed_until <= now),
+                    due_at <= now,
                 )
-                .order_by(Invoice.paid_at, Invoice.id)
+                .order_by(due_at, Invoice.id)
                 .limit(limit)
             )
         )
 
     async def claim_receipt(
         self, invoice_id: uuid.UUID, *, token: uuid.UUID, now: datetime, lease: timedelta
-    ) -> Invoice | None:
-        """Claim an eligible invoice in a short transaction."""
-        invoice = await self.lock(invoice_id)
+    ) -> tuple[Invoice, str] | None:
+        """Claim an eligible invoice and read its recipient in a short transaction."""
+        result = await self._session.execute(
+            select(Invoice, User.email)
+            .join(Order, Order.id == Invoice.order_id)
+            .join(User, User.id == Order.customer_id)
+            .where(Invoice.id == invoice_id)
+            .with_for_update(of=Invoice, skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return None
+        invoice, address = row
         if (
-            invoice is None
+            not address
             or invoice.status is not InvoiceStatus.PAID
             or invoice.receipt_email_sent_at is not None
+            or invoice.receipt_exhausted_at is not None
             or (invoice.receipt_claimed_until is not None and invoice.receipt_claimed_until > now)
+            or (
+                invoice.receipt_next_attempt_at is not None
+                and invoice.receipt_next_attempt_at > now
+            )
         ):
             return None
+        if invoice.receipt_first_attempt_at is None:
+            if invoice.receipt_claim_token is not None or invoice.receipt_claimed_until is not None:
+                # A legacy worker may have sent before its latest claim.
+                invoice.receipt_first_attempt_at = invoice.paid_at or invoice.created_at
+            else:
+                invoice.receipt_first_attempt_at = now
         invoice.receipt_claim_token = token
         invoice.receipt_claimed_until = now + lease
+        # A crashed worker's expired claim goes behind receipts already waiting at claim time.
+        invoice.receipt_next_attempt_at = now + lease
         await self._session.flush()
-        return invoice
+        return invoice, address
 
     async def complete_receipt(
         self, invoice_id: uuid.UUID, *, token: uuid.UUID, when: datetime
@@ -339,6 +365,33 @@ class InvoiceRepository:
         invoice.receipt_email_sent_at = when
         invoice.receipt_claim_token = None
         invoice.receipt_claimed_until = None
+        invoice.receipt_next_attempt_at = None
+        await self._session.flush()
+        return True
+
+    async def finish_receipt_failure(
+        self,
+        invoice_id: uuid.UUID,
+        *,
+        token: uuid.UUID,
+        when: datetime,
+        failed_attempts: int,
+        retry_at: datetime | None,
+    ) -> bool:
+        """Schedule or exhaust the failed receipt while still owning its claim."""
+        invoice = await self.lock(invoice_id)
+        if (
+            invoice is None
+            or invoice.receipt_claim_token != token
+            or invoice.receipt_email_sent_at is not None
+        ):
+            return False
+        invoice.receipt_failed_attempts = failed_attempts
+        invoice.receipt_next_attempt_at = retry_at
+        invoice.receipt_exhausted_at = when if retry_at is None else None
+        invoice.receipt_claim_token = None
+        # Old workers only inspect this timestamp, so it also fences deferred sends during rollout.
+        invoice.receipt_claimed_until = retry_at or _EXHAUSTED_RECEIPT_HOLD
         await self._session.flush()
         return True
 
