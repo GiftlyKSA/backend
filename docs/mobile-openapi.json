@@ -6309,6 +6309,19 @@
               }
             ],
             "title": "Courier Bio"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "pattern": "^\\+9665[0-9]{8}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verified Saudi E.164 account phone.",
+            "title": "Phone"
           }
         },
         "type": "object",

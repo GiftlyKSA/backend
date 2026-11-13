@@ -2435,6 +2435,19 @@
             "title": "Initials",
             "type": "string"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "pattern": "^\\+9665[0-9]{8}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verified Saudi E.164 account phone.",
+            "title": "Phone"
+          },
           "public_identifier": {
             "title": "Public Identifier",
             "type": "integer"

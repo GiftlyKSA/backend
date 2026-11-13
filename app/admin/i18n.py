@@ -491,6 +491,7 @@ ARABIC: dict[str, str] = {
     "Promo Id": "معرّف الرمز الترويجي",
     "Provider": "المزود",
     "Public Identifier": "المعرّف العام",
+    "Phone Verified": "تم التحقق من رقم الهاتف",
     "Purpose": "الغرض",
     "Quantity": "الكمية",
     "Raised By User Id": "معرّف المستخدم مقدّم البلاغ",

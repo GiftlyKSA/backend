@@ -196,7 +196,7 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
     app = create_app(settings)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
-            _customer_phone, customer = await _register(
+            customer_phone, customer = await _register(
                 client, app, role="CUSTOMER", full_name="Nora Customer"
             )
             _stranger_phone, stranger = await _register(
@@ -229,6 +229,7 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
                 "initials": "CD",
                 "courier_city": "Jeddah",
                 "courier_bio": "Careful with fragile gifts.",
+                "phone": courier_phone,
             }
 
             denied = await client.get(
@@ -236,7 +237,6 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
             )
             assert denied.status_code == 404
             sensitive = {
-                "phone",
                 "email",
                 "dob",
                 "date_of_birth",
@@ -249,6 +249,33 @@ async def test_participant_profile_requires_shared_order_and_is_minimal() -> Non
                 "gateway_supplier_id",
             }
             assert sensitive.isdisjoint(allowed.json())
+            assert allowed.headers["cache-control"] == "private, no-store"
+            me = await client.get("/api/users/me", headers=_headers(customer))
+            reverse = await client.get(
+                f"/api/users/{me.json()['id']}/participant", headers=_headers(courier)
+            )
+            assert reverse.status_code == 200
+            assert reverse.json()["phone"] == customer_phone
+            async with factory() as session:
+                changed = await session.get(User, courier_user.id)
+                assert changed is not None
+                changed.phone = _phone()
+                await session.commit()
+            after_edit = await client.get(
+                f"/api/users/{courier_user.id}/participant", headers=_headers(customer)
+            )
+            assert after_edit.status_code == 200
+            assert "phone" not in after_edit.json()
+
+            async with factory() as session:
+                changed = await session.get(User, courier_user.id)
+                assert changed is not None
+                changed.phone = courier_phone
+                await session.commit()
+            restored_number = await client.get(
+                f"/api/users/{courier_user.id}/participant", headers=_headers(customer)
+            )
+            assert "phone" not in restored_number.json()
     finally:
         await app.state.redis.aclose()
         await engine.dispose()

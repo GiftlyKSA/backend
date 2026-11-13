@@ -8,6 +8,7 @@ is impossible at two independent layers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from pydantic import SecretStr
@@ -43,7 +44,9 @@ class Clients:
     storage: StorageClient
 
 
-def build_clients(settings: Settings) -> Clients:
+def build_clients(
+    settings: Settings, *, register: Callable[[str, object], None] | None = None
+) -> Clients:
     """Construct the integration clients for the active environment.
 
     In production, payments are disabled; other integrations use real clients.
@@ -54,23 +57,29 @@ def build_clients(settings: Settings) -> Clients:
     Raises:
         RuntimeError: A fake would be selected in production (defence in depth).
     """
-    if settings.is_production:
-        return _build_production_clients(settings)
-    return _build_fake_clients(settings)
-
-
-def _build_production_clients(settings: Settings) -> Clients:
     gateway = build_payment_client(settings)
+    if register is not None:
+        register("gateway", gateway)
     email = build_email_client(settings)
-    sms = RealSmsClient(
-        provider_key=(
-            settings.SMS_PROVIDER_KEY.get_secret_value() if settings.SMS_PROVIDER_KEY else ""
-        ),
-        base_url=settings.SUPABASE_URL or "",
-        timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
+    if register is not None:
+        register("email", email)
+    sms: SmsClient = (
+        RealSmsClient(
+            provider_key=_required_secret(settings.SMS_PROVIDER_KEY, "SMS_PROVIDER_KEY"),
+            base_url=settings.SUPABASE_URL or "",
+            timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
+        )
+        if settings.is_production
+        else FakeSmsClient(settings.ENVIRONMENT)
     )
+    if register is not None:
+        register("sms", sms)
     push = build_push_client(settings)
+    if register is not None:
+        register("push", push)
     storage = build_storage_client(settings)
+    if register is not None:
+        register("storage", storage)
     return Clients(gateway=gateway, email=email, sms=sms, push=push, storage=storage)
 
 
@@ -98,17 +107,6 @@ def build_payment_client(settings: Settings) -> PaymentClient:
             timeout_seconds=settings.INTEGRATION_HTTP_TIMEOUT_SECONDS,
         )
     return FakePaymentClient(settings.ENVIRONMENT)
-
-
-def _build_fake_clients(settings: Settings) -> Clients:
-    environment = settings.ENVIRONMENT
-    return Clients(
-        gateway=build_payment_client(settings),
-        email=FakeEmailClient(environment),
-        sms=FakeSmsClient(environment),
-        push=build_push_client(settings),
-        storage=build_storage_client(settings),
-    )
 
 
 def build_email_client(settings: Settings) -> EmailClient:

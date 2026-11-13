@@ -298,6 +298,8 @@ async def test_full_current_and_new_phone_proof_flow_with_real_redis(
             await workflow.confirm_phone(owner.id, target.id, sms.send_otp.await_args.args[1])
             == new_phone
         )
+        await db_session.refresh(owner)
+        assert owner.phone == new_phone and owner.phone_verified
         with pytest.raises(UnauthorizedError):
             await validate_access_claims(claims, redis=redis, users=UserRepository(db_session))
     finally:

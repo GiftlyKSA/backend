@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit_context import set_audit_actor
+from app.core.audit_context import mark_request_transaction, set_audit_actor
 from app.core.db import emit_committed_audit_events
 from app.models import DeviceToken
 from app.models.account_change import AccountChangeChallenge, AccountRequest, AccountRequestEmail
@@ -32,6 +32,10 @@ class AccountChangeRepository:
         """Publish a challenge and consumed proof before waiting on SMS delivery."""
         await self._session.commit()
         emit_committed_audit_events(self._session)
+
+    async def release_verification_reads(self) -> None:
+        """Release the connection before verifying the scoped code in Redis."""
+        await self._session.commit()
 
     async def challenge(
         self, challenge_id: uuid.UUID, *, lock: bool = False
@@ -74,20 +78,25 @@ class AccountChangeRepository:
 
         return result
 
-    async def attribute_recovery(self, user_id: uuid.UUID, role: str) -> None:
-        """Attribute proven recovery writes before mutation triggers run."""
+    async def attribute_verified_actor(self, user_id: uuid.UUID, role: str) -> None:
+        """Reestablish transaction-local audit context after OTP verification."""
+        await mark_request_transaction(self._session)
         await set_audit_actor(self._session, category=role, actor_user_id=user_id)
 
     async def remove_devices(self, user_id: uuid.UUID) -> None:
         """Delete push registrations owned by this account."""
         await self._session.execute(delete(DeviceToken).where(DeviceToken.user_id == user_id))
 
-    async def change_phone(self, user_id: uuid.UUID, phone: str) -> None:
+    async def change_phone(self, user_id: uuid.UUID, phone: str, *, verified: bool) -> None:
         """Persist phone mutation inside a savepoint so uniqueness errors are contained."""
         from app.models import User
 
         async with self._session.begin_nested():
             await self._session.execute(update(User).where(User.id == user_id).values(phone=phone))
+            if verified:
+                await self._session.execute(
+                    update(User).where(User.id == user_id).values(phone_verified=True)
+                )
             await self._session.flush()
 
     async def flush(self) -> None:

@@ -27,6 +27,7 @@ def test_mobile_contract_schemas_expose_role_scoped_fields() -> None:
         "avatar_url",
         "courier_city",
         "courier_bio",
+        "phone",
     }
 
 

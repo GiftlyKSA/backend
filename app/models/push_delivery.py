@@ -18,6 +18,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+PUSH_DELIVERY_DUE_PREDICATE = "state IN ('PENDING','LEASED')"
+
 
 class PushDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A durable device target; provider acceptance and inbox reads are separate."""
@@ -49,6 +51,6 @@ class PushDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "idx_push_delivery_due",
             "available_at",
             "id",
-            postgresql_where=text("state IN ('PENDING','LEASED')"),
+            postgresql_where=text(PUSH_DELIVERY_DUE_PREDICATE),
         ),
     )

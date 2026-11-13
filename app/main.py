@@ -55,18 +55,20 @@ _ADMIN_CSP = (
 
 async def _close_shared_resources(app: FastAPI) -> None:
     """Close application-level clients and shared connection pools."""
-    clients = app.state.clients
-
-    for name, close in (
-        ("gateway", getattr(clients.gateway, "aclose", None)),
-        ("email", getattr(clients.email, "aclose", None)),
-        ("sms", getattr(clients.sms, "aclose", None)),
-        ("push", getattr(clients.push, "aclose", None)),
-        ("storage", getattr(clients.storage, "aclose", None)),
-        ("subscription_redis", app.state.subscription_redis.aclose),
-        ("redis", app.state.redis.aclose),
-        ("database", app.state.engine.dispose),
-    ):
+    resources = getattr(app.state, "resource_closers", None)
+    if resources is None:
+        clients = app.state.clients
+        resources = (
+            ("gateway", getattr(clients.gateway, "aclose", None)),
+            ("email", getattr(clients.email, "aclose", None)),
+            ("sms", getattr(clients.sms, "aclose", None)),
+            ("push", getattr(clients.push, "aclose", None)),
+            ("storage", getattr(clients.storage, "aclose", None)),
+            ("subscription_redis", app.state.subscription_redis.aclose),
+            ("redis", app.state.redis.aclose),
+            ("database", app.state.engine.dispose),
+        )
+    for name, close in resources:
         if close is None:
             continue
         try:
@@ -81,6 +83,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize shared resources before serving requests and close them on shutdown."""
     settings: Settings = app.state.settings
     try:
+        if getattr(app.state, "clients", None) is None:
+            _initialize_resources(app, settings)
         logger.info(
             "application_dependencies_ready",
             extra={
@@ -103,11 +107,39 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     finally:
         await _close_shared_resources(app)
+        app.state.clients = None
+
+
+def _initialize_resources(app: FastAPI, settings: Settings) -> None:
+    closers: list[tuple[str, Callable[[], Awaitable[object]]]] = []
+    app.state.resource_closers = closers
+
+    def register(name: str, resource: object) -> None:
+        close = getattr(resource, "aclose", None)
+        if close is not None:
+            closers.append((name, close))
+
+    app.state.clients = build_clients(settings, register=register)
+    engine = build_engine(settings)
+    closers.append(("database", engine.dispose))
+    app.state.engine = engine
+    app.state.session_factory = build_session_factory(engine)
+    app.state.redis = build_redis(settings)
+    register("redis", app.state.redis)
+    app.state.subscription_redis = build_subscription_redis(settings)
+    register("subscription_redis", app.state.subscription_redis)
+    from app.services.invoice_pdf_cache import InvoicePdfCache
+
+    app.state.invoice_pdf_cache = InvoicePdfCache(app.state.redis)
+    from app.services.result_cache import ResultCache
+
+    app.state.result_cache = ResultCache(app.state.redis)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and return the configured FastAPI application."""
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+    injected_settings = settings is not None
     settings = settings or get_settings()
 
     if isinstance(settings, WorkerSettings):
@@ -122,27 +154,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc" if settings.docs_enabled else None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
-
     app.state.settings = settings
-
-    # Constructing clients at boot triggers the production interlock
-    # (raises on violation).
-    app.state.clients = build_clients(settings)
-
-    # Shared async engine/session factory and Redis client,
-    # built once per app.
-    engine = build_engine(settings)
-
-    app.state.engine = engine
-    app.state.session_factory = build_session_factory(engine)
-    app.state.redis = build_redis(settings)
-    app.state.subscription_redis = build_subscription_redis(settings)
-    from app.services.invoice_pdf_cache import InvoicePdfCache
-
-    app.state.invoice_pdf_cache = InvoicePdfCache(app.state.redis)
-    from app.services.result_cache import ResultCache
-
-    app.state.result_cache = ResultCache(app.state.redis)
+    if injected_settings:
+        _initialize_resources(app, settings)
 
     _install_middleware(app, settings)
 

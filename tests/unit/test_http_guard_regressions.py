@@ -4,9 +4,10 @@ import asyncio
 import json
 import logging
 from itertools import count
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from app import main
 from app.core import middleware, ratelimit
 from app.core.middleware import BodySizeMiddleware
 from app.main import _close_shared_resources, _install_middleware
@@ -119,6 +120,31 @@ async def test_resource_cleanup_continues_after_provider_failure():
     app.state.subscription_redis.aclose.assert_awaited_once()
     app.state.redis.aclose.assert_awaited_once()
     app.state.engine.dispose.assert_awaited_once()
+
+
+async def test_partial_startup_releases_resources_before_propagating_error(monkeypatch):
+    clients = AsyncMock()
+    engine = AsyncMock()
+    redis = AsyncMock()
+    monkeypatch.setattr(main, "get_settings", make_test_settings)
+
+    def build_clients(settings, *, register):
+        register("storage", clients.storage)
+        return clients
+
+    monkeypatch.setattr(main, "build_clients", build_clients)
+    monkeypatch.setattr(main, "build_engine", Mock(return_value=engine))
+    monkeypatch.setattr(main, "build_session_factory", Mock())
+    monkeypatch.setattr(main, "build_redis", Mock(return_value=redis))
+    monkeypatch.setattr(main, "build_subscription_redis", Mock(side_effect=RuntimeError("startup")))
+
+    app = main.create_app()
+    with pytest.raises(RuntimeError, match="startup"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("A failed startup must not serve requests.")
+    clients.storage.aclose.assert_awaited_once()
+    redis.aclose.assert_awaited_once()
+    engine.dispose.assert_awaited_once()
 
 
 async def test_rate_limit_outage_reports_first_failure_and_periodic_count(monkeypatch, caplog):

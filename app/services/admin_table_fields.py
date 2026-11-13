@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import ENUM, INET, JSONB, UUID
 from app.core.exceptions import ValidationDomainError
 
 _AUDIT_TIMESTAMPS = {"created_at", "updated_at", "deleted_at"}
-_GENERATED = _AUDIT_TIMESTAMPS | {"auth_version", "public_identifier"}
+_GENERATED = _AUDIT_TIMESTAMPS | {"auth_version", "public_identifier", "phone_verified"}
 _DERIVED_ORDER_FIELDS = {"total_amount", "commission_amount", "courier_payout_amount"}
 _SECRET_MARKERS = ("encrypted", "token", "secret", "hash", "fingerprint", "password")
 MAX_FIELD_LENGTH = 16_384

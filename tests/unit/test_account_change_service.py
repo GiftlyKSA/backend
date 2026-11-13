@@ -109,6 +109,7 @@ async def test_phone_change_revokes_every_credential_and_device(
         auth_version=3,
         expires_at=datetime.now(UTC) + timedelta(seconds=60),
     )
+    service._users.get.return_value = actor
     service._users.get_for_update.return_value = actor
     service._users.get_by_phone.return_value = None
     service._repo.challenge.return_value = challenge
@@ -176,8 +177,11 @@ async def test_scoped_challenge_rejected_before_otp_verification(
     else:
         challenge.phone = "+966508765432"
     service._repo.challenge.return_value = challenge
+    service._users.get.return_value = owner
     with pytest.raises(UnauthorizedError):
-        await service._verify_challenge(owner, challenge.id, "123456", purposes={"ACCOUNT_REQUEST"})
+        await service._verify_challenge(
+            owner.id, challenge.id, "123456", purposes={"ACCOUNT_REQUEST"}
+        )
     service._otp.verify_otp.assert_not_awaited()
 
 

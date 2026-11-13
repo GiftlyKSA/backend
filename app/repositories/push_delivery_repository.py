@@ -22,6 +22,7 @@ from sqlalchemy import (
     literal,
     or_,
     select,
+    text,
     update,
     values,
 )
@@ -34,7 +35,7 @@ from app.models import Conversation, CourierProfile, DeviceToken, Message, Occas
 from app.models.enums import OrderStatus, UserRole, UserStatus
 from app.models.expo_push_receipt import ExpoPushReceipt
 from app.models.notification_models import OccasionReminder
-from app.models.push_delivery import PushDelivery
+from app.models.push_delivery import PUSH_DELIVERY_DUE_PREDICATE, PushDelivery
 from app.schemas.push_event import PushEvent
 
 _logger = logging.getLogger(__name__)
@@ -200,7 +201,7 @@ class PushDeliveryRepository:
                 .outerjoin(DeviceToken, DeviceToken.id == PushDelivery.device_id)
                 .outerjoin(User, User.id == DeviceToken.user_id)
                 .where(
-                    PushDelivery.state.in_(["PENDING", "LEASED"]),
+                    text(f"push_deliveries.{PUSH_DELIVERY_DUE_PREDICATE}"),
                     PushDelivery.available_at <= now,
                     or_(PushDelivery.leased_until.is_(None), PushDelivery.leased_until <= now),
                 )

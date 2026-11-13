@@ -27,10 +27,12 @@ class AuthRepository:
         email: str | None,
         dob: date | None,
         gender: UserGender | None = None,
+        phone_verified: bool = False,
     ) -> User:
         """Create an ACTIVE customer and their wallet in one unit of work."""
         user = User(
             phone=phone,
+            phone_verified=phone_verified,
             full_name=full_name,
             email=email,
             date_of_birth=dob,
@@ -52,6 +54,7 @@ class AuthRepository:
         email: str | None,
         dob: date | None,
         gender: UserGender | None = None,
+        phone_verified: bool = False,
     ) -> User:
         """Create a PENDING_VERIFICATION courier user (wallet/profile added after).
 
@@ -60,6 +63,7 @@ class AuthRepository:
         """
         user = User(
             phone=phone,
+            phone_verified=phone_verified,
             full_name=full_name,
             email=email,
             date_of_birth=dob,

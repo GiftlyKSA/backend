@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import exists, select
+from sqlalchemy import case, exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,7 @@ class ParticipantProjection:
     role: UserRole
     courier_city: str | None
     courier_bio: str | None
+    phone: str | None = None
 
 
 class UserRepository:
@@ -129,6 +130,21 @@ class UserRepository:
                     User.role,
                     City.name.label("city_of_residence"),
                     CourierProfile.bio,
+                    case(
+                        (
+                            User.phone_verified.is_(True)
+                            & (User.status == UserStatus.ACTIVE)
+                            & User.deleted_at.is_(None)
+                            & (
+                                (User.role == UserRole.CUSTOMER)
+                                | (
+                                    (User.role == UserRole.COURIER)
+                                    & CourierProfile.is_verified.is_(True)
+                                )
+                            ),
+                            User.phone,
+                        )
+                    ).label("verified_phone"),
                 )
                 .outerjoin(CourierProfile, CourierProfile.user_id == User.id)
                 .outerjoin(City, City.id == CourierProfile.city_of_residence_id)
@@ -144,6 +160,7 @@ class UserRepository:
             role=row.role,
             courier_city=row.city_of_residence,
             courier_bio=row.bio,
+            phone=row.verified_phone,
         )
 
     async def get_owned_with_courier_for_update(

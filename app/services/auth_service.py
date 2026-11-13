@@ -130,6 +130,9 @@ class AuthService:
         if user.status in {UserStatus.BANNED, UserStatus.DELETED}:
             # A ban blocks fresh logins too, not just live tokens (audit SEC-1).
             raise UnauthorizedError("This account has been suspended.")
+        if self._otp.confirms_phone_ownership and not user.phone_verified:
+            await set_audit_actor(self._session, category=user.role.value, actor_user_id=user.id)
+            user.phone_verified = True
         tokens = await self._issue_tokens(user.id, user.role.value, user.auth_version)
         return VerifyResult(is_new_user=False, tokens=tokens, registration_token=None)
 
@@ -166,7 +169,12 @@ class AuthService:
                 if role is UserRole.CUSTOMER:
                     await set_audit_actor(self._session, category=role.value, actor_user_id=None)
                     user = await self._repo.create_customer(
-                        phone=phone, full_name=full_name, email=email, dob=dob, gender=gender
+                        phone=phone,
+                        full_name=full_name,
+                        email=email,
+                        dob=dob,
+                        gender=gender,
+                        phone_verified=self._otp.confirms_phone_ownership,
                     )
                     await set_audit_actor(self._session, category=role.value, actor_user_id=user.id)
                     return await self._issue_tokens(user.id, user.role.value)
@@ -227,7 +235,12 @@ class AuthService:
 
         await set_audit_actor(self._session, category=UserRole.COURIER.value, actor_user_id=None)
         user = await self._repo.create_courier_user(
-            phone=phone, full_name=full_name, email=email, dob=dob, gender=gender
+            phone=phone,
+            full_name=full_name,
+            email=email,
+            dob=dob,
+            gender=gender,
+            phone_verified=self._otp.confirms_phone_ownership,
         )
         await set_audit_actor(self._session, category=UserRole.COURIER.value, actor_user_id=user.id)
         cipher = build_cipher(

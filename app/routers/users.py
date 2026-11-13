@@ -175,6 +175,7 @@ async def _participant_response(
         else None,
         courier_city=participant.courier_city,
         courier_bio=participant.courier_bio,
+        phone=participant.phone,
     )
 
 

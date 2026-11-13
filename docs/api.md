@@ -461,11 +461,16 @@ financial services. The former bearer-only `/api/admin/*` paths are retired.
 - **Who / authorization:** Authenticated order or conversation participant; bearer access token.
 - **Path, query, headers:** `user_id: UUID string` (path).
 - **Request body:** No JSON body.
-- **Response:** HTTP 200; `ParticipantProfile` — `id: UUID string`; `public_identifier: integer` (1,000,000–9,999,999); `display_name: string`; `role: string`; `initials: string`; optional `rating: string | null`, `rating_count: integer | null`, `courier_city: string | null`, `courier_bio: string | null` for couriers only
+- **Response:** HTTP 200; `ParticipantProfile` includes `id`, `public_identifier`,
+  `display_name`, `role`, `initials`, and the existing optional courier fields.
+  `phone`, when present, is the target participant's verified Saudi E.164 number
+  (for example, `+966501234567`). The field is omitted for unverified numbers and
+  ineligible targets. Legacy numbers become eligible after real OTP verification.
+  A direct phone edit clears verification. The response uses `Cache-Control: private, no-store`.
 - **Before:** Obtain the other party's ID from an owned order or inbox item.
 - **Then / dependent API:** Optionally `GET /api/users/{user_id}/ratings/summary`.
 
-**When/how (62 words):** Retrieve a minimal public-facing profile for the customer or courier on an order. The backend requires proof that the caller shares an order or conversation with the target; arbitrary account browsing is not supported. Use the seven-digit public identifier, display name, and initials in chat headers. Show rating and courier details only for a courier. Do not expect phone, email, identity documents, or full profile fields.
+**When/how:** Fetch the other participant's profile from an owned order or conversation. Use the seven-digit public identifier, display name, and initials in chat headers. Show rating and courier details for couriers. Enable calling only when `phone` is present and valid, and open the operating system dialer with that number. The response omits email, identity documents, and other private profile fields.
 
 ## Customer wallet and courier earnings
 

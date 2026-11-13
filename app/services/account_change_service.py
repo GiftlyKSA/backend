@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 from httpx import HTTPError
 from redis.exceptions import RedisError
@@ -30,6 +31,15 @@ from app.repositories.user_repository import UserRepository
 from app.services.otp_service import OtpService
 
 _INVALID = "Invalid or expired account-change proof."
+
+
+class _ChallengeIdentity(NamedTuple):
+    id: uuid.UUID
+    user_id: uuid.UUID | None
+    purpose: str
+    phone: str
+    auth_version: int | None
+    expires_at: datetime
 
 
 class AccountChangeUnavailableError(DomainError):
@@ -65,8 +75,10 @@ class AccountChangeService:
     def _now() -> datetime:
         return datetime.now(UTC)
 
-    async def _active_user(self, actor_id: uuid.UUID) -> User:
-        user = await self._users.get_for_update(actor_id)
+    async def _active_user(self, actor_id: uuid.UUID, *, lock: bool = True) -> User:
+        user = (
+            await self._users.get_for_update(actor_id) if lock else await self._users.get(actor_id)
+        )
         if (
             user is None
             or user.deleted_at is not None
@@ -146,23 +158,50 @@ class AccountChangeService:
         return row
 
     async def _verify_challenge(
-        self, user: User, challenge_id: uuid.UUID, code: str, *, purposes: set[str]
-    ) -> AccountChangeChallenge:
+        self, actor_id: uuid.UUID, challenge_id: uuid.UUID, code: str, *, purposes: set[str]
+    ) -> tuple[User, AccountChangeChallenge]:
+        initial_user = await self._active_user(actor_id, lock=False)
+        initial = self._owned_challenge(
+            await self._repo.challenge(challenge_id), initial_user, purposes=purposes
+        )
+        role = initial_user.role
+        current_phone = initial_user.phone
+        identity = await self._verify_code(initial, code)
+        user = await self._active_user(actor_id)
         row = self._owned_challenge(
             await self._repo.challenge(challenge_id, lock=True), user, purposes=purposes
         )
-        if not await self._otp.verify_otp(row.phone, code, scope=f"account-change:{row.id}"):
+        if (
+            user.role is not role
+            or user.phone != current_phone
+            or self._challenge_identity(row) != identity
+        ):
             raise UnauthorizedError(_INVALID)
+        await self._repo.attribute_verified_actor(user.id, user.role.value)
         row.verified_at = self._now()
-        return row
+        return user, row
+
+    @staticmethod
+    def _challenge_identity(row: AccountChangeChallenge) -> _ChallengeIdentity:
+        return _ChallengeIdentity(
+            row.id, row.user_id, row.purpose, row.phone, row.auth_version, row.expires_at
+        )
+
+    async def _verify_code(self, row: AccountChangeChallenge, code: str) -> _ChallengeIdentity:
+        identity = self._challenge_identity(row)
+        await self._repo.release_verification_reads()
+        if not await self._otp.verify_otp(
+            identity.phone, code, scope=f"account-change:{identity.id}"
+        ):
+            raise UnauthorizedError(_INVALID)
+        return identity
 
     async def confirm_reauthentication(
         self, actor_id: uuid.UUID, challenge_id: uuid.UUID, code: str
     ) -> str:
         """Convert the current-phone challenge into a five-minute, one-use proof."""
-        user = await self._active_user(actor_id)
-        row = await self._verify_challenge(
-            user, challenge_id, code, purposes={"PHONE_CHANGE", "ACCOUNT_REQUEST"}
+        _, row = await self._verify_challenge(
+            actor_id, challenge_id, code, purposes={"PHONE_CHANGE", "ACCOUNT_REQUEST"}
         )
         token = generate_session_token()
         row.proof_hash = sha256_hex(token)
@@ -198,12 +237,15 @@ class AccountChangeService:
 
     async def confirm_phone(self, actor_id: uuid.UUID, challenge_id: uuid.UUID, code: str) -> str:
         """Change a verified phone under its unique constraint and revoke all devices."""
-        user = await self._active_user(actor_id)
-        row = await self._verify_challenge(user, challenge_id, code, purposes={"NEW_PHONE"})
+        user, row = await self._verify_challenge(
+            actor_id, challenge_id, code, purposes={"NEW_PHONE"}
+        )
         if await self._users.get_by_phone(row.phone) is not None:
             raise ConflictError("The phone change could not be completed.")
         try:
-            await self._repo.change_phone(user.id, row.phone)
+            await self._repo.change_phone(
+                user.id, row.phone, verified=self._otp.confirms_phone_ownership is True
+            )
         except IntegrityError as exc:
             raise ConflictError("The phone change could not be completed.") from exc
         row.consumed_at = self._now()
@@ -353,13 +395,11 @@ class AccountChangeService:
             await self._repo.challenge(challenge_id), purposes={"RESTORE_ACCOUNT"}
         )
         # Dummy and recoverable challenges share OTP attempts before account eligibility.
-        if not await self._otp.verify_otp(
-            initial.phone, code, scope=f"account-change:{initial.id}"
-        ):
+        identity = await self._verify_code(initial, code)
+        owner_id = identity.user_id
+        if owner_id is None:
             raise UnauthorizedError(_INVALID)
-        if initial.user_id is None:
-            raise UnauthorizedError(_INVALID)
-        user = await self._users.get_for_update(initial.user_id)
+        user = await self._users.get_for_update(owner_id)
         if user is None:
             raise UnauthorizedError(_INVALID)
         row = await self._repo.active_request(user.id, lock=True)
@@ -368,8 +408,10 @@ class AccountChangeService:
         challenge = self._owned_challenge(
             await self._repo.challenge(challenge_id, lock=True), user, purposes={"RESTORE_ACCOUNT"}
         )
+        if self._challenge_identity(challenge) != identity:
+            raise UnauthorizedError(_INVALID)
         challenge.verified_at = self._now()
-        await self._repo.attribute_recovery(user.id, user.role.value)
+        await self._repo.attribute_verified_actor(user.id, user.role.value)
         challenge.consumed_at = self._now()
         user.status = UserStatus(row.prior_status)
         user.deleted_at = None

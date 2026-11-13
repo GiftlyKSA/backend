@@ -71,6 +71,11 @@ class OtpService:
     def _code_key(self, phone: str) -> str:
         return f"otp:code:{phone}"
 
+    @property
+    def confirms_phone_ownership(self) -> bool:
+        """A development code returned by the API cannot prove SMS ownership."""
+        return self._settings.ENVIRONMENT is not Environment.DEVELOPMENT
+
     def _attempts_key(self, phone: str) -> str:
         return f"otp:attempts:{phone}"
 

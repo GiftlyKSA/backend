@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date
@@ -13,6 +14,8 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.user_repository import ParticipantProjection, UserRepository
 from app.services.city_service import CityService
 from app.services.courier_eligibility_service import CourierEligibilityService
+
+_SAUDI_E164_PHONE = re.compile(r"\+9665[0-9]{8}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +29,7 @@ class ParticipantView:
     initials: str
     courier_city: str | None
     courier_bio: str | None
+    phone: str | None = None
 
 
 class UserService:
@@ -158,4 +162,9 @@ class UserService:
             initials=initials,
             courier_city=projection.courier_city,
             courier_bio=projection.courier_bio,
+            phone=(
+                projection.phone
+                if projection.phone and _SAUDI_E164_PHONE.fullmatch(projection.phone)
+                else None
+            ),
         )

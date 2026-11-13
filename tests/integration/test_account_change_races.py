@@ -14,7 +14,7 @@ from app.core.redis import build_redis
 from app.models import AuditLog, User
 from app.models.account_change import AccountChangeChallenge
 from app.services.otp_service import OtpService
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from tests.conftest import make_test_settings
 from tests.integration.test_account_changes import proof, seed_user, service
@@ -132,6 +132,55 @@ async def test_concurrent_different_accounts_cannot_claim_same_new_phone(
     async with factory() as session:
         phones = list(await session.scalars(select(User.phone).where(User.id.in_(owner_ids))))
         assert phones.count(target) == 1
+
+
+@pytest.mark.parametrize("change", ["account_version", "challenge_phone"])
+async def test_otp_wait_releases_connection_and_rechecks_exact_challenge(
+    account_race_database, change: str
+) -> None:
+    factory, owner_ids = account_race_database
+    actor_id = owner_ids[0]
+    async with factory() as session:
+        owner = await session.get(User, actor_id)
+        challenge, _ = await service(session).request_reauthentication(actor_id, "PHONE_CHANGE")
+        assert owner is not None and challenge.phone == owner.phone
+    single_engine = build_engine(
+        settings().model_copy(update={"DB_POOL_SIZE": 1, "DB_MAX_OVERFLOW": 0})
+    )
+    single_factory = build_session_factory(single_engine)
+    try:
+        async with single_factory() as session:
+            workflow = service(session)
+
+            async def verify(phone: str, code: str, *, scope: str) -> bool:
+                async with single_factory() as writer:
+                    if change == "account_version":
+                        await writer.execute(
+                            update(User)
+                            .where(User.id == actor_id)
+                            .values(auth_version=User.auth_version + 1)
+                        )
+                    else:
+                        await writer.execute(
+                            update(AccountChangeChallenge)
+                            .where(AccountChangeChallenge.id == challenge.id)
+                            .values(phone=owner.phone, purpose="ACCOUNT_REQUEST")
+                        )
+                    await writer.commit()
+                return True
+
+            workflow._otp.verify_otp.side_effect = verify
+            with pytest.raises(UnauthorizedError):
+                await asyncio.wait_for(
+                    workflow.confirm_reauthentication(actor_id, challenge.id, "123456"), 3
+                )
+        async with single_factory() as session:
+            current = await session.get(AccountChangeChallenge, challenge.id)
+            assert (
+                current is not None and current.verified_at is None and current.proof_hash is None
+            )
+    finally:
+        await single_engine.dispose()
 
 
 @pytest.mark.asyncio

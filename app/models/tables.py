@@ -116,6 +116,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    phone_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     auth_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(120), nullable=True)

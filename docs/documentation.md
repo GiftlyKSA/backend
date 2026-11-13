@@ -442,7 +442,7 @@ queue lag, retry state and reconciliation differences need operational monitorin
 ### Current migration rollout and rollback
 
 Back up data before applying upgrades. Each app runs migrations at startup. Check
-that the database reaches `0045_receipt_due_index` and all consumers use the new
+that the database reaches `0046_verified_participant_phone` and all consumers use the new
 revision after rollout. Deferred and exhausted receipts retain a hold timestamp
 that legacy workers respect. Before rolling back, drain receipt consumers and
 reconcile legacy claims and exhausted sends. Keep the dashboard authentication
@@ -458,6 +458,7 @@ policy in effect across application rollbacks.
 | 0043 | Durable receipt retry state | Keep receipt workers paused during rollback and reconcile exhausted/unstamped invoices before legacy workers can send. Sent timestamps and existing claims remain. |
 | 0044 | Reminder owner-transfer fence | The forward trigger advances the schedule version on transfer. Reverting the trigger restores the former behavior for future edits. |
 | 0045 | Concurrent ordered receipt-ready index | Builds the new index before dropping its predecessor. Downgrade restores the predecessor first. Check `pg_index.indisvalid` after interruption. |
+| 0046 | Verification evidence for the current participant phone | Starts legacy rows unverified. Roll back the application before dropping the flag and trigger. Phone numbers are retained. |
 
 Historical migrations retain names needed to upgrade existing databases. Prefer forward
 correction or backup restoration to destructive downgrade. Revisions 0042–0045 have

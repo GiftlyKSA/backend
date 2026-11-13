@@ -37,6 +37,9 @@ class ParticipantProfile(BaseModel):
     avatar_url: str | None = None
     courier_city: str | None = None
     courier_bio: str | None = None
+    phone: str | None = Field(
+        default=None, pattern=r"^\+9665[0-9]{8}$", description="Verified Saudi E.164 account phone."
+    )
 
 
 class UserMeResponse(BaseModel):

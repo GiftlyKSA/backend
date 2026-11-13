@@ -17,6 +17,7 @@ from app.services import expo_receipt_service, push_delivery_service
 from app.workers import push_deliveries
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql.asyncpg import PGDialect_asyncpg
 
 from tests.conftest import make_test_settings
 
@@ -248,6 +249,10 @@ async def test_claim_without_transport_preserves_attempt_count():
 
     assert row.state == "LEASED"
     assert row.attempts == leased.attempts == 7
+    statement = session.execute.await_args.args[0].compile(
+        dialect=PGDialect_asyncpg(), compile_kwargs={"render_postcompile": True}
+    )
+    assert "push_deliveries.state IN ('PENDING','LEASED')" in str(statement)
 
 
 def test_final_transient_receipt_is_not_polled_again():

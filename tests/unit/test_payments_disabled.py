@@ -59,7 +59,7 @@ async def test_disabled_client_rejects_checkout_and_all_signatures() -> None:
 def test_simulation_routes_never_register_in_production(
     environment: Environment, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("app.main.build_clients", lambda settings: Mock())
+    monkeypatch.setattr("app.main.build_clients", lambda settings, *, register: Mock())
     settings = make_test_settings().model_copy(update={"ENVIRONMENT": environment})
     paths = create_app(settings).openapi()["paths"]
     assert ("/api/webhooks/simulation" in paths) == (environment is not Environment.PRODUCTION)
